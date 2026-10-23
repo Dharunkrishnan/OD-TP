@@ -5,11 +5,10 @@
 // assignment). Result = Claim registered, NBNR (Notified But Not Registered) or Duplicate.
 // Catalogue refs: FNOL 1–12, Claim Registration 13–17, Reserve 18, Policy & Coverage 22–29.
 
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import {
   Search,
-  Check,
   CheckCircle2,
   XCircle,
   AlertTriangle,
@@ -46,7 +45,10 @@ import {
   DEMO_POLICIES,
 } from "../../data/odPolicyMock";
 
-const STEPS = ["Policy & Vehicle Details", "Customer Details", "Incident Details", "Additional Information", "Review & Submit"];
+const STEPS = ["Policy Information", "Incident Details", "Review & Submit"];
+// Each wizard step shows these form sections:
+// 0 Policy & vehicle · 1 Customer · 2 Incident (incl. driver) · 3 Additional information · 4 Review
+const STEP_SECTIONS = [[0, 1], [2, 3], [4]];
 
 const inr = (n) => (n == null ? "–" : "₹" + Number(n).toLocaleString("en-IN"));
 const dt = (iso) =>
@@ -119,6 +121,16 @@ function Card({ title, action, children, className = "" }) {
   );
 }
 
+// Sub-heading inside a combined wizard step
+function SectionHead({ n, title, divider }) {
+  return (
+    <div className={`flex items-center gap-2 ${divider ? "mt-1 border-t border-slate-100 pt-3" : ""}`}>
+      <span className="grid h-5 w-5 place-items-center rounded bg-teal-50 text-[11px] font-bold text-teal-800">{n}</span>
+      <h3 className="text-[13px] font-semibold text-slate-900">{title}</h3>
+    </div>
+  );
+}
+
 function Field({ label, required, error, hint, children, className = "" }) {
   return (
     <label className={`flex min-w-0 flex-col gap-1 ${className}`}>
@@ -128,7 +140,7 @@ function Field({ label, required, error, hint, children, className = "" }) {
       </span>
       {children}
       {error ? (
-        <span className="text-[11.5px] text-red-700">{error}</span>
+        <span data-field-error className="text-[11.5px] text-red-700">{error}</span>
       ) : hint ? (
         <span className="text-[11px] text-slate-500">{hint}</span>
       ) : null}
@@ -198,7 +210,12 @@ function Check3({ ok, label, note }) {
 /* ------------------------------------------------------------------ */
 /* Validation per step                                                 */
 /* ------------------------------------------------------------------ */
+// Validate every section shown on a wizard step
 function validate(step, f) {
+  return Object.assign({}, ...STEP_SECTIONS[step].map((sec) => validateSection(sec, f)));
+}
+
+function validateSection(step, f) {
   const e = {};
   if (step === 0) {
     if (!f.policy && !f.noPolicy) e.policy = "Search and select the policy, or continue without a policy.";
@@ -257,6 +274,11 @@ export default function ODIntimation() {
   const [toast, setToast] = useState("");
 
   const set = (patch) => setF((x) => ({ ...x, ...patch }));
+
+  // Each step opens at the top of the page
+  useEffect(() => {
+    document.querySelector("main")?.scrollTo({ top: 0 });
+  }, [step]);
   function flash(msg) {
     setToast(msg);
     window.clearTimeout(flash.t);
@@ -288,7 +310,11 @@ export default function ODIntimation() {
   function next() {
     const e = validate(step, f);
     setErrors(e);
-    if (Object.keys(e).length) return;
+    if (Object.keys(e).length) {
+      // Sections are long now – bring the first error into view
+      window.setTimeout(() => document.querySelector("[data-field-error]")?.scrollIntoView({ behavior: "smooth", block: "center" }), 0);
+      return;
+    }
     if (step === 0 && f.policy) set({ mobile: f.mobile || f.policy.mobile, email: f.email || f.policy.email });
     const n = Math.min(step + 1, STEPS.length - 1);
     setStep(n);
@@ -304,8 +330,13 @@ export default function ODIntimation() {
       setStep(i);
     }
   }
+  // Leaving mid-way loses the typed details – confirm first
+  function exitIntimation() {
+    const started = f.policy || f.noPolicy || f.search.trim();
+    if (!started || window.confirm("Leave this intimation? The details entered will be lost.")) navigate("/od/worklist");
+  }
   function submit() {
-    const e = validate(4, f);
+    const e = validate(STEPS.length - 1, f);
     setErrors(e);
     if (Object.keys(e).length) return;
     setResult(submitIntimation(f));
@@ -444,58 +475,46 @@ export default function ODIntimation() {
   // After the user tries to move on, errors re-check live as fields are corrected
   const err = Object.keys(errors).length ? validate(step, f) : {};
   const willBeNbnr = issues.some((i) => i.nbnr);
+  const show = (sec) => STEP_SECTIONS[step].includes(sec);
 
   return (
-    <ODShell active="intimation" title="Claim Intimation" subtitle="Motor Own Damage · FNOL – intimation and registration in one step" onNavigateMissing={notBuilt}>
+    <ODShell
+      active="intimation"
+      title="Claim Intimation"
+      subtitle="Motor Own Damage · FNOL – intimation and registration in one step"
+      onNavigateMissing={notBuilt}
+      claimNav={{
+        headLabel: "New intimation",
+        claimNo: f.policy?.regNo || (f.noPolicy && f.manualRegNo) || "Vehicle not selected",
+        stepsTitle: "Intimation steps",
+        backLabel: "Exit to My Work Queue",
+        onBack: exitIntimation,
+        steps: STEPS.map((label, i) => {
+          const done = i < maxStep && i !== step;
+          return {
+            label,
+            state: i === step ? "active" : done ? "done" : "todo",
+            status: i === step ? "In progress" : done ? "Completed" : "Pending",
+            onClick: () => goTo(i),
+            disabled: i > maxStep || i === step,
+          };
+        }),
+      }}
+    >
       <div className="flex flex-col gap-2">
-        {/* ---------- Stepper ---------- */}
-        <Card>
-          <ol className="flex items-center overflow-x-auto px-4 py-2.5" aria-label="Intimation steps">
-            {STEPS.map((label, i) => {
-              const done = i < maxStep && i !== step; // steps before the furthest one reached
-              const cur = i === step;
-              const reachable = i <= maxStep;
-              return (
-                <li key={label} className="flex flex-1 items-center last:flex-none" aria-current={cur ? "step" : undefined}>
-                  <button
-                    type="button"
-                    onClick={() => goTo(i)}
-                    disabled={!reachable}
-                    className="flex min-w-max items-center gap-2.5 rounded-md text-left disabled:cursor-default"
-                  >
-                    <span
-                      className={`grid h-8 w-8 flex-none place-items-center rounded-full text-[12.5px] font-semibold ${
-                        done && !cur
-                          ? "bg-teal-700 text-white"
-                          : cur
-                          ? "bg-teal-700 text-white ring-4 ring-teal-100"
-                          : "border-2 border-slate-200 bg-white text-slate-400"
-                      }`}
-                    >
-                      {done && !cur ? <Check className="h-4 w-4" aria-hidden="true" /> : i + 1}
-                    </span>
-                    <span className="leading-tight">
-                      <span className={`block text-[13px] font-semibold ${cur ? "text-teal-800" : done ? "text-slate-900" : "text-slate-400"}`}>{label}</span>
-                      <span className={`block text-[11.5px] ${cur || done ? "text-teal-700" : "text-slate-400"}`}>
-                        {cur ? "In Progress" : done ? "Completed" : "Pending"}
-                      </span>
-                    </span>
-                  </button>
-                  {i < STEPS.length - 1 && (
-                    <span className={`mx-3 h-0.5 min-w-6 flex-1 rounded ${i < step ? "bg-teal-600" : "bg-slate-200"}`} aria-hidden="true" />
-                  )}
-                </li>
-              );
-            })}
-          </ol>
-        </Card>
-
         <div className="grid grid-cols-[minmax(0,1fr)] items-start gap-2 lg:grid-cols-[minmax(0,1fr)_290px]">
           {/* ---------- Step body ---------- */}
           <Card>
+            <div className="flex items-center justify-between gap-2 border-b border-slate-100 px-3 py-2">
+              <p className="text-[14px] font-semibold text-slate-900">{STEPS[step]}</p>
+              <span className="text-[11.5px] font-medium text-slate-500">
+                Step {step + 1} of {STEPS.length}
+              </span>
+            </div>
             <div className="flex flex-col gap-3 p-3">
-              {/* ===== Step 1: Policy & Vehicle ===== */}
-              {step === 0 && (
+              {/* ===== Step 1 · Policy Information – A. Policy & vehicle ===== */}
+              {show(0) && <SectionHead n="A" title="Policy & vehicle details" />}
+              {show(0) && (
                 <>
                   <form onSubmit={doSearch} className="flex flex-col gap-1">
                     <span className="text-[12px] font-medium text-slate-700">
@@ -516,7 +535,7 @@ export default function ODIntimation() {
                         Search
                       </button>
                     </div>
-                    {err.policy && <span className="text-[11.5px] text-red-700">{err.policy}</span>}
+                    {err.policy && <span data-field-error className="text-[11.5px] text-red-700">{err.policy}</span>}
                     <span className="text-[11px] text-slate-500">
                       Full or partial value works – e.g. <b>TN 09 DX 4410</b>, <b>4410</b>, <b>00098765</b>, <b>Arun</b>, <b>9876543210</b>
                     </span>
@@ -658,8 +677,9 @@ export default function ODIntimation() {
                 </>
               )}
 
-              {/* ===== Step 2: Customer ===== */}
-              {step === 1 && (
+              {/* ===== Step 1 · Policy Information – B. Customer (shown once a policy is chosen) ===== */}
+              {show(1) && (f.policy || f.noPolicy) && <SectionHead n="B" title="Customer details" divider />}
+              {show(1) && (f.policy || f.noPolicy) && (
                 <>
                   <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
                     <Field label="Insured name">
@@ -708,8 +728,9 @@ export default function ODIntimation() {
                 </>
               )}
 
-              {/* ===== Step 3: Incident (incl. driver) ===== */}
-              {step === 2 && (
+              {/* ===== Step 2 · Incident Details – A. Incident (incl. driver) ===== */}
+              {show(2) && <SectionHead n="A" title="Incident details" />}
+              {show(2) && (
                 <>
                   <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
                     <Field label="Date of loss" required error={err.lossDate}>
@@ -860,8 +881,9 @@ export default function ODIntimation() {
                 </>
               )}
 
-              {/* ===== Step 4: Additional ===== */}
-              {step === 3 && (
+              {/* ===== Step 2 · Incident Details – B. Additional information ===== */}
+              {show(3) && <SectionHead n="B" title="Additional information" divider />}
+              {show(3) && (
                 <>
                   <Field label="Where is the vehicle now?">
                     <Segmented
@@ -949,8 +971,8 @@ export default function ODIntimation() {
                 </>
               )}
 
-              {/* ===== Step 5: Review ===== */}
-              {step === 4 && (
+              {/* ===== Step 3: Review ===== */}
+              {show(4) && (
                 <>
                   {[
                     {
@@ -966,7 +988,7 @@ export default function ODIntimation() {
                     },
                     {
                       title: "Customer",
-                      to: 1,
+                      to: 0,
                       rows: [
                         ["Contact", `${f.mobile}${f.email ? ` · ${f.email}` : ""}`],
                         ["Intimated via", `${f.channel} · by ${f.intimatedBy}${f.callerName ? ` (${f.callerName})` : ""}`],
@@ -974,7 +996,7 @@ export default function ODIntimation() {
                     },
                     {
                       title: "Incident",
-                      to: 2,
+                      to: 1,
                       rows: [
                         ["Loss", `${dt(f.lossDate)} · ${f.lossTime}`],
                         ["Cause", LOSS_CAUSES.find((c) => c.key === f.cause)?.label],
@@ -988,8 +1010,8 @@ export default function ODIntimation() {
                       ].filter(Boolean),
                     },
                     {
-                      title: "Additional",
-                      to: 3,
+                      title: "Additional information",
+                      to: 1,
                       rows: [
                         ["Vehicle location", f.cause === "theft" ? "Not traced" : f.vehicleLocation === "garage" ? (f.garage === "other" ? f.otherGarage : f.garage) : f.vehicleLocation === "spot" ? "At accident spot" : "At residence"],
                         f.cause !== "theft" && ["Survey", f.surveyType === "spot" ? "Spot survey" : "Garage survey"],
@@ -1022,7 +1044,7 @@ export default function ODIntimation() {
                     <span>
                       Details were recorded as given by the {f.intimatedBy.toLowerCase()}, read back and confirmed. The caller was informed about the claim
                       process and documents required.
-                      {err.declaration && <span className="block text-red-700">{err.declaration}</span>}
+                      {err.declaration && <span data-field-error className="block text-red-700">{err.declaration}</span>}
                     </span>
                   </label>
                 </>

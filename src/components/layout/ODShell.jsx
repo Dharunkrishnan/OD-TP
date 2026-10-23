@@ -13,6 +13,11 @@
 //   claimNav  – optional. When a claim is open, the sidebar shows the claim view instead
 //               of the main menu: { claimNo, backTo, backLabel, steps: [{ label, status, state }] }
 //               state = "done" | "active" | "hold" | "todo"
+//               Optional extras (used by Claim Intimation):
+//                 headLabel  – small caption above claimNo (default "Claim")
+//                 stepsTitle – caption above the stepper (default "Claim lifecycle")
+//                 onBack     – runs instead of navigating to backTo (e.g. to confirm leaving)
+//                 step.onClick / step.disabled – makes a step clickable
 
 import { useState } from "react";
 import { useNavigate } from "react-router-dom";
@@ -168,7 +173,8 @@ export default function ODShell({ active = "dashboard", title, subtitle, childre
               type="button"
               onClick={() => {
                 setMobileNav(false);
-                navigate(claimNav.backTo || "/od/worklist");
+                if (claimNav.onBack) claimNav.onBack();
+                else navigate(claimNav.backTo || "/od/worklist");
               }}
               aria-label={c ? claimNav.backLabel || "Back to My Work Queue" : undefined}
               className={`group relative flex h-10 w-full items-center gap-3 rounded-lg px-3 text-left text-sm text-slate-300 hover:bg-white/5 hover:text-white ${
@@ -181,14 +187,14 @@ export default function ODShell({ active = "dashboard", title, subtitle, childre
             </button>
 
             <div className={`mx-1 mt-2 rounded-lg bg-white/5 px-3 py-2 ${hideWhenCollapsed}`}>
-              <p className="text-[10.5px] font-semibold uppercase tracking-wider text-slate-400">Claim</p>
+              <p className="text-[10.5px] font-semibold uppercase tracking-wider text-slate-400">{claimNav.headLabel || "Claim"}</p>
               <p className="truncate font-mono text-[13px] font-semibold text-white">{claimNav.claimNo}</p>
             </div>
 
             <p className={`mb-1 mt-4 px-3 text-[10.5px] font-semibold uppercase tracking-wider text-slate-400 ${hideWhenCollapsed}`}>
-              Claim lifecycle
+              {claimNav.stepsTitle || "Claim lifecycle"}
             </p>
-            <ol className={`flex flex-col ${c ? "lg:mt-3 lg:items-center" : ""}`} aria-label="Claim lifecycle">
+            <ol className={`flex flex-col ${c ? "lg:mt-3 lg:items-center" : ""}`} aria-label={claimNav.stepsTitle || "Claim lifecycle"}>
               {claimNav.steps.map((st, i) => {
                 const last = i === claimNav.steps.length - 1;
                 const circle =
@@ -207,12 +213,30 @@ export default function ODShell({ active = "dashboard", title, subtitle, childre
                     : st.state === "active"
                     ? "text-teal-200"
                     : "text-slate-500";
+                const clickable = !!st.onClick && !st.disabled;
+                const Row = st.onClick ? "button" : "div";
                 return (
                   <li
                     key={st.label}
                     aria-current={st.state === "active" || st.state === "hold" ? "step" : undefined}
-                    className={`group relative flex gap-3 px-3 ${c ? "lg:px-0" : ""}`}
+                    className="group relative"
                   >
+                    <Row
+                      {...(st.onClick
+                        ? {
+                            type: "button",
+                            disabled: !clickable,
+                            onClick: () => {
+                              setMobileNav(false);
+                              st.onClick();
+                            },
+                            "aria-label": c ? `${st.label}: ${st.status}` : undefined,
+                          }
+                        : {})}
+                      className={`flex w-full gap-3 rounded-md px-3 text-left ${c ? "lg:justify-center lg:px-0" : ""} ${
+                        clickable ? "cursor-pointer hover:bg-white/5" : "cursor-default"
+                      }`}
+                    >
                     <span className="relative flex flex-col items-center">
                       <span
                         className={`relative z-10 grid h-7 w-7 flex-none place-items-center rounded-full text-[12px] font-bold ${circle}`}
@@ -237,6 +261,7 @@ export default function ODShell({ active = "dashboard", title, subtitle, childre
                       </span>
                       <span className={`block text-[11.5px] ${statusCls}`}>{st.status}</span>
                     </span>
+                    </Row>
                     <Tip show={c}>
                       {st.label} · {st.status}
                     </Tip>
