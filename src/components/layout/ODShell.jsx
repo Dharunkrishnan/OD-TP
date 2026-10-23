@@ -19,14 +19,16 @@
 //                 onBack     – runs instead of navigating to backTo (e.g. to confirm leaving)
 //                 step.onClick / step.disabled – makes a step clickable
 
-import { useState } from "react";
+import { useCallback, useState } from "react";
 import { useNavigate } from "react-router-dom";
+import SearchPopover from "../SearchPopover";
+import { claimSlug } from "../../data/odClaimDetail";
+import { searchClaims, dueTodayClaims, searchPolicies, slaTone } from "../../data/searchIndex";
 import {
   ShieldCheck,
   LayoutDashboard,
   ListChecks,
   FilePlus2,
-  Search,
   Inbox,
   CalendarClock,
   FileStack,
@@ -40,6 +42,7 @@ import {
   PanelLeftOpen,
   ArrowLeft,
   Check,
+  FileText,
 } from "lucide-react";
 import { useAuth, getRole, isDualAccess } from "../../auth";
 
@@ -94,6 +97,46 @@ function initials(name = "") {
 
 export default function ODShell({ active = "dashboard", title, subtitle, children, onNavigateMissing, claimNav }) {
   const navigate = useNavigate();
+
+  // Suggestions for the header search panel
+  const globalSuggest = useCallback(
+    (q) => {
+      const claimItem = (r) => ({
+        id: r.claimNo,
+        icon: FileText,
+        title: `${r.claimNo} · ${r.regNo}`,
+        subtitle: `${r.insured} · ${r.stage}`,
+        meta: r.sla.label,
+        metaTone: slaTone(r.sla.status),
+        onSelect: () => navigate(`/od/claims/${claimSlug(r.claimNo)}`),
+      });
+      if (!q) {
+        return [
+          { group: "Due today", items: dueTodayClaims().map(claimItem) },
+          {
+            group: "Quick actions",
+            items: [{ id: "new-fnol", icon: FilePlus2, title: "New claim intimation", subtitle: "Register a new Motor OD claim", onSelect: () => navigate("/od/intimation") }],
+          },
+        ];
+      }
+      return [
+        { group: "Claims", items: searchClaims(q).map(claimItem) },
+        {
+          group: "Policies – start an intimation",
+          items: searchPolicies(q).map((p) => ({
+            id: p.policyNo,
+            icon: ShieldCheck,
+            title: `${p.regNo} · ${p.insured}`,
+            subtitle: `${p.policyNo} · ${p.vehicle}`,
+            meta: p.status,
+            metaTone: p.status === "In force" ? "teal" : "red",
+            onSelect: () => navigate(`/od/intimation?q=${encodeURIComponent(p.regNo)}`),
+          })),
+        },
+      ];
+    },
+    [navigate]
+  );
   const { user, logout } = useAuth();
   const [menuOpen, setMenuOpen] = useState(false);
   const [mobileNav, setMobileNav] = useState(false);
@@ -375,32 +418,18 @@ export default function ODShell({ active = "dashboard", title, subtitle, childre
             <Menu className="h-5 w-5" />
           </button>
 
-          <div className="min-w-0 flex-1 md:flex-none">
+          <div className="min-w-0 flex-1">
             <h1 className="truncate text-[15px] font-semibold leading-tight text-[#0B1F3A]">{title}</h1>
             {subtitle && <p className="truncate text-[11px] text-slate-500">{subtitle}</p>}
           </div>
 
-          {/* Global claim search */}
-          <form
-            role="search"
-            onSubmit={(e) => e.preventDefault()}
-            className="mx-auto hidden w-full max-w-sm md:block"
-          >
-            <label htmlFor="global-search" className="sr-only">
-              Search claims
-            </label>
-            <div className="relative">
-              <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" aria-hidden="true" />
-              <input
-                id="global-search"
-                type="search"
-                placeholder="Search claim no, policy no or vehicle reg no"
-                className="h-9 w-full rounded-lg border border-slate-200 bg-slate-50 pl-9 pr-3 text-sm placeholder:text-slate-400 focus:border-teal-700 focus:bg-white focus:outline-none focus:ring-4 focus:ring-teal-700/15"
-              />
-            </div>
-          </form>
-
           <div className="ml-auto flex items-center gap-2">
+            {/* Global search – icon only; opens a panel with suggestions */}
+            <SearchPopover
+              label="Search claims and policies"
+              placeholder="Claim no, vehicle no, policy no or insured name"
+              suggest={globalSuggest}
+            />
             {isDualAccess(user) && (
               <span className="hidden rounded-md bg-teal-50 px-2 py-1 text-xs font-semibold text-teal-800 sm:inline">
                 OD workspace

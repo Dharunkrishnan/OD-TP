@@ -23,8 +23,11 @@ import {
   X,
   FilterX,
   Inbox,
+  FileText,
 } from "lucide-react";
 import ODShell from "../../components/layout/ODShell";
+import SearchPopover from "../../components/SearchPopover";
+import { searchClaims, dueTodayClaims, slaTone } from "../../data/searchIndex";
 import { WORK_QUEUE, DIARY, ALERTS } from "../../data/odHandlerMock";
 import { claimSlug } from "../../data/odClaimDetail";
 
@@ -203,6 +206,41 @@ export default function ODWorkQueue() {
   const rows = filtered.slice((curPage - 1) * PAGE_SIZE, curPage * PAGE_SIZE);
   const anyFilter = q || stage || pending || loss;
 
+  function applySearch(text) {
+    setQ(text);
+    setPage(1);
+  }
+
+  // Suggestions for the queue search panel
+  function queueSuggest(text) {
+    const claimItem = (r) => ({
+      id: r.claimNo,
+      icon: FileText,
+      title: `${r.claimNo} · ${r.regNo}`,
+      subtitle: `${r.insured} · ${r.stage}`,
+      meta: r.sla.label,
+      metaTone: slaTone(r.sla.status),
+      onSelect: () => openClaim(r.claimNo),
+    });
+    if (!text) return [{ group: "Due today", items: dueTodayClaims().map(claimItem) }];
+    const hits = searchClaims(text, 8);
+    return [
+      {
+        group: "Filter",
+        items: [
+          {
+            id: "filter",
+            icon: Search,
+            title: `Show all claims matching “${text}”`,
+            subtitle: `${hits.length ? `${hits.length}${hits.length === 8 ? "+" : ""} ${hits.length === 1 ? "match" : "matches"}` : "No match"} in your queue`,
+            onSelect: () => applySearch(text),
+          },
+        ],
+      },
+      { group: "Open a claim", items: hits.map(claimItem) },
+    ];
+  }
+
   function clearFilters() {
     setQ("");
     setStage("");
@@ -263,23 +301,30 @@ export default function ODWorkQueue() {
           </div>
 
           {/* Filters */}
-          <div className="grid grid-cols-2 items-center gap-1.5 border-b border-slate-100 px-2.5 py-1.5 sm:grid-cols-3 lg:grid-cols-[minmax(170px,1.5fr)_repeat(4,minmax(0,1fr))_auto]">
-            <label className="col-span-2 flex min-w-0 flex-col sm:col-span-3 lg:col-span-1">
-              <span className="sr-only">Search</span>
-              <span className="relative">
-                <Search className="pointer-events-none absolute left-2 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-slate-400" aria-hidden="true" />
-                <input
-                  type="search"
-                  value={q}
-                  onChange={(e) => {
-                    setQ(e.target.value);
-                    setPage(1);
-                  }}
-                  placeholder="Claim / reg no / insured"
-                  className="h-7 w-full rounded border border-slate-300 bg-white pl-7 pr-2 text-[12px] placeholder:text-slate-400 focus:border-teal-700 focus:outline-none focus:ring-4 focus:ring-teal-700/15"
-                />
-              </span>
-            </label>
+          <div className="grid grid-cols-2 items-center gap-1.5 border-b border-slate-100 px-2.5 py-1.5 sm:grid-cols-3 lg:grid-cols-[minmax(90px,auto)_repeat(4,minmax(0,1fr))_auto]">
+            {/* Search – icon only; opens suggestions */}
+            <div className="col-span-2 flex min-w-0 items-center gap-1.5 sm:col-span-3 lg:col-span-1">
+              <SearchPopover
+                size="sm"
+                align="left"
+                label="Search my queue"
+                placeholder="Claim no, vehicle no or insured name"
+                suggest={queueSuggest}
+                onSubmit={applySearch}
+                submitLabel="to filter the queue"
+                active={q}
+              />
+              {q ? (
+                <span className="flex h-7 min-w-0 items-center gap-1 rounded bg-teal-50 pl-2 pr-1 text-[12px] font-medium text-teal-800">
+                  <span className="truncate">“{q}”</span>
+                  <button type="button" onClick={() => applySearch("")} aria-label="Remove search filter" className="grid h-5 w-5 flex-none place-items-center rounded hover:bg-teal-100">
+                    <X className="h-3 w-3" aria-hidden="true" />
+                  </button>
+                </span>
+              ) : (
+                <span className="hidden text-[11.5px] text-slate-400 xl:inline">Search</span>
+              )}
+            </div>
             <FilterSelect label="Stage" value={stage} onChange={(v) => { setStage(v); setPage(1); }} options={STAGES} allLabel="All stages" />
             <FilterSelect label="Pending with" value={pending} onChange={(v) => { setPending(v); setPage(1); }} options={PENDING} allLabel="Anyone" />
             <FilterSelect label="Loss type" value={loss} onChange={(v) => { setLoss(v); setPage(1); }} options={LOSSES} allLabel="All types" />

@@ -10,7 +10,7 @@
 // /no-access      – logged-in user with no OD/TP access assigned
 // *               – anything else → user's home (or login)
 
-import { BrowserRouter, Routes, Route, Navigate, Link } from "react-router-dom";
+import { BrowserRouter, Routes, Route, Navigate, Link, useLocation } from "react-router-dom";
 import { ShieldAlert } from "lucide-react";
 import { AuthProvider, useAuth, hasAccess, resolveDashboardPath } from "./auth";
 import Login from "./pages/Login";
@@ -98,6 +98,12 @@ function NoAccess() {
   );
 }
 
+// New ?q= from the header search restarts the intimation form with that search
+function IntimationRoute() {
+  const { search } = useLocation();
+  return <ODIntimation key={search} />;
+}
+
 function HomeRedirect() {
   const { user } = useAuth();
   return <Navigate to={user ? resolveDashboardPath(user) : "/login"} replace />;
@@ -146,7 +152,7 @@ export default function App() {
             element={
               <RequireAuth>
                 <RequirePermission permission="OD">
-                  <ODIntimation />
+                  <IntimationRoute />
                 </RequirePermission>
               </RequireAuth>
             }

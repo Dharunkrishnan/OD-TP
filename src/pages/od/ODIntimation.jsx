@@ -6,7 +6,7 @@
 // Catalogue refs: FNOL 1–12, Claim Registration 13–17, Reserve 18, Policy & Coverage 22–29.
 
 import { useEffect, useMemo, useState } from "react";
-import { useNavigate } from "react-router-dom";
+import { useNavigate, useSearchParams } from "react-router-dom";
 import {
   Search,
   CheckCircle2,
@@ -287,11 +287,18 @@ const driverNeeded = (f) => f.beingDriven === "yes" && !["theft", "flood", "part
 /* ------------------------------------------------------------------ */
 export default function ODIntimation() {
   const navigate = useNavigate();
-  const [f, setF] = useState(EMPTY);
+  // Opened from the header search with ?q=<vehicle no> → search is pre-run
+  const [params] = useSearchParams();
+  const initQ = params.get("q") || "";
+  const initHits = initQ ? searchPolicy(initQ) : null;
+  const initPolicy = initHits?.length === 1 ? initHits[0].policy : null;
+  const [f, setF] = useState(() =>
+    initQ ? { ...EMPTY, search: initQ, policy: initPolicy, mobile: initPolicy?.mobile || "", email: initPolicy?.email || "" } : EMPTY
+  );
   const [step, setStep] = useState(0);
   const [maxStep, setMaxStep] = useState(0);
   const [errors, setErrors] = useState({});
-  const [results, setResults] = useState(null); // null = not searched
+  const [results, setResults] = useState(initHits); // null = not searched
   const [result, setResult] = useState(null); // outcome after submit
   const [toast, setToast] = useState("");
 
