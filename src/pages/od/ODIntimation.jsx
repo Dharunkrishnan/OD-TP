@@ -25,6 +25,7 @@ import {
   Copy,
   CloudRain,
   Wrench,
+  Lock,
 } from "lucide-react";
 import ODShell from "../../components/layout/ODShell";
 import LocationPicker from "../../components/LocationPicker";
@@ -85,6 +86,7 @@ const EMPTY = {
   mobile: "",
   altMobile: "",
   email: "",
+  altEmail: "",
   language: "Tamil",
   intimatedBy: "Insured",
   channel: "Call centre",
@@ -118,6 +120,16 @@ function Card({ title, action, children, className = "" }) {
       )}
       {children}
     </section>
+  );
+}
+
+// Read-only value pulled from the policy (Policy Administration System)
+function LockedInput({ value }) {
+  return (
+    <span className="relative">
+      <input value={value} readOnly tabIndex={-1} aria-readonly="true" className={`${inputCls()} cursor-not-allowed bg-slate-50 pr-8 text-slate-600`} />
+      <Lock className="pointer-events-none absolute right-2.5 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-slate-400" aria-hidden="true" />
+    </span>
   );
 }
 
@@ -210,6 +222,8 @@ function Check3({ ok, label, note }) {
 /* ------------------------------------------------------------------ */
 /* Validation per step                                                 */
 /* ------------------------------------------------------------------ */
+const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+
 // Validate every section shown on a wizard step
 function validate(step, f) {
   return Object.assign({}, ...STEP_SECTIONS[step].map((sec) => validateSection(sec, f)));
@@ -224,7 +238,10 @@ function validateSection(step, f) {
   if (step === 1) {
     if (!/^[6-9]\d{9}$/.test(f.mobile)) e.mobile = "Enter a valid 10-digit mobile number.";
     if (f.altMobile && !/^[6-9]\d{9}$/.test(f.altMobile)) e.altMobile = "Enter a valid 10-digit number or leave blank.";
-    if (f.email && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(f.email)) e.email = "Enter a valid email or leave blank.";
+    else if (f.altMobile && f.altMobile === f.mobile) e.altMobile = "Same as the registered mobile – enter a different number or leave blank.";
+    if (f.email && !EMAIL_RE.test(f.email)) e.email = "Enter a valid email or leave blank.";
+    if (f.altEmail && !EMAIL_RE.test(f.altEmail)) e.altEmail = "Enter a valid email or leave blank.";
+    else if (f.altEmail && f.altEmail.toLowerCase() === (f.email || "").toLowerCase()) e.altEmail = "Same as the registered email – enter a different one or leave blank.";
     if (f.intimatedBy !== "Insured" && !f.callerName.trim()) e.callerName = "Enter the name of the person intimating.";
   }
   if (step === 2) {
@@ -303,7 +320,8 @@ export default function ODIntimation() {
   }
 
   function choosePolicy(p) {
-    set({ policy: p, noPolicy: false, mobile: f.mobile || p.mobile, email: f.email || p.email });
+    // Registered contact always comes from the policy (read-only); alternates are kept
+    set({ policy: p, noPolicy: false, mobile: p.mobile || "", email: p.email || "" });
     setErrors({});
   }
 
@@ -315,7 +333,6 @@ export default function ODIntimation() {
       window.setTimeout(() => document.querySelector("[data-field-error]")?.scrollIntoView({ behavior: "smooth", block: "center" }), 0);
       return;
     }
-    if (step === 0 && f.policy) set({ mobile: f.mobile || f.policy.mobile, email: f.email || f.policy.email });
     const n = Math.min(step + 1, STEPS.length - 1);
     setStep(n);
     setMaxStep((m) => Math.max(m, n));
@@ -551,7 +568,7 @@ export default function ODIntimation() {
                       <div className="mt-1.5">
                         <button
                           type="button"
-                          onClick={() => set({ noPolicy: true, policy: null, manualRegNo: f.search.toUpperCase() })}
+                          onClick={() => set({ noPolicy: true, policy: null, mobile: "", email: "", manualRegNo: f.search.toUpperCase() })}
                           className="rounded border border-amber-400 bg-white px-2 py-1 text-[12px] font-semibold text-amber-900 hover:bg-amber-100"
                         >
                           Continue without policy (NBNR)
@@ -683,16 +700,33 @@ export default function ODIntimation() {
                 <>
                   <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
                     <Field label="Insured name">
-                      <input value={f.policy?.insured || "(from policy – not found)"} disabled className={inputCls()} />
+                      <LockedInput value={f.policy?.insured || "(policy not found)"} />
                     </Field>
-                    <Field label="Contact mobile" required error={err.mobile} hint="Claim acknowledgement is sent by SMS">
-                      <input inputMode="numeric" maxLength={10} value={f.mobile} onChange={(e) => set({ mobile: e.target.value.replace(/\D/g, "") })} className={inputCls(err.mobile)} placeholder="10-digit mobile" />
+                    {f.policy ? (
+                      <>
+                        <Field label="Registered mobile" hint="From policy – changed only by endorsement">
+                          <LockedInput value={f.mobile || "Not on policy"} />
+                        </Field>
+                        <Field label="Registered email" hint="From policy – changed only by endorsement">
+                          <LockedInput value={f.email || "Not on policy"} />
+                        </Field>
+                      </>
+                    ) : (
+                      <>
+                        {/* Policy not found – nothing to pull, so the handler records the contact */}
+                        <Field label="Contact mobile" required error={err.mobile} hint="Claim acknowledgement is sent by SMS">
+                          <input inputMode="numeric" maxLength={10} value={f.mobile} onChange={(e) => set({ mobile: e.target.value.replace(/\D/g, "") })} className={inputCls(err.mobile)} placeholder="10-digit mobile" />
+                        </Field>
+                        <Field label="Contact email" error={err.email}>
+                          <input type="email" value={f.email} onChange={(e) => set({ email: e.target.value.trim() })} className={inputCls(err.email)} />
+                        </Field>
+                      </>
+                    )}
+                    <Field label="Alternate contact number" error={err.altMobile} hint="Optional – e.g. family member or driver">
+                      <input inputMode="numeric" maxLength={10} value={f.altMobile} onChange={(e) => set({ altMobile: e.target.value.replace(/\D/g, "") })} className={inputCls(err.altMobile)} placeholder="10-digit mobile" />
                     </Field>
-                    <Field label="Alternate mobile" error={err.altMobile}>
-                      <input inputMode="numeric" maxLength={10} value={f.altMobile} onChange={(e) => set({ altMobile: e.target.value.replace(/\D/g, "") })} className={inputCls(err.altMobile)} />
-                    </Field>
-                    <Field label="Email" error={err.email}>
-                      <input type="email" value={f.email} onChange={(e) => set({ email: e.target.value })} className={inputCls(err.email)} />
+                    <Field label="Alternate email" error={err.altEmail} hint="Optional">
+                      <input type="email" value={f.altEmail} onChange={(e) => set({ altEmail: e.target.value.trim() })} className={inputCls(err.altEmail)} placeholder="name@example.com" />
                     </Field>
                     <Field label="Preferred language">
                       <select value={f.language} onChange={(e) => set({ language: e.target.value })} className={inputCls()}>
@@ -990,9 +1024,10 @@ export default function ODIntimation() {
                       title: "Customer",
                       to: 0,
                       rows: [
-                        ["Contact", `${f.mobile}${f.email ? ` · ${f.email}` : ""}`],
+                        ["Registered contact", `${f.mobile}${f.email ? ` · ${f.email}` : ""}`],
+                        (f.altMobile || f.altEmail) && ["Alternate contact", [f.altMobile, f.altEmail].filter(Boolean).join(" · ")],
                         ["Intimated via", `${f.channel} · by ${f.intimatedBy}${f.callerName ? ` (${f.callerName})` : ""}`],
-                      ],
+                      ].filter(Boolean),
                     },
                     {
                       title: "Incident",

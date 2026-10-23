@@ -57,7 +57,7 @@ const HANDLER_MENU = [
 const BUILT_ROUTES = ["/od/dashboard", "/od/worklist", "/od/intimation"];
 
 const COLLAPSE_KEY = "smartclaims-sidebar-collapsed";
-const CLAIM_COLLAPSE_KEY = "smartclaims-claimnav-collapsed"; // claim view opens expanded by default
+const CLAIM_COLLAPSE_KEY = "smartclaims-claimnav-collapsed-v2"; // claim / intimation view opens minimised (icons only) by default
 
 // Default = collapsed (icons only, name on hover). The user can expand it;
 // their choice is remembered in this browser.
@@ -100,9 +100,9 @@ export default function ODShell({ active = "dashboard", title, subtitle, childre
   const [menuCollapsed, setMenuCollapsed] = useState(readCollapsed);
   const [claimCollapsed, setClaimCollapsed] = useState(() => {
     try {
-      return localStorage.getItem(CLAIM_COLLAPSE_KEY) === "1";
+      return localStorage.getItem(CLAIM_COLLAPSE_KEY) !== "0";
     } catch {
-      return false;
+      return true;
     }
   });
   // Main menu and claim view remember their own collapsed / expanded choice
