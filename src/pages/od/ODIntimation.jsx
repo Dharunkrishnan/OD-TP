@@ -33,6 +33,7 @@ import ODShell from "../../components/layout/ODShell";
 import { formatINR } from "../../auth";
 import LocationPicker from "../../components/LocationPicker";
 import { claimSlug } from "../../data/odClaimDetail";
+import { WORK_QUEUE, TAT_STAGES } from "../../data/odHandlerMock";
 import {
   TODAY_ISO,
   searchPolicy,
@@ -126,6 +127,15 @@ function Card({ title, action, children, className = "" }) {
       {children}
     </section>
   );
+}
+
+// Label for the demo quick-pick chips – tells the tester what each vehicle will show
+function scenarioTag(p) {
+  if (p.status !== "In force") return { label: "Expired", cls: "bg-red-50 text-red-700" };
+  if (p.cover === "TP") return { label: "TP only", cls: "bg-red-50 text-red-700" };
+  if (!p.premiumRealised) return { label: "Premium pending", cls: "bg-amber-50 text-amber-800" };
+  if (WORK_QUEUE.some((r) => r.regNo === p.regNo)) return { label: "Open claim", cls: "bg-amber-50 text-amber-800" };
+  return { label: "Valid", cls: "bg-emerald-50 text-emerald-800" };
 }
 
 // Read-only value pulled from the policy (Policy Administration System)
@@ -323,6 +333,21 @@ export default function ODIntimation() {
   const brand = (f.policy?.vehicle || f.manualVehicle || "").split(" ")[0];
   const recommended = NETWORK_GARAGES.filter((g) => g.brands.includes(brand));
   const history = useMemo(() => claimHistory(f.policy?.regNo || (f.noPolicy ? f.manualRegNo : "")), [f.policy, f.noPolicy, f.manualRegNo]);
+  const recentIntimations = useMemo(() => [...WORK_QUEUE].sort((a, b) => (a.regDate < b.regDate ? 1 : -1)).slice(0, 8), []);
+  // "Last 7 days" strip on the empty step
+  const week = useMemo(() => {
+    const rows = WORK_QUEUE.filter((r) => daysBetween(r.regDate, TODAY_ISO) <= 7);
+    const nbnr = rows.filter((r) => r.stage === "NBNR").length;
+    return {
+      total: rows.length,
+      registered: rows.length - nbnr,
+      nbnr,
+      late: rows.filter((r) => daysBetween(r.lossDate, r.regDate) > LATE_INTIMATION_DAYS).length,
+      byCause: Object.entries(rows.reduce((m, r) => ({ ...m, [r.lossType]: (m[r.lossType] || 0) + 1 }), {})).sort((a, b) => b[1] - a[1]),
+      tat: TAT_STAGES[0],
+    };
+  }, []);
+  const nbnrOpen = useMemo(() => WORK_QUEUE.filter((r) => r.stage === "NBNR"), []);
   const policyDaysLeft = f.policy ? daysBetween(TODAY_ISO, f.policy.periodTo) : 0;
   const docs = documentsFor(f.cause, {
     driverNeeded: driverNeeded(f),
@@ -331,9 +356,10 @@ export default function ODIntimation() {
     garage: f.vehicleLocation === "garage",
   });
 
-  function doSearch(e) {
+  function doSearch(e, term = f.search) {
     e?.preventDefault();
-    const r = searchPolicy(f.search);
+    if (term !== f.search) set({ search: term });
+    const r = searchPolicy(term);
     setResults(r);
     if (r.length === 1) choosePolicy(r[0].policy);
     else set({ policy: null, noPolicy: false });
@@ -540,15 +566,15 @@ export default function ODIntimation() {
     >
       <div className="flex flex-col gap-2">
         <div className="grid grid-cols-[minmax(0,1fr)] items-start gap-2 lg:grid-cols-[minmax(0,1fr)_290px]">
-          {/* ---------- Step body ---------- */}
-          <Card>
+          {/* ---------- Step body (fills the screen height; Back / Next stay at the bottom) ---------- */}
+          <Card className="flex flex-col lg:min-h-[calc(100vh-4.25rem)]">
             <div className="flex items-center justify-between gap-2 border-b border-slate-100 px-3 py-2">
               <p className="text-[14px] font-semibold text-slate-900">{STEPS[step]}</p>
               <span className="text-[11.5px] font-medium text-slate-500">
                 Step {step + 1} of {STEPS.length}
               </span>
             </div>
-            <div className="flex flex-col gap-3 p-3">
+            <div className="flex flex-1 flex-col gap-3 p-3">
               {/* ===== Step 1 · Policy Information – A. Policy & vehicle ===== */}
               {show(0) && <SectionHead n="A" title="Policy & vehicle details" />}
               {show(0) && (
@@ -576,10 +602,133 @@ export default function ODIntimation() {
                     <span className="text-[11px] text-slate-500">
                       Full or partial value works – e.g. <b>TN 09 DX 4410</b>, <b>4410</b>, <b>00098765</b>, <b>Arun</b>, <b>9876543210</b>
                     </span>
-                    <span className="text-[11px] text-slate-400">
-                      Demo vehicles: {DEMO_POLICIES.map((p) => p.regNo).join(" · ")}
-                    </span>
+                    <div className="mt-1 flex flex-wrap items-center gap-1.5">
+                      <span className="text-[11px] font-medium text-slate-500">Quick pick (demo):</span>
+                      {DEMO_POLICIES.map((p) => {
+                        const tag = scenarioTag(p);
+                        return (
+                          <button
+                            key={p.regNo}
+                            type="button"
+                            onClick={() => doSearch(null, p.regNo)}
+                            title={`Search ${p.regNo} – ${tag.label}`}
+                            className={`flex items-center gap-1.5 rounded-full border px-2 py-0.5 text-[11.5px] hover:shadow-sm ${
+                              f.policy?.regNo === p.regNo ? "border-teal-600 bg-teal-50" : "border-slate-200 bg-white hover:border-slate-300"
+                            }`}
+                          >
+                            <span className="font-mono font-semibold text-slate-700">{p.regNo}</span>
+                            <span className={`rounded px-1 text-[10px] font-semibold ${tag.cls}`}>{tag.label}</span>
+                          </button>
+                        );
+                      })}
+                    </div>
                   </form>
+
+                  {/* Before any search: latest work so the page is useful at the start of a call */}
+                  {results === null && !f.policy && !f.noPolicy && (
+                    <>
+                    <div className="border-t border-slate-100 pt-3">
+                      <p className="mb-1.5 text-[11px] font-semibold uppercase tracking-wider text-slate-400">Your intimations · last 7 days</p>
+                      <dl className="grid grid-cols-2 gap-2 sm:grid-cols-3 xl:grid-cols-5">
+                        {[
+                          ["Intimated", week.total, "text-slate-900", "All channels"],
+                          ["Registered", week.registered, "text-emerald-700", `${week.total ? Math.round((week.registered / week.total) * 100) : 0}% straight-through`],
+                          ["NBNR", week.nbnr, "text-amber-700", "Parked with reason"],
+                          ["Late intimations", week.late, week.late ? "text-red-700" : "text-slate-900", `More than ${LATE_INTIMATION_DAYS} days after loss`],
+                          ["Avg time to register", `${week.tat.actual} d`, week.tat.actual <= week.tat.target ? "text-emerald-700" : "text-red-700", `Target ${week.tat.target} d`],
+                        ].map(([k, v, cls, note]) => (
+                          <div key={k} className="rounded-md border border-slate-200 px-3 py-2">
+                            <dt className="text-[11px] font-medium text-slate-500">{k}</dt>
+                            <dd className={`text-[20px] font-semibold leading-tight tabular-nums ${cls}`}>{v}</dd>
+                            <dd className="truncate text-[11px] text-slate-500">{note}</dd>
+                          </div>
+                        ))}
+                      </dl>
+                    </div>
+                    <div className="grid grid-cols-1 items-start gap-3 xl:grid-cols-[minmax(0,3fr)_minmax(0,2fr)]">
+                      <div className="overflow-hidden rounded-md border border-slate-200">
+                        <div className="flex items-center justify-between border-b border-slate-100 bg-slate-50 px-3 py-1.5">
+                          <p className="text-[12.5px] font-semibold text-slate-800">Recent intimations</p>
+                          <button type="button" onClick={() => navigate("/od/worklist")} className="text-[11.5px] font-medium text-teal-700 hover:underline">
+                            My Work Queue
+                          </button>
+                        </div>
+                        <table className="w-full table-fixed text-left text-[12px]">
+                          <thead>
+                            <tr className="text-[10.5px] uppercase tracking-wide text-slate-500">
+                              <th className="w-[42%] px-3 py-1.5 font-semibold">Claim / vehicle</th>
+                              <th className="px-2 py-1.5 font-semibold">Insured</th>
+                              <th className="w-[19%] px-2 py-1.5 font-semibold">Intimated</th>
+                              <th className="w-[19%] px-3 py-1.5 text-right font-semibold">Status</th>
+                            </tr>
+                          </thead>
+                          <tbody className="divide-y divide-slate-100">
+                            {recentIntimations.map((r) => (
+                              <tr key={r.claimNo} onClick={() => navigate(`/od/claims/${claimSlug(r.claimNo)}`)} className="cursor-pointer hover:bg-slate-50">
+                                <td className="px-3 py-1.5">
+                                  <span className="block truncate font-mono text-[11.5px] font-semibold text-teal-800">{r.claimNo}</span>
+                                  <span className="block truncate text-[11px] text-slate-500">{r.regNo}</span>
+                                </td>
+                                <td className="truncate px-2 py-1.5 text-slate-700">{r.insured}</td>
+                                <td className="px-2 py-1.5 tabular-nums text-slate-600">{dt(r.regDate)}</td>
+                                <td className="px-3 py-1.5 text-right">
+                                  <span className={`rounded px-1.5 py-0.5 text-[10.5px] font-semibold ${r.stage === "NBNR" ? "bg-amber-50 text-amber-800" : "bg-emerald-50 text-emerald-800"}`}>
+                                    {r.stage === "NBNR" ? "NBNR" : "Registered"}
+                                  </span>
+                                </td>
+                              </tr>
+                            ))}
+                          </tbody>
+                        </table>
+                      </div>
+
+                      <div className="flex flex-col gap-3">
+                      <div className="overflow-hidden rounded-md border border-amber-200">
+                        <div className="flex items-center justify-between border-b border-amber-100 bg-amber-50 px-3 py-1.5">
+                          <p className="text-[12.5px] font-semibold text-amber-900">NBNR to resolve</p>
+                          <span className="rounded bg-white px-1.5 text-[11px] font-semibold text-amber-800">{nbnrOpen.length}</span>
+                        </div>
+                        <ul className="divide-y divide-slate-100">
+                          {nbnrOpen.map((r) => (
+                            <li key={r.claimNo}>
+                              <button type="button" onClick={() => navigate(`/od/claims/${claimSlug(r.claimNo)}`)} className="flex w-full items-start justify-between gap-2 px-3 py-1.5 text-left hover:bg-slate-50">
+                                <span className="min-w-0">
+                                  <span className="block truncate font-mono text-[11.5px] font-semibold text-slate-800">
+                                    {r.claimNo} · {r.regNo}
+                                  </span>
+                                  <span className="block truncate text-[11.5px] text-slate-600">{r.nextAction}</span>
+                                </span>
+                                <span className={`flex-none rounded px-1.5 py-0.5 text-[10.5px] font-semibold ${r.sla.status === "breach" ? "bg-red-50 text-red-700" : r.sla.status === "risk" ? "bg-amber-50 text-amber-800" : "bg-slate-100 text-slate-600"}`}>
+                                  {r.sla.label}
+                                </span>
+                              </button>
+                            </li>
+                          ))}
+                        </ul>
+                        <p className="border-t border-slate-100 px-3 py-1.5 text-[11px] text-slate-500">Resolve the blocking reason, then convert the NBNR to a registered claim.</p>
+                      </div>
+
+                      <div className="overflow-hidden rounded-md border border-slate-200">
+                        <div className="flex items-center justify-between border-b border-slate-100 bg-slate-50 px-3 py-1.5">
+                          <p className="text-[12.5px] font-semibold text-slate-800">By cause of loss</p>
+                          <span className="text-[11px] text-slate-500">Last 7 days</span>
+                        </div>
+                        <ul className="flex flex-col gap-1.5 px-3 py-2">
+                          {week.byCause.map(([cause, n]) => (
+                            <li key={cause} className="grid grid-cols-[minmax(0,1fr)_minmax(0,1.2fr)_24px] items-center gap-2 text-[12px]">
+                              <span className="truncate text-slate-700">{cause}</span>
+                              <span className="h-2 overflow-hidden rounded bg-slate-100">
+                                <span className="block h-full rounded bg-teal-600" style={{ width: `${(n / week.byCause[0][1]) * 100}%` }} />
+                              </span>
+                              <span className="text-right font-semibold tabular-nums text-slate-800">{n}</span>
+                            </li>
+                          ))}
+                        </ul>
+                      </div>
+                      </div>
+                    </div>
+                    </>
+                  )}
 
                   {results && results.length === 0 && !f.noPolicy && (
                     <Banner kind="warn" title="No policy found">
@@ -1170,6 +1319,29 @@ export default function ODIntimation() {
                   <li>Vehicle number, policy number, insured name or mobile.</li>
                   <li>Partial values work – e.g. last 4 digits of the vehicle no.</li>
                   <li>If the policy is not found, record it anyway – it is parked as NBNR (Notified But Not Registered).</li>
+                </ul>
+              </Card>
+            )}
+
+            {!f.policy && !f.noPolicy && (
+              <Card title="Keep ready on the call">
+                <ul className="flex flex-col gap-1.5 px-3 py-2 text-[12px] text-slate-700">
+                  {[
+                    ["Verify the caller", "Name + registered mobile or policy no before sharing details"],
+                    ["Date, time & place of loss", "Pin the place on the map in step 2"],
+                    ["How it happened", "Cause, damage seen, third party / injury"],
+                    ["Driver at the time", "Name and driving licence no (if being driven)"],
+                    ["Police / FIR", "Mandatory for theft, fire and injury"],
+                    ["Where the vehicle is now", "Garage, spot or residence – decides the survey"],
+                  ].map(([t, d], i) => (
+                    <li key={t} className="flex items-start gap-2">
+                      <span className="mt-px grid h-4 w-4 flex-none place-items-center rounded-full bg-slate-100 text-[10px] font-bold text-slate-600">{i + 1}</span>
+                      <span>
+                        <span className="block font-medium text-slate-800">{t}</span>
+                        <span className="block text-[11.5px] text-slate-500">{d}</span>
+                      </span>
+                    </li>
+                  ))}
                 </ul>
               </Card>
             )}
