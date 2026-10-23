@@ -254,6 +254,57 @@ export function searchPolicy(term) {
   return out.sort((a, b) => b.rank - a.rank).map(({ policy, matchedOn }) => ({ policy, matchedOn }));
 }
 
+/** Past (closed) claims per vehicle – shown in Claim Intimation as claim history.
+ *  Open claims come from WORK_QUEUE. NCB on each demo policy is consistent with this history. */
+export const PAST_CLAIMS = {
+  "TN 12 AR 3301": [{ claimNo: "OD/CHN/23/006214", lossDate: "2023-08-19", lossType: "Accident – partial", status: "Settled", amount: 23400 }],
+  "TN 07 CB 2231": [{ claimNo: "OD/CHN/25/003120", lossDate: "2025-06-14", lossType: "Flood", status: "Settled", amount: 61200 }],
+  "TN 10 BZ 5566": [{ claimNo: "OD/CHN/26/002045", lossDate: "2026-02-11", lossType: "Accident – partial", status: "Settled", amount: 38900 }],
+};
+
+/** Open + past claims on a vehicle, newest first. */
+export function claimHistory(regNo) {
+  if (!regNo) return [];
+  const open = WORK_QUEUE.filter((r) => norm(r.regNo) === norm(regNo)).map((r) => ({
+    claimNo: r.claimNo,
+    lossDate: r.lossDate,
+    lossType: r.lossType,
+    status: `Open · ${r.stage}`,
+    amount: r.reserve,
+    open: true,
+  }));
+  const past = Object.entries(PAST_CLAIMS).find(([k]) => norm(k) === norm(regNo))?.[1] || [];
+  return [...open, ...past].sort((x, y) => (x.lossDate < y.lossDate ? 1 : -1));
+}
+
+/** Documents to collect at FNOL, by cause of loss (IRDAI: insurer must ask for all documents in one go). */
+export function documentsFor(cause, { driverNeeded, injury, financier, garage } = {}) {
+  const docs = [
+    { name: "Claim form (e-claim form – auto generated)", mandatory: true, auto: true },
+    { name: "RC copy (registration certificate)", mandatory: true },
+    { name: "Insured KYC – PAN / Aadhaar (for payment)", mandatory: true },
+  ];
+  if (driverNeeded) docs.push({ name: "Driving licence of the driver", mandatory: true });
+  if (cause === "theft") {
+    docs.push(
+      { name: "FIR copy", mandatory: true },
+      { name: "All original keys", mandatory: true },
+      { name: "Original RC & RTO theft intimation letter", mandatory: true },
+      { name: "Police non-traceable (final) report", mandatory: true, later: true },
+      { name: "Form 28, 29, 30 & 35 + subrogation letter", mandatory: true, later: true }
+    );
+  } else {
+    docs.push({ name: "Photos / video of the damage", mandatory: true });
+    if (garage) docs.push({ name: "Repair estimate from garage", mandatory: true });
+    if (cause === "fire") docs.push({ name: "FIR / fire brigade report", mandatory: true });
+    if (cause === "partialTheft") docs.push({ name: "FIR / police acknowledgement", mandatory: true });
+    if (cause === "flood") docs.push({ name: "Do not crank the engine – tow to garage (advise customer)", mandatory: false, advice: true });
+  }
+  if (injury === "yes" && !docs.some((d) => d.name.includes("FIR"))) docs.push({ name: "FIR copy (injury involved)", mandatory: true });
+  if (financier) docs.push({ name: `NOC from financier (${financier})`, mandatory: false, later: true });
+  return docs;
+}
+
 export const daysBetween = (a, b) =>
   Math.round((new Date(b + "T00:00:00") - new Date(a + "T00:00:00")) / 86400000);
 

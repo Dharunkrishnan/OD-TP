@@ -26,8 +26,11 @@ import {
   CloudRain,
   Wrench,
   Lock,
+  History,
+  ClipboardList,
 } from "lucide-react";
 import ODShell from "../../components/layout/ODShell";
+import { formatINR } from "../../auth";
 import LocationPicker from "../../components/LocationPicker";
 import { claimSlug } from "../../data/odClaimDetail";
 import {
@@ -44,6 +47,8 @@ import {
   NETWORK_GARAGES,
   LATE_INTIMATION_DAYS,
   DEMO_POLICIES,
+  claimHistory,
+  documentsFor,
 } from "../../data/odPolicyMock";
 
 const STEPS = ["Policy Information", "Incident Details", "Review & Submit"];
@@ -310,6 +315,14 @@ export default function ODIntimation() {
   const delay = f.lossDate ? daysBetween(f.lossDate, TODAY_ISO) : 0;
   const brand = (f.policy?.vehicle || f.manualVehicle || "").split(" ")[0];
   const recommended = NETWORK_GARAGES.filter((g) => g.brands.includes(brand));
+  const history = useMemo(() => claimHistory(f.policy?.regNo || (f.noPolicy ? f.manualRegNo : "")), [f.policy, f.noPolicy, f.manualRegNo]);
+  const policyDaysLeft = f.policy ? daysBetween(TODAY_ISO, f.policy.periodTo) : 0;
+  const docs = documentsFor(f.cause, {
+    driverNeeded: driverNeeded(f),
+    injury: f.injury,
+    financier: f.policy?.financier,
+    garage: f.vehicleLocation === "garage",
+  });
 
   function doSearch(e) {
     e?.preventDefault();
@@ -1112,8 +1125,8 @@ export default function ODIntimation() {
             </div>
           </Card>
 
-          {/* ---------- Side panel: live registration checks ---------- */}
-          <div className="flex flex-col gap-2">
+          {/* ---------- Side panel: stays in view while the form scrolls ---------- */}
+          <div className="flex flex-col gap-2 lg:sticky lg:top-0 lg:max-h-[calc(100vh-4.25rem)] lg:overflow-y-auto lg:pr-0.5">
             <Card title="Registration checks">
               <div className="px-3 py-2">
                 {!f.policy && !f.noPolicy ? (
@@ -1144,16 +1157,120 @@ export default function ODIntimation() {
               )}
             </Card>
 
+            {!f.policy && !f.noPolicy && (
+              <Card title="How to search">
+                <ul className="flex list-disc flex-col gap-1 px-3 py-2 pl-7 text-[12px] text-slate-600">
+                  <li>Vehicle number, policy number, insured name or mobile.</li>
+                  <li>Partial values work – e.g. last 4 digits of the vehicle no.</li>
+                  <li>If the policy is not found, record it anyway – it is parked as NBNR (Notified But Not Registered).</li>
+                </ul>
+              </Card>
+            )}
+
             {f.policy && (
-              <Card title="Selected vehicle">
-                <div className="flex items-start gap-2 px-3 py-2 text-[12.5px]">
-                  <Car className="mt-0.5 h-4 w-4 flex-none text-slate-400" aria-hidden="true" />
-                  <span>
-                    <span className="block font-mono font-semibold text-slate-800">{f.policy.regNo}</span>
-                    <span className="block text-slate-600">{f.policy.vehicle}</span>
-                    <span className="block text-[11.5px] text-slate-500">{f.policy.insured} · {maskMobile(f.policy.mobile)}</span>
-                  </span>
+              <Card title="Vehicle & cover">
+                <div className="flex flex-col gap-2 px-3 py-2 text-[12.5px]">
+                  <div className="flex items-start gap-2">
+                    <Car className="mt-0.5 h-4 w-4 flex-none text-slate-400" aria-hidden="true" />
+                    <span className="min-w-0">
+                      <span className="block font-mono font-semibold text-slate-800">{f.policy.regNo}</span>
+                      <span className="block text-slate-600">{f.policy.vehicle}</span>
+                      <span className="block text-[11.5px] text-slate-500">
+                        {f.policy.insured} · {maskMobile(f.policy.mobile)}
+                      </span>
+                    </span>
+                  </div>
+                  <dl className="grid grid-cols-3 gap-2 border-t border-slate-100 pt-2">
+                    {[
+                      ["IDV", f.policy.idv ? formatINR(f.policy.idv) : "–"],
+                      ["NCB", f.policy.ncb],
+                      ["Policy ends", policyDaysLeft >= 0 ? `${policyDaysLeft} d` : "Expired"],
+                    ].map(([k, v]) => (
+                      <div key={k} className="min-w-0">
+                        <dt className="text-[10.5px] font-medium uppercase tracking-wide text-slate-500">{k}</dt>
+                        <dd className={`truncate font-semibold tabular-nums ${k === "Policy ends" && policyDaysLeft < 0 ? "text-red-700" : "text-slate-800"}`}>{v}</dd>
+                      </div>
+                    ))}
+                  </dl>
+                  {f.policy.addOns.length > 0 && (
+                    <div className="flex flex-wrap gap-1">
+                      {f.policy.addOns.map((a) => (
+                        <span
+                          key={a}
+                          className={`rounded px-1.5 py-0.5 text-[11px] font-medium ${a === "Zero depreciation" ? "bg-teal-50 text-teal-800 ring-1 ring-teal-200" : "bg-slate-100 text-slate-700"}`}
+                        >
+                          {a}
+                        </span>
+                      ))}
+                    </div>
+                  )}
+                  {f.policy.financier && <p className="text-[11.5px] text-slate-600">Hypothecated to {f.policy.financier}</p>}
                 </div>
+              </Card>
+            )}
+
+            {(f.policy || f.noPolicy) && (
+              <Card title="Claim history (this vehicle)">
+                <div className="px-3 py-2 text-[12px]">
+                  {history.length === 0 ? (
+                    <p className="flex items-start gap-2 text-slate-600">
+                      <History className="mt-0.5 h-4 w-4 flex-none text-slate-400" aria-hidden="true" />
+                      No previous claims on this vehicle.
+                    </p>
+                  ) : (
+                    <ul className="flex flex-col divide-y divide-slate-100">
+                      {history.map((h) => (
+                        <li key={h.claimNo} className="flex items-start justify-between gap-2 py-1.5 first:pt-0 last:pb-0">
+                          <span className="min-w-0">
+                            {h.open ? (
+                              <button type="button" onClick={() => navigate(`/od/claims/${claimSlug(h.claimNo)}`)} className="font-mono text-[11.5px] font-semibold text-teal-700 hover:underline">
+                                {h.claimNo}
+                              </button>
+                            ) : (
+                              <span className="block font-mono text-[11.5px] font-semibold text-slate-800">{h.claimNo}</span>
+                            )}
+                            <span className="block text-[11.5px] text-slate-500">
+                              {dt(h.lossDate)} · {h.lossType}
+                            </span>
+                          </span>
+                          <span className="flex-none text-right">
+                            <span className={`block text-[11px] font-medium ${h.open ? "text-amber-700" : "text-slate-600"}`}>{h.open ? "Open" : h.status}</span>
+                            <span className="block text-[11.5px] tabular-nums text-slate-700">{formatINR(h.amount)}</span>
+                          </span>
+                        </li>
+                      ))}
+                    </ul>
+                  )}
+                  {f.policy && f.policy.ncb && f.policy.ncb !== "0%" && f.policy.ncb !== "–" && (
+                    <p className="mt-2 rounded bg-amber-50 px-2 py-1.5 text-[11.5px] text-amber-900">
+                      NCB (No Claim Bonus) {f.policy.ncb} will be lost at renewal if this claim is paid – tell the customer.
+                    </p>
+                  )}
+                </div>
+              </Card>
+            )}
+
+            {(f.policy || f.noPolicy) && (
+              <Card title="Documents to collect">
+                <ul className="flex flex-col gap-1 px-3 py-2 text-[12px]">
+                  {docs.map((d) => (
+                    <li key={d.name} className="flex items-start gap-2">
+                      {d.advice ? (
+                        <Info className="mt-0.5 h-3.5 w-3.5 flex-none text-sky-600" aria-hidden="true" />
+                      ) : (
+                        <ClipboardList className={`mt-0.5 h-3.5 w-3.5 flex-none ${d.auto ? "text-teal-600" : "text-slate-400"}`} aria-hidden="true" />
+                      )}
+                      <span className={d.advice ? "text-sky-800" : "text-slate-700"}>
+                        {d.name}
+                        {d.later && <span className="text-slate-400"> · at settlement</span>}
+                        {d.mandatory && !d.auto && !d.later && <span className="text-red-600"> *</span>}
+                      </span>
+                    </li>
+                  ))}
+                </ul>
+                <p className="border-t border-slate-100 px-3 py-1.5 text-[11px] text-slate-500">
+                  {f.cause ? "List is based on the cause of loss." : "Select the cause of loss to refine this list."} Request all documents in one go.
+                </p>
               </Card>
             )}
 
