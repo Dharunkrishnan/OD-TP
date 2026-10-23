@@ -6,6 +6,7 @@
 // Demo policies – each one exercises a different registration outcome:
 //   TN 09 DX 4410  → valid comprehensive policy        → Claim registered
 //   TN 14 EE 7788  → valid, financier on RC            → Claim registered
+//   TN 12 AR 3301  → valid (2nd "Arun" – name search shows a pick list)
 //   TN 07 CB 2231  → policy expired 30 Sep 2026        → NBNR (loss outside policy period)
 //   TN 22 AK 9087  → liability-only (TP) policy        → NBNR (no OD cover)
 //   TN 10 BZ 5566  → premium cheque not realised       → NBNR (premium not realised)
@@ -37,6 +38,29 @@ export const DEMO_POLICIES = [
     ncb: "25%",
     addOns: ["Zero depreciation", "Engine protect", "Consumables", "Roadside assistance"],
     financier: null,
+    channel: "Agent",
+    branch: "Chennai",
+  },
+  {
+    policyNo: "OG-26-1801-5134-00109872",
+    product: "Private Car Package Policy (Comprehensive)",
+    cover: "OD+TP",
+    status: "In force",
+    periodFrom: "2026-05-02",
+    periodTo: "2027-05-01",
+    premiumRealised: true,
+    insured: "K. Arun Raj",
+    mobile: "9790123456",
+    email: "arunraj.k@example.com",
+    regNo: "TN 12 AR 3301",
+    vehicle: "Maruti Baleno Alpha",
+    yearOfMfg: 2022,
+    chassis: "MA3EWDE1SN0XXXXX",
+    engine: "K12NXXXXXX",
+    idv: 610000,
+    ncb: "20%",
+    addOns: ["Consumables", "Roadside assistance"],
+    financier: "State Bank of India",
     channel: "Agent",
     branch: "Chennai",
   },
@@ -201,12 +225,33 @@ export const LATE_INTIMATION_DAYS = 7;
 const norm = (s) => String(s || "").toUpperCase().replace(/[\s-]/g, "");
 
 /** Search by policy no, vehicle registration no or mobile. */
+/**
+ * Search by vehicle no, policy no, insured name or mobile.
+ * Exact matches first; partial matches allowed (vehicle/policy ≥ 4 characters, name ≥ 3 letters).
+ * Returns an array of { policy, matchedOn } sorted best match first.
+ */
 export function searchPolicy(term) {
-  const t = norm(term);
+  const raw = String(term || "").trim();
+  const t = norm(raw);
   if (!t) return [];
-  return DEMO_POLICIES.filter(
-    (p) => norm(p.policyNo) === t || norm(p.regNo) === t || p.mobile === t.replace(/^\+?91/, "")
-  );
+  const mobile = t.replace(/^\+?91/, "");
+  const nameQ = raw.toLowerCase().replace(/[.\s]+/g, " ").trim();
+  const out = [];
+  for (const p of DEMO_POLICIES) {
+    const reg = norm(p.regNo);
+    const pol = norm(p.policyNo);
+    const name = p.insured.toLowerCase().replace(/[.\s]+/g, " ").trim();
+    let rank = 0;
+    let matchedOn = "";
+    if (reg === t) [rank, matchedOn] = [100, "Vehicle no"];
+    else if (pol === t) [rank, matchedOn] = [100, "Policy no"];
+    else if (/^\d{10}$/.test(mobile) && p.mobile === mobile) [rank, matchedOn] = [100, "Mobile"];
+    else if (t.length >= 4 && reg.includes(t)) [rank, matchedOn] = [60, "Vehicle no"];
+    else if (t.length >= 4 && pol.includes(t)) [rank, matchedOn] = [60, "Policy no"];
+    else if (nameQ.length >= 3 && /[a-z]/.test(nameQ) && name.includes(nameQ)) [rank, matchedOn] = [name === nameQ ? 90 : 50, "Insured name"];
+    if (rank) out.push({ policy: p, matchedOn, rank });
+  }
+  return out.sort((a, b) => b.rank - a.rank).map(({ policy, matchedOn }) => ({ policy, matchedOn }));
 }
 
 export const daysBetween = (a, b) =>

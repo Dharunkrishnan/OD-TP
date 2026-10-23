@@ -271,8 +271,8 @@ export default function ODIntimation() {
     e?.preventDefault();
     const r = searchPolicy(f.search);
     setResults(r);
-    if (r.length === 1) set({ policy: r[0], noPolicy: false });
-    else set({ policy: null });
+    if (r.length === 1) choosePolicy(r[0].policy);
+    else set({ policy: null, noPolicy: false });
   }
 
   function choosePolicy(p) {
@@ -502,7 +502,7 @@ export default function ODIntimation() {
                         <input
                           value={f.search}
                           onChange={(e) => set({ search: e.target.value })}
-                          placeholder="Policy no, vehicle registration no or insured mobile"
+                          placeholder="Vehicle no, policy no, insured name or mobile"
                           aria-label="Search policy"
                           className={`${inputCls(err.policy)} pl-8`}
                         />
@@ -513,6 +513,9 @@ export default function ODIntimation() {
                     </div>
                     {err.policy && <span className="text-[11.5px] text-red-700">{err.policy}</span>}
                     <span className="text-[11px] text-slate-500">
+                      Full or partial value works – e.g. <b>TN 09 DX 4410</b>, <b>4410</b>, <b>00098765</b>, <b>Arun</b>, <b>9876543210</b>
+                    </span>
+                    <span className="text-[11px] text-slate-400">
                       Demo vehicles: {DEMO_POLICIES.map((p) => p.regNo).join(" · ")}
                     </span>
                   </form>
@@ -534,22 +537,60 @@ export default function ODIntimation() {
                   )}
 
                   {results && results.length > 1 && (
-                    <ul className="flex flex-col gap-1">
-                      {results.map((p) => (
-                        <li key={p.policyNo}>
-                          <button
-                            type="button"
-                            onClick={() => choosePolicy(p)}
-                            className={`flex w-full items-center justify-between rounded-md border px-3 py-2 text-left text-[12.5px] ${
-                              f.policy?.policyNo === p.policyNo ? "border-teal-600 bg-teal-50" : "border-slate-200 hover:bg-slate-50"
-                            }`}
-                          >
-                            <span className="font-mono">{p.policyNo}</span>
-                            <span>{p.regNo} · {p.insured}</span>
-                          </button>
-                        </li>
-                      ))}
-                    </ul>
+                    <Card title={`${results.length} policies found – select one`}>
+                      <div className="overflow-x-auto">
+                        <table className="w-full min-w-[640px] text-left text-[12.5px]">
+                          <thead>
+                            <tr className="bg-slate-50 text-[10.5px] uppercase tracking-wide text-slate-500">
+                              <th scope="col" className="px-3 py-1.5 font-semibold">Insured</th>
+                              <th scope="col" className="px-2 py-1.5 font-semibold">Vehicle no</th>
+                              <th scope="col" className="px-2 py-1.5 font-semibold">Make / model</th>
+                              <th scope="col" className="px-2 py-1.5 font-semibold">Policy no</th>
+                              <th scope="col" className="px-2 py-1.5 font-semibold">Status</th>
+                              <th scope="col" className="px-3 py-1.5 font-semibold">Matched on</th>
+                            </tr>
+                          </thead>
+                          <tbody>
+                            {results.map(({ policy: p, matchedOn }) => {
+                              const on = f.policy?.policyNo === p.policyNo;
+                              return (
+                                <tr
+                                  key={p.policyNo}
+                                  onClick={() => choosePolicy(p)}
+                                  aria-selected={on}
+                                  className={`cursor-pointer border-t border-slate-100 ${on ? "bg-teal-50" : "hover:bg-slate-50"}`}
+                                >
+                                  <td className="px-3 py-1.5 font-medium text-slate-800">
+                                    <span className="flex items-center gap-2">
+                                      <span
+                                        className={`grid h-4 w-4 flex-none place-items-center rounded-full border ${on ? "border-teal-700 bg-teal-700" : "border-slate-400"}`}
+                                        aria-hidden="true"
+                                      >
+                                        {on && <span className="h-1.5 w-1.5 rounded-full bg-white" />}
+                                      </span>
+                                      {p.insured}
+                                    </span>
+                                  </td>
+                                  <td className="whitespace-nowrap px-2 py-1.5 text-slate-800">{p.regNo}</td>
+                                  <td className="px-2 py-1.5 text-slate-700">{p.vehicle}</td>
+                                  <td className="whitespace-nowrap px-2 py-1.5 tabular-nums text-slate-700">{p.policyNo}</td>
+                                  <td className="px-2 py-1.5">
+                                    <span
+                                      className={`inline-flex h-5 items-center rounded px-1.5 text-[11px] font-semibold ${
+                                        p.status === "In force" ? "bg-emerald-50 text-emerald-800" : "bg-red-50 text-red-800"
+                                      }`}
+                                    >
+                                      {p.status}
+                                    </span>
+                                  </td>
+                                  <td className="px-3 py-1.5 text-[11.5px] text-slate-500">{matchedOn}</td>
+                                </tr>
+                              );
+                            })}
+                          </tbody>
+                        </table>
+                      </div>
+                    </Card>
                   )}
 
                   {f.noPolicy && (
@@ -581,7 +622,7 @@ export default function ODIntimation() {
                           ].map(([k, v]) => (
                             <div key={k} className="min-w-0">
                               <dt className="text-[10.5px] font-medium uppercase tracking-wide text-slate-500">{k}</dt>
-                              <dd className={`text-slate-800 ${k === "Policy no" ? "font-mono text-[12px]" : ""}`}>{v}</dd>
+                              <dd className={`text-slate-800 tabular-nums ${k === "Policy no" ? "whitespace-nowrap" : ""}`}>{v}</dd>
                             </div>
                           ))}
                         </dl>
