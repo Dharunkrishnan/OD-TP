@@ -28,6 +28,7 @@ import {
   Wrench,
 } from "lucide-react";
 import ODShell from "../../components/layout/ODShell";
+import LocationPicker from "../../components/LocationPicker";
 import { claimSlug } from "../../data/odClaimDetail";
 import {
   TODAY_ISO,
@@ -65,6 +66,9 @@ const EMPTY = {
   cause: "",
   place: "",
   city: "Chennai",
+  pincode: "",
+  lossLat: null,
+  lossLng: null,
   description: "",
   beingDriven: "yes",
   policeReported: "no",
@@ -211,7 +215,8 @@ function validate(step, f) {
     else if (f.lossDate > TODAY_ISO) e.lossDate = "Loss date cannot be in the future.";
     if (!f.lossTime) e.lossTime = "Enter the approximate time of loss.";
     if (!f.cause) e.cause = "Select the cause of loss.";
-    if (!f.place.trim()) e.place = "Enter where the loss happened.";
+    if (!f.place.trim()) e.place = "Pin the location on the map or enter where the loss happened.";
+    if (f.pincode && !/^[1-9]\d{5}$/.test(f.pincode)) e.pincode = "Pincode must be 6 digits.";
     if (f.description.trim().length < 20) e.description = "Describe what happened (at least 20 characters).";
     if (f.lossDate && daysBetween(f.lossDate, TODAY_ISO) > LATE_INTIMATION_DAYS && !f.lateReason.trim())
       e.lateReason = `Intimation is more than ${LATE_INTIMATION_DAYS} days after the loss – give the reason.`;
@@ -752,12 +757,32 @@ export default function ODIntimation() {
                     </Banner>
                   )}
 
-                  <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
+                  <div className="flex min-w-0 flex-col gap-1">
+                    <span className="text-[12px] font-medium text-slate-700">
+                      Pin the place of loss on the map <span className="font-normal text-slate-500">– address fields below fill automatically, you can still edit them</span>
+                    </span>
+                    <LocationPicker
+                      value={f.lossLat ? { lat: f.lossLat, lng: f.lossLng } : null}
+                      onChange={(loc) =>
+                        set({
+                          lossLat: loc.lat,
+                          lossLng: loc.lng,
+                          ...(loc.place ? { place: loc.place } : {}),
+                          ...(loc.city ? { city: loc.city } : {}),
+                          ...(loc.pincode ? { pincode: loc.pincode } : {}),
+                        })
+                      }
+                    />
+                  </div>
+                  <div className="grid grid-cols-1 gap-3 sm:grid-cols-4">
                     <Field label="Place of loss" required error={err.place} className="sm:col-span-2">
                       <input value={f.place} onChange={(e) => set({ place: e.target.value })} className={inputCls(err.place)} placeholder="Road / landmark / area" />
                     </Field>
                     <Field label="City">
                       <input value={f.city} onChange={(e) => set({ city: e.target.value })} className={inputCls()} />
+                    </Field>
+                    <Field label="Pincode" error={err.pincode}>
+                      <input inputMode="numeric" maxLength={6} value={f.pincode} onChange={(e) => set({ pincode: e.target.value.replace(/\D/g, "") })} className={inputCls(err.pincode)} placeholder="6 digits" />
                     </Field>
                   </div>
                   <Field label="What happened?" required error={err.description} hint={`${f.description.trim().length} characters`}>
@@ -953,7 +978,8 @@ export default function ODIntimation() {
                       rows: [
                         ["Loss", `${dt(f.lossDate)} · ${f.lossTime}`],
                         ["Cause", LOSS_CAUSES.find((c) => c.key === f.cause)?.label],
-                        ["Place", `${f.place}, ${f.city}`],
+                        ["Place", `${f.place}, ${f.city}${f.pincode ? ` – ${f.pincode}` : ""}`],
+                        ["GPS location", f.lossLat ? `${f.lossLat.toFixed(5)}, ${f.lossLng.toFixed(5)} (pinned on map)` : "Not pinned – typed manually"],
                         ["Description", f.description],
                         ["Third party / injury / police", `${f.tpInvolved === "yes" ? `TP ${f.tpVehicleNo}` : "No TP"} · ${f.injury === "yes" ? "Injury" : "No injury"} · ${f.firNo ? `FIR ${f.firNo}` : "No FIR"}`],
                         driverNeeded(f) && ["Driver", `${f.driverSameAsInsured ? f.policy?.insured : f.driverName} · DL ${f.dlNo} valid till ${dt(f.dlValidTill)}`],
