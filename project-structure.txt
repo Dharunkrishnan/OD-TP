@@ -1,0 +1,233 @@
+Magma Project Structure and Summary
+==================================
+
+PROJECT NAME:
+Magma
+
+STACK:
+- React 19
+- Vite
+- Tailwind CSS
+- React Router DOM
+- Lucide React icons
+- JavaScript / JSX
+
+MAIN GOAL:
+Build a Smart Claims mock claims management frontend with:
+- login page
+- protected routes
+- OD and TP dashboards
+- dual-access user flow
+- compact responsive dashboard UI
+- mock auth and route guards
+
+ROOT LEVEL FILES:
+------------------
+- .gitignore
+  Purpose: Ignore local/generated files in Git.
+
+- .oxlintrc.json
+  Purpose: Linting configuration for the project.
+
+- index.html
+  Purpose: Main HTML shell for the Vite React app.
+
+- package.json
+  Purpose: Project metadata, scripts, dependencies, and devDependencies.
+  Scripts:
+  - npm run dev
+  - npm run build
+  - npm run lint
+  - npm run preview
+
+- package-lock.json
+  Purpose: Locks dependency versions for consistent installs.
+
+- README.md
+  Purpose: Project notes / usage docs.
+
+- tailwind.config.cjs
+  Purpose: Tailwind configuration.
+
+- vite.config.js
+  Purpose: Vite configuration and plugin setup.
+
+- public/
+  Purpose: Public static assets served by the app.
+
+- dist/
+  Purpose: Production build output created after npm run build.
+
+- node_modules/
+  Purpose: Installed dependencies for the project.
+
+
+SRC FOLDER:
+-----------
+src/
+├── App.css
+│   Purpose: App-level styling / legacy styling if used.
+│
+├── App.jsx
+│   Purpose: Main router definition and route protection.
+│   Contains:
+│   - BrowserRouter setup
+│   - Routes:
+│     /login
+│     /od/dashboard
+│     /tp/dashboard
+│   - RequireAuth wrapper
+│   - RequirePermission wrapper
+│   - PublicOnly wrapper
+│   - AuthProvider wrapper
+│
+├── auth.js
+│   Purpose: Mock authentication logic and user session handling.
+│   Contains:
+│   - AuthContext
+│   - useAuth hook
+│   - STORAGE_KEY constant
+│   - resolveDashboardPath(user)
+│   - AuthProvider component
+│   - login/logout functions
+│   - localStorage persistence for mock auth
+│
+├── index.css
+│   Purpose: Global styling and initial app theme.
+│   Contains:
+│   - Tailwind import
+│   - global resets
+│   - background colors
+│   - login split-screen layout
+│   - network/grid effects in the login panel
+│   - dashboard overflow rules
+│   - compact layout tuning for single-screen dashboard fit
+│
+├── main.jsx
+│   Purpose: Bootstraps React application into the root element.
+│
+├── assets/
+│   Purpose: Images, icons, or static frontend assets.
+│
+├── components/
+│   └── ModuleSwitcher.jsx
+│       Purpose: Module switching component for dual-access users.
+│
+└── pages/
+    ├── Login.jsx
+    │   Purpose: Smart Claims login UI.
+    │   Includes:
+    │   - split-screen desktop layout
+    │   - premium branding panel
+    │   - email and password inputs
+    │   - password visibility toggle
+    │   - mock validation messages
+    │   - remember me option
+    │   - demo account list
+    │   - demo sign-in logic
+    │   - route redirect after successful login
+    │
+    ├── ODDashboard.jsx
+    │   Purpose: Smart Claims Motor OD dashboard implementation.
+    │   Includes:
+    │   - dark navy left sidebar
+    │   - top header with search, notifications, and user menu
+    │   - KPI cards row
+    │   - status badges and trend flags
+    │   - alerts panel
+    │   - diary panel
+    │   - stage bars chart
+    │   - SLA donut and aging ring chart
+    │   - TAT widget
+    │   - priority tasks panel
+    │   - recent claims table
+    │   - toast demo interactions
+    │   - compact responsive tuning for desktop viewport
+    │
+    └── TPDashboard.jsx
+        Purpose: TP dashboard route page.
+
+
+APPLICATION FLOW:
+------------------
+1. User opens /login.
+2. Login form validates email/password.
+3. Demo accounts are:
+   - od@claimshield.demo -> OD permission
+   - tp@claimshield.demo -> TP permission
+   - both@claimshield.demo -> OD + TP permissions
+4. For valid login, AuthProvider stores user in state/localStorage.
+5. App redirects based on permissions:
+   - OD user -> /od/dashboard
+   - TP user -> /tp/dashboard
+   - dual-access user -> /od/dashboard by default (or can switch modules)
+6. Protected routes prevent unauthorized access.
+7. Dashboard displays UI using mock data and frontend-only interactions.
+
+
+LOGIN DEMO CREDENTIALS:
+-----------------------
+Email examples:
+- od@claimshield.demo
+- tp@claimshield.demo
+- both@claimshield.demo
+Password:
+- demo123
+
+
+AUTH LOGIC SUMMARY:
+-------------------
+- AuthProvider stores user info in localStorage with STORAGE_KEY = "claimshield-user"
+- login(email, permissions, remember) sets user state
+- logout clears localStorage and resets state
+- resolveDashboardPath(user) returns the correct route based on permissions
+- RequireAuth blocks unlogged users
+- RequirePermission blocks access to other module routes
+- PublicOnly prevents logged-in users from revisiting login screen
+
+
+DASHBOARD SUMMARY:
+------------------
+The OD dashboard is a single-screen structured mock management page with:
+- sidebar navigation
+- top header
+- KPI cards with trend/status pills
+- widget cards for operational metrics
+- lightweight charts and summary sections
+- compact spacing and alignment tuned for desktop screens
+
+
+WHAT WAS DONE DURING PROJECT WORK:
+----------------------------------
+- Replaced placeholder login page with Smart Claims login mock
+- Fixed Tailwind styling setup
+- Reworked branding to Smart Claims
+- Corrected password visibility icon behavior
+- Added mock auth and route handling
+- Implemented OD dashboard mock UI
+- Added module switching for dual access users
+- Refined KPI card sizing and alignment
+- Reduced excessive whitespace for a cleaner single-screen fit
+- Preserved light theme, white cards, teal branding, and dark sidebar
+- Kept layout responsive and without unnecessary scrolling at desktop sizes
+- Verified project with lint and build commands
+
+
+VALIDATION:
+------------
+Fresh checks executed successfully:
+- npm run lint
+- npm run build
+
+This confirms the app compiles cleanly with the current UI implementation.
+
+
+CONCLUSION:
+-----------
+This project is a React front-end prototype for Smart Claims claims operations, with mock login, module-based routing, and a compact OD dashboard designed for a desktop claims-management workflow.
+
+If you want, I can next turn this into:
+1. a cleaner markdown project brief
+2. a prompt for another AI to continue development
+3. a full production-ready architecture document
+4. a step-by-step implementation guide
