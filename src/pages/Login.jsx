@@ -186,7 +186,7 @@ export default function Login() {
                 <h2 className="text-2xl font-semibold text-[#0B1F3A]">Sign in</h2>
 
                 {/* Demo accounts – development builds only */}
-                {import.meta.env.DEV && (
+                {(import.meta.env.DEV || import.meta.env.VITE_SHOW_DEMO_ACCOUNTS === "true") && (
                   <div className="relative">
                     <button
                       type="button"
