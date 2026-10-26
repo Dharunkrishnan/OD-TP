@@ -333,8 +333,8 @@ export default function ODIntimation() {
   const brand = (f.policy?.vehicle || f.manualVehicle || "").split(" ")[0];
   const recommended = NETWORK_GARAGES.filter((g) => g.brands.includes(brand));
   const history = useMemo(() => claimHistory(f.policy?.regNo || (f.noPolicy ? f.manualRegNo : "")), [f.policy, f.noPolicy, f.manualRegNo]);
-  const recentIntimations = useMemo(() => [...WORK_QUEUE].sort((a, b) => (a.regDate < b.regDate ? 1 : -1)).slice(0, 8), []);
-  // "Last 7 days" strip on the empty step
+  const recentIntimations = useMemo(() => [...WORK_QUEUE].sort((a, b) => (a.regDate < b.regDate ? 1 : -1)).slice(0, 5), []);
+  // "By cause of loss" card on the empty step – last 7 days
   const week = useMemo(() => {
     const rows = WORK_QUEUE.filter((r) => daysBetween(r.regDate, TODAY_ISO) <= 7);
     const nbnr = rows.filter((r) => r.stage === "NBNR").length;
@@ -343,8 +343,8 @@ export default function ODIntimation() {
       registered: rows.length - nbnr,
       nbnr,
       late: rows.filter((r) => daysBetween(r.lossDate, r.regDate) > LATE_INTIMATION_DAYS).length,
-      byCause: Object.entries(rows.reduce((m, r) => ({ ...m, [r.lossType]: (m[r.lossType] || 0) + 1 }), {})).sort((a, b) => b[1] - a[1]),
       tat: TAT_STAGES[0],
+      byCause: Object.entries(rows.reduce((m, r) => ({ ...m, [r.lossType]: (m[r.lossType] || 0) + 1 }), {})).sort((x, y) => y[1] - x[1]),
     };
   }, []);
   const nbnrOpen = useMemo(() => WORK_QUEUE.filter((r) => r.stage === "NBNR"), []);
@@ -599,9 +599,6 @@ export default function ODIntimation() {
                       </button>
                     </div>
                     {err.policy && <span data-field-error className="text-[11.5px] text-red-700">{err.policy}</span>}
-                    <span className="text-[11px] text-slate-500">
-                      Full or partial value works – e.g. <b>TN 09 DX 4410</b>, <b>4410</b>, <b>00098765</b>, <b>Arun</b>, <b>9876543210</b>
-                    </span>
                     <div className="mt-1 flex flex-wrap items-center gap-1.5">
                       <span className="text-[11px] font-medium text-slate-500">Quick pick (demo):</span>
                       {DEMO_POLICIES.map((p) => {
@@ -627,20 +624,30 @@ export default function ODIntimation() {
                   {/* Before any search: latest work so the page is useful at the start of a call */}
                   {results === null && !f.policy && !f.noPolicy && (
                     <>
-                    <div className="border-t border-slate-100 pt-3">
-                      <p className="mb-1.5 text-[11px] font-semibold uppercase tracking-wider text-slate-400">Your intimations · last 7 days</p>
-                      <dl className="grid grid-cols-2 gap-2 sm:grid-cols-3 xl:grid-cols-5">
+                    {/* Compact one-line summary – last 7 days */}
+                    <div className="flex flex-col gap-1.5 border-t border-slate-100 pt-2.5">
+                      <div className="flex flex-wrap items-center justify-between gap-x-3 gap-y-1">
+                        <p className="text-[10.5px] font-semibold uppercase tracking-wider text-slate-400">Your intimations · last 7 days</p>
+                        <div className="flex flex-wrap items-center gap-1 text-[11px]">
+                          <span className="font-medium text-slate-500">By cause of loss:</span>
+                          {week.byCause.map(([cause, n]) => (
+                            <span key={cause} className="flex items-center gap-1 rounded-full bg-slate-100 px-1.5 py-px text-slate-700">
+                              {cause} <b className="tabular-nums text-slate-900">{n}</b>
+                            </span>
+                          ))}
+                        </div>
+                      </div>
+                      <dl className="grid grid-cols-2 gap-1.5 sm:grid-cols-3 lg:grid-cols-5">
                         {[
                           ["Intimated", week.total, "text-slate-900", "All channels"],
-                          ["Registered", week.registered, "text-emerald-700", `${week.total ? Math.round((week.registered / week.total) * 100) : 0}% straight-through`],
+                          ["Registered", week.registered, "text-emerald-700", `${week.total ? Math.round((week.registered / week.total) * 100) : 0}% registered without NBNR`],
                           ["NBNR", week.nbnr, "text-amber-700", "Parked with reason"],
-                          ["Late intimations", week.late, week.late ? "text-red-700" : "text-slate-900", `More than ${LATE_INTIMATION_DAYS} days after loss`],
-                          ["Avg time to register", `${week.tat.actual} d`, week.tat.actual <= week.tat.target ? "text-emerald-700" : "text-red-700", `Target ${week.tat.target} d`],
+                          ["Late", week.late, week.late ? "text-red-700" : "text-slate-900", `Intimated more than ${LATE_INTIMATION_DAYS} days after loss`],
+                          ["Avg to register", `${week.tat.actual} d`, week.tat.actual <= week.tat.target ? "text-emerald-700" : "text-red-700", `Target ${week.tat.target} d`],
                         ].map(([k, v, cls, note]) => (
-                          <div key={k} className="rounded-md border border-slate-200 px-3 py-2">
-                            <dt className="text-[11px] font-medium text-slate-500">{k}</dt>
-                            <dd className={`text-[20px] font-semibold leading-tight tabular-nums ${cls}`}>{v}</dd>
-                            <dd className="truncate text-[11px] text-slate-500">{note}</dd>
+                          <div key={k} title={note} className="flex min-w-0 items-baseline gap-1.5 rounded-md border border-slate-200 px-2.5 py-1">
+                            <dd className={`text-[15px] font-semibold tabular-nums ${cls}`}>{v}</dd>
+                            <dt className="truncate text-[11.5px] text-slate-600">{k}</dt>
                           </div>
                         ))}
                       </dl>
@@ -656,22 +663,22 @@ export default function ODIntimation() {
                         <table className="w-full table-fixed text-left text-[12px]">
                           <thead>
                             <tr className="text-[10.5px] uppercase tracking-wide text-slate-500">
-                              <th className="w-[42%] px-3 py-1.5 font-semibold">Claim / vehicle</th>
-                              <th className="px-2 py-1.5 font-semibold">Insured</th>
-                              <th className="w-[19%] px-2 py-1.5 font-semibold">Intimated</th>
-                              <th className="w-[19%] px-3 py-1.5 text-right font-semibold">Status</th>
+                              <th className="w-[44%] px-3 py-1 font-semibold">Claim / vehicle</th>
+                              <th className="px-2 py-1 font-semibold">Insured</th>
+                              <th className="w-[19%] px-2 py-1 font-semibold">Intimated</th>
+                              <th className="w-[17%] px-3 py-1 text-right font-semibold">Status</th>
                             </tr>
                           </thead>
                           <tbody className="divide-y divide-slate-100">
                             {recentIntimations.map((r) => (
                               <tr key={r.claimNo} onClick={() => navigate(`/od/claims/${claimSlug(r.claimNo)}`)} className="cursor-pointer hover:bg-slate-50">
-                                <td className="px-3 py-1.5">
-                                  <span className="block truncate font-mono text-[11.5px] font-semibold text-teal-800">{r.claimNo}</span>
-                                  <span className="block truncate text-[11px] text-slate-500">{r.regNo}</span>
+                                <td className="truncate px-3 py-1">
+                                  <span className="font-mono text-[11.5px] font-semibold text-teal-800">{r.claimNo}</span>
+                                  <span className="text-[11px] text-slate-500"> · {r.regNo}</span>
                                 </td>
-                                <td className="truncate px-2 py-1.5 text-slate-700">{r.insured}</td>
-                                <td className="px-2 py-1.5 tabular-nums text-slate-600">{dt(r.regDate)}</td>
-                                <td className="px-3 py-1.5 text-right">
+                                <td className="truncate px-2 py-1 text-slate-700">{r.insured}</td>
+                                <td className="px-2 py-1 tabular-nums text-slate-600">{dt(r.regDate)}</td>
+                                <td className="px-3 py-1 text-right">
                                   <span className={`rounded px-1.5 py-0.5 text-[10.5px] font-semibold ${r.stage === "NBNR" ? "bg-amber-50 text-amber-800" : "bg-emerald-50 text-emerald-800"}`}>
                                     {r.stage === "NBNR" ? "NBNR" : "Registered"}
                                   </span>
@@ -705,26 +712,8 @@ export default function ODIntimation() {
                             </li>
                           ))}
                         </ul>
-                        <p className="border-t border-slate-100 px-3 py-1.5 text-[11px] text-slate-500">Resolve the blocking reason, then convert the NBNR to a registered claim.</p>
                       </div>
 
-                      <div className="overflow-hidden rounded-md border border-slate-200">
-                        <div className="flex items-center justify-between border-b border-slate-100 bg-slate-50 px-3 py-1.5">
-                          <p className="text-[12.5px] font-semibold text-slate-800">By cause of loss</p>
-                          <span className="text-[11px] text-slate-500">Last 7 days</span>
-                        </div>
-                        <ul className="flex flex-col gap-1.5 px-3 py-2">
-                          {week.byCause.map(([cause, n]) => (
-                            <li key={cause} className="grid grid-cols-[minmax(0,1fr)_minmax(0,1.2fr)_24px] items-center gap-2 text-[12px]">
-                              <span className="truncate text-slate-700">{cause}</span>
-                              <span className="h-2 overflow-hidden rounded bg-slate-100">
-                                <span className="block h-full rounded bg-teal-600" style={{ width: `${(n / week.byCause[0][1]) * 100}%` }} />
-                              </span>
-                              <span className="text-right font-semibold tabular-nums text-slate-800">{n}</span>
-                            </li>
-                          ))}
-                        </ul>
-                      </div>
                       </div>
                     </div>
                     </>
