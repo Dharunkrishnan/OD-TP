@@ -15,7 +15,15 @@
 
 import { WORK_QUEUE } from "./odHandlerMock";
 
-export const TODAY_ISO = "2026-10-22";
+// Today's date from the user's computer (local time, not UTC – so it is right in India after midnight)
+const localISO = (d = new Date()) =>
+  `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
+export const TODAY_ISO = localISO();
+/** Current time as "HH:MM" (local) – used to stop a loss time in the future when the loss date is today. */
+export const nowHHMM = () => {
+  const d = new Date();
+  return `${String(d.getHours()).padStart(2, "0")}:${String(d.getMinutes()).padStart(2, "0")}`;
+};
 
 export const DEMO_POLICIES = [
   {

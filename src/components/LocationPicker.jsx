@@ -268,14 +268,14 @@ export default function LocationPicker({ value, onChange, height = 240 }) {
   }
 
   return (
-    <div className="flex flex-col gap-2 rounded-md border border-slate-200 bg-slate-50 p-2">
+    <div className="flex flex-col gap-1.5 rounded-md border border-slate-200 bg-slate-50 p-1.5">
       <form onSubmit={search} className="flex flex-wrap gap-2">
-        <span className="relative min-w-[200px] flex-1">
+        <span className="relative min-w-[160px] flex-1">
           <Search className="pointer-events-none absolute left-2.5 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" aria-hidden="true" />
           <input
             value={q}
             onChange={(e) => setQ(e.target.value)}
-            placeholder="Search landmark, area or pincode – or click on the map"
+            placeholder="Landmark, area or pincode"
             aria-label="Search location on map"
             disabled={status !== "ready"}
             className="h-9 w-full rounded-md border border-slate-300 bg-white pl-8 pr-2.5 text-[13px] focus:border-teal-700 focus:outline-none focus:ring-4 focus:ring-teal-700/15 disabled:bg-slate-100"
@@ -295,7 +295,7 @@ export default function LocationPicker({ value, onChange, height = 240 }) {
           className="flex h-9 items-center gap-1.5 rounded-md border border-slate-300 bg-white px-3 text-[13px] font-semibold text-slate-700 hover:bg-slate-50 disabled:opacity-40"
         >
           <LocateFixed className="h-4 w-4" aria-hidden="true" />
-          Use current location
+          My location
         </button>
       </form>
 

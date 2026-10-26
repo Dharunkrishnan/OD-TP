@@ -36,6 +36,7 @@ import { claimSlug } from "../../data/odClaimDetail";
 import { WORK_QUEUE, TAT_STAGES } from "../../data/odHandlerMock";
 import {
   TODAY_ISO,
+  nowHHMM,
   searchPolicy,
   registrationIssues,
   findDuplicate,
@@ -263,6 +264,7 @@ function validateSection(step, f) {
     if (!f.lossDate) e.lossDate = "Enter the date of loss.";
     else if (f.lossDate > TODAY_ISO) e.lossDate = "Loss date cannot be in the future.";
     if (!f.lossTime) e.lossTime = "Enter the approximate time of loss.";
+    else if (f.lossDate === TODAY_ISO && f.lossTime > nowHHMM()) e.lossTime = "Loss time cannot be later than the current time.";
     if (!f.cause) e.cause = "Select the cause of loss.";
     if (!f.place.trim()) e.place = "Pin the location on the map or enter where the loss happened.";
     if (f.pincode && !/^[1-9]\d{5}$/.test(f.pincode)) e.pincode = "Pincode must be 6 digits.";
@@ -967,39 +969,45 @@ export default function ODIntimation() {
                     </Banner>
                   )}
 
-                  <div className="flex min-w-0 flex-col gap-1">
-                    <span className="text-[12px] font-medium text-slate-700">
-                      Pin the place of loss on the map <span className="font-normal text-slate-500">– address fields below fill automatically, you can still edit them</span>
-                    </span>
-                    <LocationPicker
-                      value={f.lossLat ? { lat: f.lossLat, lng: f.lossLng } : null}
-                      onChange={(loc) =>
-                        set({
-                          lossLat: loc.lat,
-                          lossLng: loc.lng,
-                          ...(loc.place ? { place: loc.place } : {}),
-                          ...(loc.city ? { city: loc.city } : {}),
-                          ...(loc.pincode ? { pincode: loc.pincode } : {}),
-                        })
-                      }
-                    />
+                  {/* Map (left) + address & description (right) – side by side to save height */}
+                  <div className="grid grid-cols-1 items-start gap-3 lg:grid-cols-2">
+                    <div className="flex min-w-0 flex-col gap-1">
+                      <span className="text-[12px] font-medium text-slate-700">
+                        Pin the place of loss <span className="font-normal text-slate-500">– fields fill automatically</span>
+                      </span>
+                      <LocationPicker
+                        height={188}
+                        value={f.lossLat ? { lat: f.lossLat, lng: f.lossLng } : null}
+                        onChange={(loc) =>
+                          set({
+                            lossLat: loc.lat,
+                            lossLng: loc.lng,
+                            ...(loc.place ? { place: loc.place } : {}),
+                            ...(loc.city ? { city: loc.city } : {}),
+                            ...(loc.pincode ? { pincode: loc.pincode } : {}),
+                          })
+                        }
+                      />
+                    </div>
+                    <div className="flex min-w-0 flex-col gap-2.5">
+                      <Field label="Place of loss" required error={err.place}>
+                        <input value={f.place} onChange={(e) => set({ place: e.target.value })} className={inputCls(err.place)} placeholder="Road / landmark / area" />
+                      </Field>
+                      <div className="grid grid-cols-2 gap-3">
+                        <Field label="City">
+                          <input value={f.city} onChange={(e) => set({ city: e.target.value })} className={inputCls()} />
+                        </Field>
+                        <Field label="Pincode" error={err.pincode}>
+                          <input inputMode="numeric" maxLength={6} value={f.pincode} onChange={(e) => set({ pincode: e.target.value.replace(/\D/g, "") })} className={inputCls(err.pincode)} placeholder="6 digits" />
+                        </Field>
+                      </div>
+                      <Field label="What happened?" required error={err.description} hint={`${f.description.trim().length} characters (min 20)`}>
+                        <textarea rows={4} value={f.description} onChange={(e) => set({ description: e.target.value })} className={`${inputCls(err.description)} h-auto resize-none py-1.5`} placeholder="Brief description of how the loss occurred and damage seen" />
+                      </Field>
+                    </div>
                   </div>
-                  <div className="grid grid-cols-1 gap-3 sm:grid-cols-4">
-                    <Field label="Place of loss" required error={err.place} className="sm:col-span-2">
-                      <input value={f.place} onChange={(e) => set({ place: e.target.value })} className={inputCls(err.place)} placeholder="Road / landmark / area" />
-                    </Field>
-                    <Field label="City">
-                      <input value={f.city} onChange={(e) => set({ city: e.target.value })} className={inputCls()} />
-                    </Field>
-                    <Field label="Pincode" error={err.pincode}>
-                      <input inputMode="numeric" maxLength={6} value={f.pincode} onChange={(e) => set({ pincode: e.target.value.replace(/\D/g, "") })} className={inputCls(err.pincode)} placeholder="6 digits" />
-                    </Field>
-                  </div>
-                  <Field label="What happened?" required error={err.description} hint={`${f.description.trim().length} characters`}>
-                    <textarea rows={3} value={f.description} onChange={(e) => set({ description: e.target.value })} className={`${inputCls(err.description)} h-auto py-2`} placeholder="Brief description of how the loss occurred and damage seen" />
-                  </Field>
 
-                  <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 xl:grid-cols-4">
+                  <div className="grid grid-cols-2 gap-3 border-t border-slate-100 pt-2.5 lg:grid-cols-4">
                     {!["theft", "flood", "partialTheft"].includes(f.cause) && (
                       <Field label="Was the vehicle being driven?">
                         <Segmented name="Being driven" value={f.beingDriven} onChange={(v) => set({ beingDriven: v })} options={[{ value: "yes", label: "Yes" }, { value: "no", label: "No (parked)" }]} />
@@ -1016,27 +1024,29 @@ export default function ODIntimation() {
                     </Field>
                   </div>
 
-                  {f.tpInvolved === "yes" && (
-                    <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
-                      <Field label="Third-party vehicle no" required error={err.tpVehicleNo} hint="TP intimation is passed to the TP claims system automatically.">
-                        <input value={f.tpVehicleNo} onChange={(e) => set({ tpVehicleNo: e.target.value.toUpperCase() })} className={inputCls(err.tpVehicleNo)} placeholder="TN 01 XY 1234 or Unknown" />
-                      </Field>
-                    </div>
-                  )}
-                  {(f.policeReported === "yes" || f.cause === "theft" || f.cause === "fire" || f.injury === "yes") && (
-                    <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
-                      <Field label="FIR / police report no" required error={err.firNo}>
-                        <input value={f.firNo} onChange={(e) => set({ firNo: e.target.value })} className={inputCls(err.firNo)} placeholder="e.g. 1234/2026" />
-                      </Field>
-                      <Field label="Police station">
-                        <input value={f.policeStation} onChange={(e) => set({ policeStation: e.target.value })} className={inputCls()} placeholder="e.g. J-3 Guindy" />
-                      </Field>
+                  {(f.tpInvolved === "yes" || f.policeReported === "yes" || f.cause === "theft" || f.cause === "fire" || f.injury === "yes") && (
+                    <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-4">
+                      {f.tpInvolved === "yes" && (
+                        <Field label="Third-party vehicle no" required error={err.tpVehicleNo} hint="Passed to the TP claims system" className="lg:col-span-2">
+                          <input value={f.tpVehicleNo} onChange={(e) => set({ tpVehicleNo: e.target.value.toUpperCase() })} className={inputCls(err.tpVehicleNo)} placeholder="TN 01 XY 1234 or Unknown" />
+                        </Field>
+                      )}
+                      {(f.policeReported === "yes" || f.cause === "theft" || f.cause === "fire" || f.injury === "yes") && (
+                        <>
+                          <Field label="FIR / police report no" required error={err.firNo}>
+                            <input value={f.firNo} onChange={(e) => set({ firNo: e.target.value })} className={inputCls(err.firNo)} placeholder="e.g. 1234/2026" />
+                          </Field>
+                          <Field label="Police station">
+                            <input value={f.policeStation} onChange={(e) => set({ policeStation: e.target.value })} className={inputCls()} placeholder="e.g. J-3 Guindy" />
+                          </Field>
+                        </>
+                      )}
                     </div>
                   )}
                   {driverNeeded(f) ? (
-                    <div className="flex flex-col gap-3 border-t border-slate-100 pt-3">
+                    <div className="flex flex-col gap-2 border-t border-slate-100 pt-2.5">
                       <div className="flex items-center justify-between">
-                        <p className="text-[13px] font-semibold text-[#0B1F3A]">Driver at the time of loss</p>
+                        <p className="text-[12.5px] font-semibold text-[#0B1F3A]">Driver at the time of loss</p>
                         <label className="flex items-center gap-2 text-[12.5px] text-slate-700">
                           <input type="checkbox" checked={f.driverSameAsInsured} onChange={(e) => set({ driverSameAsInsured: e.target.checked })} className="h-4 w-4 accent-teal-700" />
                           Driver is the insured
@@ -1053,7 +1063,6 @@ export default function ODIntimation() {
                           label="DL valid till"
                           required
                           error={err.dlValidTill}
-                          hint={f.dlValidTill && f.lossDate && f.dlValidTill < f.lossDate ? undefined : "Checked against the loss date"}
                         >
                           <input type="date" value={f.dlValidTill} onChange={(e) => set({ dlValidTill: e.target.value })} className={inputCls(err.dlValidTill)} />
                         </Field>
@@ -1065,7 +1074,7 @@ export default function ODIntimation() {
                       )}
                     </div>
                   ) : (
-                    <p className="border-t border-slate-100 pt-3 text-[12px] text-slate-500">Driver details not required – vehicle was not being driven at the time of loss.</p>
+                    <p className="border-t border-slate-100 pt-2.5 text-[12px] text-slate-500">Driver details not required – vehicle was not being driven at the time of loss.</p>
                   )}
                 </>
               )}
@@ -1074,62 +1083,62 @@ export default function ODIntimation() {
               {show(3) && <SectionHead n="B" title="Additional information" divider />}
               {show(3) && (
                 <>
-                  <Field label="Where is the vehicle now?">
-                    <Segmented
-                      name="Vehicle location"
-                      value={f.cause === "theft" ? "nottraced" : f.vehicleLocation}
-                      onChange={(v) => set({ vehicleLocation: v })}
-                      options={
-                        f.cause === "theft"
-                          ? [{ value: "nottraced", label: "Not traced" }]
-                          : [
-                              { value: "garage", label: "At / going to garage" },
-                              { value: "spot", label: "At accident spot" },
-                              { value: "home", label: "At residence" },
-                            ]
-                      }
-                    />
-                  </Field>
-
-                  {f.cause !== "theft" && f.vehicleLocation === "garage" && (
-                    <div className="flex flex-col gap-2">
-                      {recommended.length > 0 && (
-                        <Banner kind="info" title="Network steering – recommended garage">
-                          {recommended.map((g) => g.name).join(", ")} – authorised {brand} dealer in our network. Cashless repair available.
-                        </Banner>
-                      )}
-                      <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
-                        <Field label="Garage" required error={err.garage}>
-                          <select value={f.garage} onChange={(e) => set({ garage: e.target.value })} className={inputCls(err.garage)}>
-                            <option value="">Select garage</option>
-                            <optgroup label="Network garages (cashless)">
-                              {NETWORK_GARAGES.map((g) => (
-                                <option key={g.name} value={g.name}>
-                                  {g.name} · {g.type}
-                                  {recommended.includes(g) ? " (recommended)" : ""}
-                                </option>
-                              ))}
-                            </optgroup>
-                            <option value="other">Other / non-network garage (reimbursement)</option>
-                          </select>
-                        </Field>
-                        {f.garage === "other" && (
-                          <Field label="Garage name & address" required error={err.otherGarage}>
-                            <input value={f.otherGarage} onChange={(e) => set({ otherGarage: e.target.value })} className={inputCls(err.otherGarage)} />
-                          </Field>
-                        )}
-                      </div>
-                    </div>
-                  )}
-
-                  {f.cause !== "theft" && (
-                    <Field label="Survey type requested">
-                      <Segmented name="Survey type" value={f.surveyType} onChange={(v) => set({ surveyType: v })} options={[{ value: "garage", label: "Garage survey" }, { value: "spot", label: "Spot survey" }]} />
+                  <div className="grid grid-cols-1 items-start gap-3 sm:grid-cols-2 lg:grid-cols-[auto_auto_minmax(0,1fr)]">
+                    <Field label="Where is the vehicle now?">
+                      <Segmented
+                        name="Vehicle location"
+                        value={f.cause === "theft" ? "nottraced" : f.vehicleLocation}
+                        onChange={(v) => set({ vehicleLocation: v })}
+                        options={
+                          f.cause === "theft"
+                            ? [{ value: "nottraced", label: "Not traced" }]
+                            : [
+                                { value: "garage", label: "Garage" },
+                                { value: "spot", label: "Accident spot" },
+                                { value: "home", label: "Residence" },
+                              ]
+                        }
+                      />
+                    </Field>
+                    {f.cause !== "theft" && (
+                      <Field label="Survey type">
+                        <Segmented name="Survey type" value={f.surveyType} onChange={(v) => set({ surveyType: v })} options={[{ value: "garage", label: "Garage" }, { value: "spot", label: "Spot" }]} />
+                      </Field>
+                    )}
+                    {f.cause !== "theft" && f.vehicleLocation === "garage" && (
+                      <Field
+                        label="Garage"
+                        required
+                        error={err.garage}
+                        hint={recommended.length ? `Recommended: ${recommended.map((g) => g.name).join(", ")} – ${brand} dealer, cashless` : "Network garages offer cashless repair"}
+                        className="sm:col-span-2 lg:col-span-1"
+                      >
+                        <select value={f.garage} onChange={(e) => set({ garage: e.target.value })} className={inputCls(err.garage)}>
+                          <option value="">Select garage</option>
+                          <optgroup label="Network garages (cashless)">
+                            {NETWORK_GARAGES.map((g) => (
+                              <option key={g.name} value={g.name}>
+                                {g.name} · {g.type}
+                                {recommended.includes(g) ? " (recommended)" : ""}
+                              </option>
+                            ))}
+                          </optgroup>
+                          <option value="other">Other / non-network garage (reimbursement)</option>
+                        </select>
+                      </Field>
+                    )}
+                  </div>
+                  {f.cause !== "theft" && f.vehicleLocation === "garage" && f.garage === "other" && (
+                    <Field label="Garage name & address" required error={err.otherGarage}>
+                      <input value={f.otherGarage} onChange={(e) => set({ otherGarage: e.target.value })} className={inputCls(err.otherGarage)} />
                     </Field>
                   )}
 
-                  <Field label="Photos / documents (optional)" hint="Accident photos, RC, DL, FIR – can also be added later from Claim 360">
-                    <label className="relative flex cursor-pointer items-center justify-center gap-2 rounded-md border-2 border-dashed border-slate-300 px-3 py-4 text-[12.5px] text-slate-600 hover:border-teal-600 hover:bg-teal-50/40">
+                  {/* Upload (left) + remarks (right) */}
+                  <div className="grid grid-cols-1 items-start gap-3 lg:grid-cols-2">
+                  <div className="flex min-w-0 flex-col gap-1.5">
+                  <Field label="Photos / documents (optional)" hint="Photos, RC, DL, FIR – can also be added later from Claim 360">
+                    <label className="relative flex h-[58px] cursor-pointer items-center justify-center gap-2 rounded-md border-2 border-dashed border-slate-300 px-3 text-[12.5px] text-slate-600 hover:border-teal-600 hover:bg-teal-50/40">
                       <Upload className="h-4 w-4" aria-hidden="true" />
                       Choose files to attach
                       <input
@@ -1154,9 +1163,11 @@ export default function ODIntimation() {
                     </ul>
                   )}
 
+                  </div>
                   <Field label="Remarks for the claims team">
-                    <textarea rows={2} value={f.remarks} onChange={(e) => set({ remarks: e.target.value })} className={`${inputCls()} h-auto py-2`} />
+                    <textarea value={f.remarks} onChange={(e) => set({ remarks: e.target.value })} className={`${inputCls()} h-[58px] resize-none py-1.5`} placeholder="Optional" />
                   </Field>
+                  </div>
                 </>
               )}
 
