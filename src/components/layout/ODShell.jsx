@@ -492,7 +492,9 @@ export default function ODShell({ active = "dashboard", title, subtitle, childre
           </div>
         </header>
 
-        <main className="min-h-0 flex-1 overflow-y-auto p-2.5">{children}</main>
+        {/* relative: hidden inputs / tooltips inside pages are positioned against this scroll area,
+            never against the browser page – otherwise the whole page could scroll and show a blank area */}
+        <main className="relative min-h-0 flex-1 overflow-y-auto overscroll-contain p-2.5">{children}</main>
       </div>
     </div>
   );

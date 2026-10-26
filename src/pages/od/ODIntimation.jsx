@@ -1129,7 +1129,7 @@ export default function ODIntimation() {
                   )}
 
                   <Field label="Photos / documents (optional)" hint="Accident photos, RC, DL, FIR – can also be added later from Claim 360">
-                    <label className="flex cursor-pointer items-center justify-center gap-2 rounded-md border-2 border-dashed border-slate-300 px-3 py-4 text-[12.5px] text-slate-600 hover:border-teal-600 hover:bg-teal-50/40">
+                    <label className="relative flex cursor-pointer items-center justify-center gap-2 rounded-md border-2 border-dashed border-slate-300 px-3 py-4 text-[12.5px] text-slate-600 hover:border-teal-600 hover:bg-teal-50/40">
                       <Upload className="h-4 w-4" aria-hidden="true" />
                       Choose files to attach
                       <input

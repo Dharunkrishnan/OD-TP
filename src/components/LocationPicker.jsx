@@ -177,6 +177,7 @@ export default function LocationPicker({ value, onChange, height = 240 }) {
           map.current = new g.Map(box.current, {
             center: start,
             zoom: value?.lat ? 16 : 12,
+            gestureHandling: "cooperative", // page scrolls normally; Ctrl + wheel zooms the map
             mapTypeControl: false,
             streetViewControl: false,
             fullscreenControl: false,
@@ -186,7 +187,7 @@ export default function LocationPicker({ value, onChange, height = 240 }) {
           marker.current.addListener("dragend", (e) => pinRef.current(e.latLng.lat(), e.latLng.lng()));
         } else {
           const L = window.L;
-          map.current = L.map(box.current, { zoomControl: true }).setView([start.lat, start.lng], value?.lat ? 16 : 12);
+          map.current = L.map(box.current, { zoomControl: true, scrollWheelZoom: false }).setView([start.lat, start.lng], value?.lat ? 16 : 12);
           L.tileLayer("https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png", {
             maxZoom: 19,
             attribution: "&copy; OpenStreetMap contributors",
@@ -197,6 +198,16 @@ export default function LocationPicker({ value, onChange, height = 240 }) {
             const p = marker.current.getLatLng();
             pinRef.current(p.lat, p.lng);
           });
+          // Mouse wheel scrolls the page; Ctrl + wheel zooms the map (like Google Maps embeds)
+          box.current.addEventListener(
+            "wheel",
+            (e) => {
+              if (!e.ctrlKey || !map.current) return;
+              e.preventDefault();
+              map.current.setZoom(map.current.getZoom() + (e.deltaY < 0 ? 1 : -1));
+            },
+            { passive: false }
+          );
           setTimeout(() => map.current?.invalidateSize(), 0);
         }
         setStatus("ready");
@@ -320,7 +331,7 @@ export default function LocationPicker({ value, onChange, height = 240 }) {
               Pinned at {value.lat.toFixed(5)}, {value.lng.toFixed(5)}
             </span>
           ) : (
-            "Click on the map or drag the pin to the place of loss"
+            "Click on the map or drag the pin · Ctrl + scroll to zoom"
           )}
         </span>
         <span className="text-slate-400">{PROVIDER === "google" ? "Google Maps" : "OpenStreetMap"}</span>
