@@ -333,7 +333,7 @@ export default function ODIntimation() {
   const brand = (f.policy?.vehicle || f.manualVehicle || "").split(" ")[0];
   const recommended = NETWORK_GARAGES.filter((g) => g.brands.includes(brand));
   const history = useMemo(() => claimHistory(f.policy?.regNo || (f.noPolicy ? f.manualRegNo : "")), [f.policy, f.noPolicy, f.manualRegNo]);
-  const recentIntimations = useMemo(() => [...WORK_QUEUE].sort((a, b) => (a.regDate < b.regDate ? 1 : -1)).slice(0, 5), []);
+  const recentIntimations = useMemo(() => [...WORK_QUEUE].sort((a, b) => (a.regDate < b.regDate ? 1 : -1)).slice(0, 6), []);
   // "By cause of loss" card on the empty step – last 7 days
   const week = useMemo(() => {
     const rows = WORK_QUEUE.filter((r) => daysBetween(r.regDate, TODAY_ISO) <= 7);
@@ -583,13 +583,13 @@ export default function ODIntimation() {
                     <span className="text-[12px] font-medium text-slate-700">
                       Search policy <span className="text-red-600">*</span>
                     </span>
-                    <div className="flex gap-2">
-                      <span className="relative flex-1">
+                    <div className="flex flex-wrap items-center gap-2">
+                      <span className="relative w-full max-w-[420px] sm:w-auto sm:flex-1">
                         <Search className="pointer-events-none absolute left-2.5 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" aria-hidden="true" />
                         <input
                           value={f.search}
                           onChange={(e) => set({ search: e.target.value })}
-                          placeholder="Vehicle no, policy no, insured name or mobile"
+                          placeholder="Vehicle no, policy no, name or mobile"
                           aria-label="Search policy"
                           className={`${inputCls(err.policy)} pl-8`}
                         />
@@ -597,28 +597,25 @@ export default function ODIntimation() {
                       <button type="submit" className="h-9 rounded-md bg-teal-700 px-4 text-[13px] font-semibold text-white hover:bg-teal-800">
                         Search
                       </button>
+                      {/* Quick pick (demo) – same row as the search */}
+                      <label className="flex min-w-0 items-center gap-1.5 sm:ml-auto">
+                        <span className="whitespace-nowrap text-[11.5px] font-medium text-slate-500">Quick pick (demo)</span>
+                        <select
+                          value=""
+                          onChange={(e) => e.target.value && doSearch(null, e.target.value)}
+                          aria-label="Quick pick a demo vehicle"
+                          className="h-9 w-[230px] max-w-full rounded-md border border-slate-300 bg-white px-2 text-[12.5px] text-slate-700 focus:border-teal-700 focus:outline-none focus:ring-4 focus:ring-teal-700/15"
+                        >
+                          <option value="">Select a demo vehicle…</option>
+                          {DEMO_POLICIES.map((p) => (
+                            <option key={p.regNo} value={p.regNo}>
+                              {p.regNo} – {scenarioTag(p).label}
+                            </option>
+                          ))}
+                        </select>
+                      </label>
                     </div>
                     {err.policy && <span data-field-error className="text-[11.5px] text-red-700">{err.policy}</span>}
-                    <div className="mt-1 flex flex-wrap items-center gap-1.5">
-                      <span className="text-[11px] font-medium text-slate-500">Quick pick (demo):</span>
-                      {DEMO_POLICIES.map((p) => {
-                        const tag = scenarioTag(p);
-                        return (
-                          <button
-                            key={p.regNo}
-                            type="button"
-                            onClick={() => doSearch(null, p.regNo)}
-                            title={`Search ${p.regNo} – ${tag.label}`}
-                            className={`flex items-center gap-1.5 rounded-full border px-2 py-0.5 text-[11.5px] hover:shadow-sm ${
-                              f.policy?.regNo === p.regNo ? "border-teal-600 bg-teal-50" : "border-slate-200 bg-white hover:border-slate-300"
-                            }`}
-                          >
-                            <span className="font-mono font-semibold text-slate-700">{p.regNo}</span>
-                            <span className={`rounded px-1 text-[10px] font-semibold ${tag.cls}`}>{tag.label}</span>
-                          </button>
-                        );
-                      })}
-                    </div>
                   </form>
 
                   {/* Before any search: latest work so the page is useful at the start of a call */}
