@@ -6,10 +6,9 @@
 //
 // URL filter: /od/worklist?tab=due | breach | risk | docs | nbnr   (used by dashboard links)
 
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useId, useMemo, useRef, useState } from "react";
 import { useSearchParams, useNavigate } from "react-router-dom";
 import {
-  Search,
   AlertTriangle,
   Clock,
   CheckCircle2,
@@ -24,7 +23,6 @@ import {
   X,
   FilterX,
   Inbox,
-  FileText,
   CalendarClock,
   Bell,
   Columns3,
@@ -33,10 +31,9 @@ import {
   UserRound,
   Car,
   ArrowUpDown,
+  Check,
 } from "lucide-react";
 import ODShell from "../../components/layout/ODShell";
-import SearchPopover from "../../components/SearchPopover";
-import { searchClaims, dueTodayClaims, slaTone } from "../../data/searchIndex";
 import { WORK_QUEUE, DIARY, ALERTS } from "../../data/odHandlerMock";
 import { claimSlug } from "../../data/odClaimDetail";
 
@@ -51,6 +48,29 @@ const TABS = [
   { key: "docs", label: "Docs pending", test: (r) => r.stage === "Documents pending" },
   { key: "nbnr", label: "NBNR", test: (r) => r.stage === "NBNR" },
 ];
+
+// Count badge colours on the quick-filter tabs
+const TAB_TONE = {
+  due: "bg-amber-100 text-amber-900",
+  breach: "bg-red-100 text-red-700",
+  risk: "bg-amber-100 text-amber-900",
+  docs: "bg-sky-100 text-sky-800",
+  nbnr: "bg-violet-100 text-violet-800",
+};
+
+// Stage dot colours (by type of work)
+const STAGE_DOT = {
+  NBNR: "bg-violet-500",
+  Registered: "bg-slate-400",
+  "Survey pending": "bg-sky-500",
+  Assessment: "bg-indigo-500",
+  "Documents pending": "bg-amber-500",
+  Approval: "bg-orange-500",
+  "Repair / DO": "bg-teal-500",
+  Payment: "bg-emerald-500",
+};
+// Row priority stripe (left edge) by SLA status
+const SLA_STRIPE = { breach: "shadow-[inset_3px_0_0_#dc2626]", risk: "shadow-[inset_3px_0_0_#f59e0b]", ok: "shadow-[inset_3px_0_0_#10b981]" };
 
 const SORTS = [
   { key: "priority", label: "Priority" },
@@ -74,6 +94,7 @@ const STAGES = [
 const PENDING = uniq("pendingWith");
 const LOSSES = uniq("lossType");
 
+const lakh = (n) => (n >= 100000 ? `₹${(n / 100000).toFixed(2)} L` : "₹" + Number(n).toLocaleString("en-IN"));
 const inr = (n) => "₹" + Number(n).toLocaleString("en-IN");
 const MON = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
 const fmtDate = (iso) => `${iso.slice(8, 10)} ${MON[Number(iso.slice(5, 7)) - 1]}`;
@@ -83,16 +104,16 @@ const fmtDate = (iso) => `${iso.slice(8, 10)} ${MON[Number(iso.slice(5, 7)) - 1]
    their min width; the rest move out automatically (never squeezed, no sideways scroll) and come
    back when there is room. w = share of the spare width. The user can also hide columns. */
 const COLUMNS = [
-  { key: "claimNo", label: "Claim no", w: 164, min: 164, fixed: true },
+  { key: "claimNo", label: "Claim no", w: 164, min: 158, fixed: true },
   { key: "regNo", label: "Vehicle no", w: 110, min: 110 },
-  { key: "insured", label: "Insured", w: 118, min: 118 },
-  { key: "stage", label: "Stage", w: 130, min: 130 },
-  { key: "pendingWith", label: "Pending with", w: 122, min: 122 },
-  { key: "sla", label: "SLA", w: 118, min: 118 },
-  { key: "due", label: "Due", w: 82, min: 82 },
-  { key: "regDate", label: "Registered date", w: 114, min: 114 },
+  { key: "insured", label: "Insured", w: 118, min: 116 },
+  { key: "stage", label: "Stage", w: 140, min: 140 },
+  { key: "pendingWith", label: "Pending with", w: 122, min: 114 },
+  { key: "sla", label: "SLA", w: 118, min: 114 },
+  { key: "due", label: "Due", w: 82, min: 80 },
+  { key: "regDate", label: "Registered date", w: 114, min: 112 },
   { key: "age", label: "Age", w: 46, min: 46, right: true },
-  { key: "reserve", label: "Reserve", w: 84, min: 84, right: true },
+  { key: "reserve", label: "Reserve", w: 84, min: 80, right: true },
   { key: "nextAction", label: "Next action", w: 260, min: 150 },
   { key: "vehicle", label: "Make / model", w: 170, min: 150 },
   { key: "lossType", label: "Loss type", w: 120, min: 120 },
@@ -174,45 +195,123 @@ function FlagDot({ text }) {
 }
 
 // Pill-style filter: "Label: value ▾". Teal when set, with its own × to clear.
-// A native <select> sits invisibly on top, so keyboard, screen readers and mobile pickers all work.
-function FilterPill({ label, icon: Icon, value, onChange, options, allLabel, showClear = true }) {
-  const opts = options.map((o) => ({ key: o.key ?? o, label: o.label ?? o }));
+// Opens a styled menu (✓ on the current choice, claim count per option, ↑ ↓ Enter Esc).
+function FilterPill({ label, icon: Icon, value, onChange, options, allLabel, showClear = true, counts, align = "left" }) {
+  const opts = [
+    ...(allLabel ? [{ key: "", label: allLabel }] : []),
+    ...options.map((o) => ({ key: o.key ?? o, label: o.label ?? o })),
+  ];
   const current = opts.find((o) => o.key === value);
   const on = Boolean(value) && Boolean(allLabel);
+  const [open, setOpen] = useState(false);
+  const [hi, setHi] = useState(0);
+  const wrap = useRef(null);
+  const listId = useId();
+
+  useEffect(() => {
+    if (!open) return undefined;
+    const onDown = (e) => wrap.current && !wrap.current.contains(e.target) && setOpen(false);
+    document.addEventListener("mousedown", onDown);
+    return () => document.removeEventListener("mousedown", onDown);
+  }, [open]);
+
+  function openMenu() {
+    setHi(Math.max(0, opts.findIndex((o) => o.key === value)));
+    setOpen(true);
+  }
+  function pick(o) {
+    onChange(o.key);
+    setOpen(false);
+  }
+  function onKey(e) {
+    if (!open && (e.key === "ArrowDown" || e.key === "Enter" || e.key === " ")) {
+      e.preventDefault();
+      openMenu();
+    } else if (open && e.key === "ArrowDown") {
+      e.preventDefault();
+      setHi((i) => Math.min(i + 1, opts.length - 1));
+    } else if (open && e.key === "ArrowUp") {
+      e.preventDefault();
+      setHi((i) => Math.max(i - 1, 0));
+    } else if (open && (e.key === "Enter" || e.key === " ")) {
+      e.preventDefault();
+      pick(opts[hi]);
+    } else if (e.key === "Escape") {
+      setOpen(false);
+    }
+  }
+
   return (
-    <div
-      className={`flex h-8 flex-none items-center rounded-full border text-[12px] transition ${
-        on ? "border-teal-600 bg-teal-50 text-teal-900" : "border-slate-300 bg-white text-slate-700 hover:border-slate-400"
-      }`}
-    >
-      <label className="relative flex h-full cursor-pointer items-center gap-1.5 pl-3 pr-2.5">
-        {Icon && <Icon className={`h-3.5 w-3.5 flex-none ${on ? "text-teal-700" : "text-slate-400"}`} aria-hidden="true" />}
-        <span className={on ? "text-teal-700" : "text-slate-500"}>{label}:</span>
-        <span className="max-w-[150px] truncate font-semibold">{current ? current.label : allLabel}</span>
-        <ChevronDown className={`h-3.5 w-3.5 flex-none ${on ? "text-teal-700" : "text-slate-400"}`} aria-hidden="true" />
-        <select
-          value={value}
-          onChange={(e) => onChange(e.target.value)}
-          aria-label={label}
-          className="absolute inset-0 h-full w-full cursor-pointer appearance-none opacity-0"
-        >
-          {allLabel && <option value="">{allLabel}</option>}
-          {opts.map((o) => (
-            <option key={o.key} value={o.key}>
-              {o.label}
-            </option>
-          ))}
-        </select>
-      </label>
-      {on && showClear && (
+    <div ref={wrap} className="relative flex-none">
+      <div
+        className={`flex h-8 items-center rounded-full border text-[12px] transition ${
+          on ? "border-teal-600 bg-teal-50 text-teal-900" : open ? "border-slate-400 bg-white text-slate-800" : "border-slate-300 bg-white text-slate-700 hover:border-slate-400"
+        }`}
+      >
         <button
           type="button"
-          onClick={() => onChange("")}
-          aria-label={`Clear ${label} filter`}
-          className="mr-1 grid h-6 w-6 place-items-center rounded-full text-teal-700 hover:bg-teal-100"
+          onClick={() => (open ? setOpen(false) : openMenu())}
+          onKeyDown={onKey}
+          aria-haspopup="listbox"
+          aria-expanded={open}
+          aria-controls={listId}
+          aria-label={`${label}: ${current ? current.label : allLabel}`}
+          className="flex h-full items-center gap-1.5 rounded-full pl-3 pr-2.5 focus:outline-none focus-visible:ring-4 focus-visible:ring-teal-700/15"
         >
-          <X className="h-3 w-3" aria-hidden="true" />
+          {Icon && <Icon className={`h-3.5 w-3.5 flex-none ${on ? "text-teal-700" : "text-slate-400"}`} aria-hidden="true" />}
+          <span className={on ? "text-teal-700" : "text-slate-500"}>{label}:</span>
+          <span className="max-w-[150px] truncate font-semibold">{current ? current.label : allLabel}</span>
+          <ChevronDown className={`h-3.5 w-3.5 flex-none transition ${open ? "rotate-180" : ""} ${on ? "text-teal-700" : "text-slate-400"}`} aria-hidden="true" />
         </button>
+        {on && showClear && (
+          <button
+            type="button"
+            onClick={() => onChange("")}
+            aria-label={`Clear ${label} filter`}
+            className="mr-1 grid h-6 w-6 place-items-center rounded-full text-teal-700 hover:bg-teal-100"
+          >
+            <X className="h-3 w-3" aria-hidden="true" />
+          </button>
+        )}
+      </div>
+
+      {open && (
+        <ul
+          id={listId}
+          role="listbox"
+          aria-label={label}
+          className={`absolute top-full z-30 mt-1.5 max-h-[300px] min-w-full overflow-y-auto rounded-xl border border-slate-200 bg-white p-1 shadow-xl ${
+            align === "right" ? "right-0" : "left-0"
+          }`}
+        >
+          {opts.map((o, i) => {
+            const sel = o.key === value;
+            const n = counts ? (o.key === "" ? counts.__all : counts[o.key] || 0) : null;
+            return (
+              <li
+                key={o.key || "__all"}
+                role="option"
+                aria-selected={sel}
+                onMouseEnter={() => setHi(i)}
+                onMouseDown={(e) => {
+                  e.preventDefault();
+                  pick(o);
+                }}
+                className={`flex cursor-pointer items-center gap-2 whitespace-nowrap rounded-lg py-1.5 pl-2 pr-2.5 text-[12.5px] ${
+                  hi === i ? "bg-slate-100" : ""
+                } ${sel ? "font-semibold text-teal-900" : "text-slate-700"} ${o.key === "" && opts.length > 1 ? "mb-0.5" : ""}`}
+              >
+                <Check className={`h-3.5 w-3.5 flex-none ${sel ? "text-teal-700" : "text-transparent"}`} aria-hidden="true" />
+                <span className="flex-1">{o.label}</span>
+                {n !== null && (
+                  <span className={`min-w-6 rounded-full px-1.5 text-center text-[10.5px] font-semibold leading-[18px] ${sel ? "bg-teal-700 text-white" : n ? "bg-slate-100 text-slate-600" : "text-slate-300"}`}>
+                    {n}
+                  </span>
+                )}
+              </li>
+            );
+          })}
+        </ul>
       )}
     </div>
   );
@@ -334,6 +433,32 @@ export default function ODWorkQueue() {
     return [...list].sort(by);
   }, [tab, q, stage, pending, loss, sort]);
 
+  // Claim counts shown in each filter menu: what you would get by picking that option
+  const optionCounts = useMemo(() => {
+    const t = TABS.find((x) => x.key === tab);
+    const term = q.trim().toLowerCase();
+    const base = WORK_QUEUE.filter(
+      (r) =>
+        t.test(r) &&
+        (!term ||
+          r.claimNo.toLowerCase().includes(term) ||
+          r.regNo.toLowerCase().replace(/\s/g, "").includes(term.replace(/\s/g, "")) ||
+          r.insured.toLowerCase().includes(term) ||
+          r.vehicle.toLowerCase().includes(term))
+    );
+    const countBy = (field, keep) => {
+      const rows = base.filter(keep);
+      const m = { __all: rows.length };
+      rows.forEach((r) => (m[r[field]] = (m[r[field]] || 0) + 1));
+      return m;
+    };
+    return {
+      stage: countBy("stage", (r) => (!pending || r.pendingWith === pending) && (!loss || r.lossType === loss)),
+      pending: countBy("pendingWith", (r) => (!stage || r.stage === stage) && (!loss || r.lossType === loss)),
+      loss: countBy("lossType", (r) => (!stage || r.stage === stage) && (!pending || r.pendingWith === pending)),
+    };
+  }, [tab, q, stage, pending, loss]);
+
   const pages = Math.max(1, Math.ceil(filtered.length / PAGE_SIZE));
   const curPage = Math.min(page, pages);
   const rows = filtered.slice((curPage - 1) * PAGE_SIZE, curPage * PAGE_SIZE);
@@ -342,36 +467,6 @@ export default function ODWorkQueue() {
   function applySearch(text) {
     setQ(text);
     setPage(1);
-  }
-
-  // Suggestions for the queue search panel
-  function queueSuggest(text) {
-    const claimItem = (r) => ({
-      id: r.claimNo,
-      icon: FileText,
-      title: `${r.claimNo} · ${r.regNo}`,
-      subtitle: `${r.insured} · ${r.stage}`,
-      meta: r.sla.label,
-      metaTone: slaTone(r.sla.status),
-      onSelect: () => openClaim(r.claimNo),
-    });
-    if (!text) return [{ group: "Due today", items: dueTodayClaims().map(claimItem) }];
-    const hits = searchClaims(text, 8);
-    return [
-      {
-        group: "Filter",
-        items: [
-          {
-            id: "filter",
-            icon: Search,
-            title: `Show all claims matching “${text}”`,
-            subtitle: `${hits.length ? `${hits.length}${hits.length === 8 ? "+" : ""} ${hits.length === 1 ? "match" : "matches"}` : "No match"} in your queue`,
-            onSelect: () => applySearch(text),
-          },
-        ],
-      },
-      { group: "Open a claim", items: hits.map(claimItem) },
-    ];
   }
 
   function clearFilters() {
@@ -418,7 +513,12 @@ export default function ODWorkQueue() {
       case "regNo":
         return <span className="tabular-nums text-slate-700">{r.regNo}</span>;
       case "stage":
-        return <span className="font-medium text-slate-800">{r.stage}</span>;
+        return (
+          <span className="flex min-w-0 items-center gap-1.5 font-medium text-slate-800">
+            <span className={`h-1.5 w-1.5 flex-none rounded-full ${STAGE_DOT[r.stage] || "bg-slate-400"}`} aria-hidden="true" />
+            <span className="truncate">{r.stage}</span>
+          </span>
+        );
       case "sla":
         return <SlaChip sla={r.sla} />;
       case "due": {
@@ -464,7 +564,9 @@ export default function ODWorkQueue() {
           action={
             <span className="flex flex-wrap items-center gap-2">
               <span className="text-[11px] text-slate-500">
-                Showing {filtered.length} of {WORK_QUEUE.length}
+                Showing <b className="font-semibold text-slate-700">{filtered.length}</b> of {WORK_QUEUE.length}
+                <span className="mx-1.5 text-slate-300">·</span>
+                Reserve <b className="font-semibold text-slate-700">{lakh(filtered.reduce((t, r) => t + r.reserve, 0))}</b>
               </span>
               <button
                 type="button"
@@ -494,10 +596,10 @@ export default function ODWorkQueue() {
           }
         >
           {/* Quick filter tabs */}
-          <div role="tablist" aria-label="Quick filters" className="flex flex-wrap gap-1 border-b border-slate-100 px-2.5 py-1.5">
+          <div role="tablist" aria-label="Quick filters" className="flex flex-wrap gap-x-1 border-b border-slate-200 px-2.5">
             {TABS.map((t) => {
               const on = tab === t.key;
-              const danger = t.key === "breach";
+              const tone = TAB_TONE[t.key] || "bg-slate-100 text-slate-600";
               return (
                 <button
                   key={t.key}
@@ -505,15 +607,13 @@ export default function ODWorkQueue() {
                   type="button"
                   aria-selected={on}
                   onClick={() => setTab(t.key)}
-                  className={`flex h-7 items-center gap-1.5 rounded px-2 text-[12px] font-medium transition ${
-                    on ? "bg-[#0B1F3A] text-white" : "text-slate-600 hover:bg-slate-100"
+                  className={`-mb-px flex h-9 items-center gap-1.5 border-b-2 px-2.5 text-[12.5px] font-semibold transition ${
+                    on ? "border-teal-700 text-teal-900" : "border-transparent text-slate-500 hover:border-slate-300 hover:text-slate-800"
                   }`}
                 >
                   {t.label}
                   <span
-                    className={`rounded px-1.5 text-[10.5px] font-semibold ${
-                      on ? "bg-white/15 text-white" : danger ? "bg-red-50 text-red-700" : "bg-slate-100 text-slate-600"
-                    }`}
+                    className={`min-w-5 rounded-full px-1.5 text-center text-[10.5px] font-bold leading-[18px] ${on ? "bg-teal-700 text-white" : tone}`}
                   >
                     {counts[t.key]}
                   </span>
@@ -524,31 +624,18 @@ export default function ODWorkQueue() {
 
           {/* Filters – pill style */}
           <div className="flex flex-wrap items-center gap-2 border-b border-slate-100 bg-slate-50/60 px-2.5 py-2">
-            {/* Search – icon only; opens suggestions */}
-            <div className="flex min-w-0 items-center gap-1.5">
-              <SearchPopover
-                size="pill"
-                align="left"
-                label="Search my queue"
-                placeholder="Claim no, vehicle no or insured name"
-                suggest={queueSuggest}
-                onSubmit={applySearch}
-                submitLabel="to filter the queue"
-                active={q}
-              />
-              {q && (
-                <span className="flex h-8 min-w-0 items-center gap-1 rounded-full border border-teal-600 bg-teal-50 pl-3 pr-1 text-[12px] font-semibold text-teal-900">
-                  <span className="truncate">“{q}”</span>
-                  <button type="button" onClick={() => applySearch("")} aria-label="Remove search filter" className="grid h-6 w-6 flex-none place-items-center rounded-full text-teal-700 hover:bg-teal-100">
-                    <X className="h-3 w-3" aria-hidden="true" />
-                  </button>
-                </span>
-              )}
-            </div>
-            <span className="mx-0.5 h-5 w-px bg-slate-200" aria-hidden="true" />
-            <FilterPill label="Stage" icon={Layers} value={stage} onChange={(v) => { setStage(v); setPage(1); }} options={STAGES} allLabel="All" />
-            <FilterPill label="Pending with" icon={UserRound} value={pending} onChange={(v) => { setPending(v); setPage(1); }} options={PENDING} allLabel="Anyone" />
-            <FilterPill label="Loss type" icon={Car} value={loss} onChange={(v) => { setLoss(v); setPage(1); }} options={LOSSES} allLabel="All" />
+            {/* Text filter chip – set when an alert is clicked (search itself is in the header) */}
+            {q && (
+              <span className="flex h-8 min-w-0 items-center gap-1 rounded-full border border-teal-600 bg-teal-50 pl-3 pr-1 text-[12px] font-semibold text-teal-900">
+                <span className="truncate">“{q}”</span>
+                <button type="button" onClick={() => applySearch("")} aria-label="Remove search filter" className="grid h-6 w-6 flex-none place-items-center rounded-full text-teal-700 hover:bg-teal-100">
+                  <X className="h-3 w-3" aria-hidden="true" />
+                </button>
+              </span>
+            )}
+            <FilterPill label="Stage" icon={Layers} value={stage} onChange={(v) => { setStage(v); setPage(1); }} options={STAGES} allLabel="All" counts={optionCounts.stage} />
+            <FilterPill label="Pending with" icon={UserRound} value={pending} onChange={(v) => { setPending(v); setPage(1); }} options={PENDING} allLabel="Anyone" counts={optionCounts.pending} />
+            <FilterPill label="Loss type" icon={Car} value={loss} onChange={(v) => { setLoss(v); setPage(1); }} options={LOSSES} allLabel="All" counts={optionCounts.loss} />
             {anyFilter && (
               <button type="button" onClick={clearFilters} className="flex h-8 items-center gap-1 rounded-full px-2.5 text-[12px] font-semibold text-teal-700 hover:bg-teal-50">
                 <FilterX className="h-3.5 w-3.5" aria-hidden="true" />
@@ -564,6 +651,7 @@ export default function ODWorkQueue() {
                 onChange={(v) => setSort(v || "priority")}
                 options={SORTS}
                 showClear={false}
+                align="right"
               />
             <div className="relative">
               <button
@@ -642,7 +730,7 @@ export default function ODWorkQueue() {
                       <td
                         key={c.key}
                         title={["vehicle", "insured", "lossType", "stage", "pendingWith", "nextAction"].includes(c.key) ? String(r[c.key]) : undefined}
-                        className={`py-2 ${c.fixed ? "pl-3 pr-1.5" : "px-1.5"} ${
+                        className={`py-2 ${c.fixed ? `pl-3 pr-1.5 ${SLA_STRIPE[r.sla.status]}` : "px-1.5"} ${
                           c.right ? "text-right tabular-nums" : ""
                         } truncate`}
                       >
