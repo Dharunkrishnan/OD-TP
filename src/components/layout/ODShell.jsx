@@ -3,7 +3,8 @@
 // Layout: sidebar and header never move. Only the content area scrolls.
 // (Own scroll container, so it works regardless of global CSS in index.css.)
 // Desktop default = HIDDEN: the sidebar is hidden entirely and the page uses the full width.
-//   Move the mouse to the left edge (or click ☰ in the header) → it slides in over the page;
+//   Move the mouse to the left edge → a slim icons-only bar slides in (names show on hover);
+//   click ☰ in the header for the full panel with names;
 //   it hides again when the mouse leaves. "Pin menu" keeps it open beside the page;
 //   "Collapse menu" hides it entirely again. The choice is remembered per browser.
 // Mobile: sidebar opens as a drawer from the menu button.
@@ -171,7 +172,8 @@ export default function ODShell({ active = "dashboard", title, subtitle, childre
   const role = getRole(user, "OD");
 
   // Collapse applies to desktop only; the mobile drawer always shows full labels
-  const c = false; // no icons-only rail: the sidebar is either hidden or fully open
+  // Hover on the left edge → slim icons-only bar (names as tooltips). ☰ / pinned / mobile → full labels.
+  const c = auto && peek === "hover" && !mobileNav;
   const hideWhenCollapsed = c ? "lg:hidden" : "";
 
   // "Collapse menu" always hides the sidebar entirely
@@ -433,7 +435,7 @@ export default function ODShell({ active = "dashboard", title, subtitle, childre
           >
             <PanelLeftClose className="h-[18px] w-[18px] flex-none" aria-hidden="true" />
             <span className={hideWhenCollapsed}>Collapse menu</span>
-            <Tip show={c}>Expand menu</Tip>
+            <Tip show={c}>Collapse menu</Tip>
           </button>
         </div>
       </aside>
