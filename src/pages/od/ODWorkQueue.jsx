@@ -6,7 +6,7 @@
 //
 // URL filter: /od/worklist?tab=due | breach | risk | docs | nbnr   (used by dashboard links)
 
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { useSearchParams, useNavigate } from "react-router-dom";
 import {
   Search,
@@ -78,28 +78,27 @@ const inr = (n) => "₹" + Number(n).toLocaleString("en-IN");
 const MON = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
 const fmtDate = (iso) => `${iso.slice(8, 10)} ${MON[Number(iso.slice(5, 7)) - 1]}`;
 
-/* Table columns – most-used first. w = relative width: the table always fits the screen
-   (no sideways scroll); each column gets its share and long text shows "…" with a tooltip.
-   The user can hide any column (except Claim no) from the "Columns" menu. */
+/* Table columns – most-used first.
+   min = narrowest the column may get. Columns are shown in this order only while they fit at
+   their min width; the rest move out automatically (never squeezed, no sideways scroll) and come
+   back when there is room. w = share of the spare width. The user can also hide columns. */
 const COLUMNS = [
-  { key: "claimNo", label: "Claim no", w: 164, fixed: true },
-  { key: "regNo", label: "Vehicle no", w: 112 },
-  { key: "insured", label: "Insured", w: 118 },
-  { key: "stage", label: "Stage", w: 137 },
-  { key: "pendingWith", label: "Pending with", w: 118 },
-  { key: "sla", label: "SLA", w: 124 },
-  { key: "due", label: "Due", w: 88 },
-  { key: "regDate", label: "Registered date", w: 118 },
-  { key: "age", label: "Age", w: 44, right: true },
-  { key: "reserve", label: "Reserve", w: 80, right: true },
-  { key: "nextAction", label: "Next action", w: 150 },
-  { key: "vehicle", label: "Make / model", w: 150 },
-  { key: "lossType", label: "Loss type", w: 124 },
-  { key: "lossDate", label: "Loss date", w: 76 },
+  { key: "claimNo", label: "Claim no", w: 164, min: 164, fixed: true },
+  { key: "regNo", label: "Vehicle no", w: 110, min: 110 },
+  { key: "insured", label: "Insured", w: 118, min: 118 },
+  { key: "stage", label: "Stage", w: 130, min: 130 },
+  { key: "pendingWith", label: "Pending with", w: 122, min: 122 },
+  { key: "sla", label: "SLA", w: 118, min: 118 },
+  { key: "due", label: "Due", w: 82, min: 82 },
+  { key: "regDate", label: "Registered date", w: 114, min: 114 },
+  { key: "age", label: "Age", w: 46, min: 46, right: true },
+  { key: "reserve", label: "Reserve", w: 84, min: 84, right: true },
+  { key: "nextAction", label: "Next action", w: 260, min: 150 },
+  { key: "vehicle", label: "Make / model", w: 170, min: 150 },
+  { key: "lossType", label: "Loss type", w: 120, min: 120 },
+  { key: "lossDate", label: "Loss date", w: 74, min: 74 },
 ];
-const COLS_KEY = "smartclaims-wq-hidden-cols-v2";
-// First visit on a screen narrower than 1536 px: start with these hidden so nothing is cramped
-const NARROW_HIDDEN = ["vehicle", "lossType", "lossDate"];
+const COLS_KEY = "smartclaims-wq-hidden-cols-v3";
 
 /* Follow-up due date for each claim, worked out from the SLA time left (relative to today's real date).
    In production this comes from the diary / task due date on the claim. */
@@ -243,19 +242,37 @@ export default function ODWorkQueue() {
     try {
       const saved = localStorage.getItem(COLS_KEY);
       if (saved) return JSON.parse(saved);
-      return window.innerWidth < 1536 ? NARROW_HIDDEN : [];
+      return [];
     } catch {
       return [];
     }
   });
-  // Wide screens (≥1536 px) give Next action a bigger share of the width
-  const [wide, setWide] = useState(() => window.innerWidth >= 1536);
+  const wanted = COLUMNS.filter((c) => !hidden.includes(c.key));
+  // Fit columns to the table width (measured live)
+  const tableBox = useRef(null);
+  const [boxW, setBoxW] = useState(() => Math.max(320, window.innerWidth - 24));
   useEffect(() => {
-    const onResize = () => setWide(window.innerWidth >= 1536);
-    window.addEventListener("resize", onResize);
-    return () => window.removeEventListener("resize", onResize);
+    const el = tableBox.current;
+    if (!el || typeof ResizeObserver === "undefined") return undefined;
+    const ro = new ResizeObserver(([e]) => setBoxW(Math.round(e.contentRect.width)));
+    ro.observe(el);
+    return () => ro.disconnect();
   }, []);
-  const cols = COLUMNS.filter((c) => !hidden.includes(c.key)).map((c) => (c.key === "nextAction" && wide ? { ...c, w: 240 } : c));
+  const cols = [];
+  const noRoom = [];
+  let usedMin = 0;
+  for (const c of wanted) {
+    if (noRoom.length === 0 && (c.fixed || usedMin + c.min <= boxW)) {
+      cols.push(c);
+      usedMin += c.min;
+    } else noRoom.push(c.key);
+  }
+  // Every column gets its minimum; spare width → half to Next action, rest shared by size
+  const spare = Math.max(0, boxW - usedMin);
+  const hasNext = cols.some((c) => c.key === "nextAction");
+  const otherMin = cols.reduce((t, c) => t + (c.key === "nextAction" ? 0 : c.min), 0) || 1;
+  const colWidth = (c) =>
+    c.min + (c.key === "nextAction" ? spare / 2 : (spare * (hasNext ? 0.5 : 1) * c.min) / otherMin);
   function toggleCol(key) {
     setHidden((h) => {
       const next = h.includes(key) ? h.filter((k) => k !== key) : [...h, key];
@@ -568,9 +585,15 @@ export default function ODWorkQueue() {
                     {COLUMNS.map((c) => (
                       <label key={c.key} className={`flex items-center gap-2 px-3 py-1 text-[12.5px] ${c.fixed ? "text-slate-400" : "cursor-pointer text-slate-700 hover:bg-slate-50"}`}>
                         <input type="checkbox" checked={!hidden.includes(c.key)} disabled={c.fixed} onChange={() => toggleCol(c.key)} className="h-3.5 w-3.5 accent-teal-700" />
-                        {c.title || c.label}
+                        <span className="flex-1">{c.title || c.label}</span>
+                        {noRoom.includes(c.key) && <span className="text-[10.5px] text-amber-700">no room</span>}
                       </label>
                     ))}
+                    {noRoom.length > 0 && (
+                      <p className="border-t border-slate-100 px-3 pb-1 pt-1.5 text-[11px] leading-snug text-slate-500">
+                        “No room” columns appear when the screen is wider, or when you untick other columns.
+                      </p>
+                    )}
                     {hidden.length > 0 && (
                       <button type="button" onClick={() => { setHidden([]); try { localStorage.removeItem(COLS_KEY); } catch { /* ignore */ } }} className="mt-1 w-full border-t border-slate-100 px-3 pt-1.5 text-left text-[12px] font-medium text-teal-700 hover:underline">
                         Show all columns
@@ -584,12 +607,12 @@ export default function ODWorkQueue() {
           </div>
 
           {/* Table – one value per column; claim no stays visible when scrolling sideways */}
-          <div className="relative overflow-hidden">
-            {/* Auto layout: every column is as wide as its content; Next action takes the spare space */}
+          <div ref={tableBox} className="relative overflow-hidden">
+            {/* Columns that fit (see COLUMNS); each gets its share of the width */}
             <table className="w-full table-fixed text-left text-[12px]">
               <colgroup>
                 {cols.map((c) => (
-                  <col key={c.key} style={{ width: `${((c.w / cols.reduce((t, x) => t + x.w, 0)) * 100).toFixed(2)}%` }} />
+                  <col key={c.key} style={{ width: `${((colWidth(c) / Math.max(boxW, usedMin)) * 100).toFixed(3)}%` }} />
                 ))}
               </colgroup>
               <thead>
@@ -619,7 +642,7 @@ export default function ODWorkQueue() {
                       <td
                         key={c.key}
                         title={["vehicle", "insured", "lossType", "stage", "pendingWith", "nextAction"].includes(c.key) ? String(r[c.key]) : undefined}
-                        className={`py-1.5 ${c.fixed ? "pl-3 pr-1.5" : "px-1.5"} ${
+                        className={`py-2 ${c.fixed ? "pl-3 pr-1.5" : "px-1.5"} ${
                           c.right ? "text-right tabular-nums" : ""
                         } truncate`}
                       >
@@ -687,12 +710,12 @@ export default function ODWorkQueue() {
 
       </div>
 
-      {/* ================= Today's diary / Alerts drawer ================= */}
+      {/* ================= Today's diary / Alerts – compact card, sized to its content ================= */}
       {drawer && (
         <div className="fixed inset-0 z-40" role="dialog" aria-modal="true" aria-label={drawer === "diary" ? "Today's diary" : "Alerts"}>
-          <button type="button" aria-label="Close panel" onClick={() => setDrawer(null)} className="absolute inset-0 bg-slate-900/25" />
-          <aside className="absolute bottom-0 right-0 top-0 flex w-[min(380px,100vw)] flex-col bg-white shadow-2xl">
-            <div className="flex h-12 flex-none items-center justify-between border-b border-slate-200 px-3">
+          <button type="button" aria-label="Close panel" onClick={() => setDrawer(null)} className="absolute inset-0 cursor-default bg-slate-900/10" />
+          <aside className="absolute right-3 top-[92px] flex max-h-[calc(100vh-104px)] max-sm:top-[128px] max-sm:max-h-[calc(100vh-140px)] w-max min-w-[300px] max-w-[min(440px,calc(100vw-24px))] flex-col overflow-hidden rounded-xl border border-slate-200 bg-white shadow-2xl">
+            <div className="flex h-10 flex-none items-center justify-between gap-3 border-b border-slate-200 pl-2 pr-1.5">
               <div role="tablist" aria-label="Panel" className="flex gap-1">
                 {[
                   ["diary", "Today's diary", `${diaryLeft} open`],
@@ -704,7 +727,7 @@ export default function ODWorkQueue() {
                     role="tab"
                     aria-selected={drawer === k}
                     onClick={() => setDrawer(k)}
-                    className={`flex h-8 items-center gap-1.5 rounded-md px-2.5 text-[12.5px] font-semibold ${
+                    className={`flex h-7 items-center gap-1.5 rounded-md px-2.5 text-[12.5px] font-semibold ${
                       drawer === k ? "bg-[#0B1F3A] text-white" : "text-slate-600 hover:bg-slate-100"
                     }`}
                   >
@@ -713,12 +736,12 @@ export default function ODWorkQueue() {
                   </button>
                 ))}
               </div>
-              <button type="button" onClick={() => setDrawer(null)} aria-label="Close" className="grid h-8 w-8 place-items-center rounded-md text-slate-500 hover:bg-slate-100">
+              <button type="button" onClick={() => setDrawer(null)} aria-label="Close" className="grid h-7 w-7 place-items-center rounded-md text-slate-500 hover:bg-slate-100">
                 <X className="h-4 w-4" aria-hidden="true" />
               </button>
             </div>
 
-            <div className="min-h-0 flex-1 overflow-y-auto">
+            <div className="min-h-0 overflow-y-auto pb-1">
               {drawer === "diary" ? (
                 <>
                   <div className="flex items-center justify-between px-3 pt-2">
