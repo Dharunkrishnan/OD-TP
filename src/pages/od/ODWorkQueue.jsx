@@ -78,25 +78,28 @@ const inr = (n) => "₹" + Number(n).toLocaleString("en-IN");
 const MON = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
 const fmtDate = (iso) => `${iso.slice(8, 10)} ${MON[Number(iso.slice(5, 7)) - 1]}`;
 
-/* Table columns – most-used first, so they stay on screen on smaller monitors.
+/* Table columns – most-used first. w = relative width: the table always fits the screen
+   (no sideways scroll); each column gets its share and long text shows "…" with a tooltip.
    The user can hide any column (except Claim no) from the "Columns" menu. */
 const COLUMNS = [
-  { key: "claimNo", label: "Claim no", w: 166, fixed: true },
-  { key: "regNo", label: "Vehicle no", w: 118 },
-  { key: "insured", label: "Insured", w: 116 },
-  { key: "stage", label: "Stage", w: 132 },
-  { key: "pendingWith", label: "Pending with", w: 112 },
-  { key: "sla", label: "SLA", w: 122 },
-  { key: "due", label: "Due", w: 76 },
-  { key: "regDate", label: "Registered date", w: 104 },
-  { key: "age", label: "Age", w: 48, right: true },
-  { key: "reserve", label: "Reserve", w: 88, right: true },
-  { key: "nextAction", label: "Next action", w: 196 },
+  { key: "claimNo", label: "Claim no", w: 164, fixed: true },
+  { key: "regNo", label: "Vehicle no", w: 112 },
+  { key: "insured", label: "Insured", w: 118 },
+  { key: "stage", label: "Stage", w: 137 },
+  { key: "pendingWith", label: "Pending with", w: 118 },
+  { key: "sla", label: "SLA", w: 124 },
+  { key: "due", label: "Due", w: 88 },
+  { key: "regDate", label: "Registered date", w: 118 },
+  { key: "age", label: "Age", w: 44, right: true },
+  { key: "reserve", label: "Reserve", w: 80, right: true },
+  { key: "nextAction", label: "Next action", w: 150 },
   { key: "vehicle", label: "Make / model", w: 150 },
   { key: "lossType", label: "Loss type", w: 124 },
   { key: "lossDate", label: "Loss date", w: 76 },
 ];
-const COLS_KEY = "smartclaims-wq-hidden-cols";
+const COLS_KEY = "smartclaims-wq-hidden-cols-v2";
+// First visit on a screen narrower than 1536 px: start with these hidden so nothing is cramped
+const NARROW_HIDDEN = ["vehicle", "lossType", "lossDate"];
 
 /* Follow-up due date for each claim, worked out from the SLA time left (relative to today's real date).
    In production this comes from the diary / task due date on the claim. */
@@ -238,12 +241,21 @@ export default function ODWorkQueue() {
   const [colsOpen, setColsOpen] = useState(false);
   const [hidden, setHidden] = useState(() => {
     try {
-      return JSON.parse(localStorage.getItem(COLS_KEY) || "[]");
+      const saved = localStorage.getItem(COLS_KEY);
+      if (saved) return JSON.parse(saved);
+      return window.innerWidth < 1536 ? NARROW_HIDDEN : [];
     } catch {
       return [];
     }
   });
-  const cols = COLUMNS.filter((c) => !hidden.includes(c.key));
+  // Wide screens (≥1536 px) give Next action a bigger share of the width
+  const [wide, setWide] = useState(() => window.innerWidth >= 1536);
+  useEffect(() => {
+    const onResize = () => setWide(window.innerWidth >= 1536);
+    window.addEventListener("resize", onResize);
+    return () => window.removeEventListener("resize", onResize);
+  }, []);
+  const cols = COLUMNS.filter((c) => !hidden.includes(c.key)).map((c) => (c.key === "nextAction" && wide ? { ...c, w: 240 } : c));
   function toggleCol(key) {
     setHidden((h) => {
       const next = h.includes(key) ? h.filter((k) => k !== key) : [...h, key];
@@ -572,9 +584,14 @@ export default function ODWorkQueue() {
           </div>
 
           {/* Table – one value per column; claim no stays visible when scrolling sideways */}
-          <div className="relative overflow-x-auto">
+          <div className="relative overflow-hidden">
             {/* Auto layout: every column is as wide as its content; Next action takes the spare space */}
-            <table className="w-full text-left text-[12px]">
+            <table className="w-full table-fixed text-left text-[12px]">
+              <colgroup>
+                {cols.map((c) => (
+                  <col key={c.key} style={{ width: `${((c.w / cols.reduce((t, x) => t + x.w, 0)) * 100).toFixed(2)}%` }} />
+                ))}
+              </colgroup>
               <thead>
                 <tr className="whitespace-nowrap bg-slate-50 text-[10.5px] uppercase tracking-normal text-slate-500">
                   {cols.map((c) => (
@@ -582,8 +599,8 @@ export default function ODWorkQueue() {
                       key={c.key}
                       scope="col"
                       title={c.title}
-                      className={`py-2 align-bottom font-semibold leading-tight ${c.fixed ? "sticky left-0 z-10 bg-slate-50 px-3" : "px-1.5"} ${c.right ? "text-right" : ""} ${
-                        c.key === "nextAction" ? "min-w-[150px]" : "w-px"
+                      className={`py-2 align-bottom font-semibold leading-tight ${c.fixed ? "bg-slate-50 pl-3 pr-1.5" : "px-1.5"} ${c.right ? "text-right" : ""} ${
+                        "truncate"
                       }`}
                     >
                       {Array.isArray(c.label) ? c.label.map((l) => <span key={l} className="block">{l}</span>) : c.label}
@@ -602,9 +619,9 @@ export default function ODWorkQueue() {
                       <td
                         key={c.key}
                         title={["vehicle", "insured", "lossType", "stage", "pendingWith", "nextAction"].includes(c.key) ? String(r[c.key]) : undefined}
-                        className={`py-1.5 ${c.fixed ? "sticky left-0 z-10 bg-white px-3 group-hover:bg-teal-50" : "px-1.5"} ${
+                        className={`py-1.5 ${c.fixed ? "pl-3 pr-1.5" : "px-1.5"} ${
                           c.right ? "text-right tabular-nums" : ""
-                        } ${c.key === "nextAction" ? "max-w-[172px] truncate 2xl:max-w-[320px]" : ""}`}
+                        } truncate`}
                       >
                         {cell(c.key, r)}
                       </td>
