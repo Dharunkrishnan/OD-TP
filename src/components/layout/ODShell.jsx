@@ -2,7 +2,10 @@
 // Common layout for all Motor OD pages: left sidebar + top header + content area.
 // Layout: sidebar and header never move. Only the content area scrolls.
 // (Own scroll container, so it works regardless of global CSS in index.css.)
-// Desktop: sidebar can be collapsed to icons only (remembered per browser).
+// Desktop default = HIDDEN: the sidebar is hidden entirely and the page uses the full width.
+//   Move the mouse to the left edge (or click ☰ in the header) → it slides in over the page;
+//   it hides again when the mouse leaves. "Pin menu" keeps it open beside the page;
+//   "Collapse menu" hides it entirely again. The choice is remembered per browser.
 // Mobile: sidebar opens as a drawer from the menu button.
 //
 // Props:
@@ -19,7 +22,7 @@
 //                 onBack     – runs instead of navigating to backTo (e.g. to confirm leaving)
 //                 step.onClick / step.disabled – makes a step clickable
 
-import { useCallback, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import SearchPopover from "../SearchPopover";
 import { claimSlug } from "../../data/odClaimDetail";
@@ -39,7 +42,7 @@ import {
   Menu,
   X,
   PanelLeftClose,
-  PanelLeftOpen,
+  Pin,
   ArrowLeft,
   Check,
   FileText,
@@ -59,18 +62,7 @@ const HANDLER_MENU = [
 // Pages that exist so far. Add each new route here as it is built.
 const BUILT_ROUTES = ["/od/dashboard", "/od/worklist", "/od/intimation"];
 
-const COLLAPSE_KEY = "smartclaims-sidebar-collapsed";
-const CLAIM_COLLAPSE_KEY = "smartclaims-claimnav-collapsed-v2"; // claim / intimation view opens minimised (icons only) by default
-
-// Default = collapsed (icons only, name on hover). The user can expand it;
-// their choice is remembered in this browser.
-function readCollapsed() {
-  try {
-    return localStorage.getItem(COLLAPSE_KEY) !== "0";
-  } catch {
-    return true;
-  }
-}
+const MODE_KEY = "smartclaims-sidebar-mode"; // "auto" (default) | "pinned"
 
 /** Tooltip shown to the right of an icon when the sidebar is collapsed (desktop). */
 function Tip({ show, children }) {
@@ -140,31 +132,54 @@ export default function ODShell({ active = "dashboard", title, subtitle, childre
   const { user, logout } = useAuth();
   const [menuOpen, setMenuOpen] = useState(false);
   const [mobileNav, setMobileNav] = useState(false);
-  const [menuCollapsed, setMenuCollapsed] = useState(readCollapsed);
-  const [claimCollapsed, setClaimCollapsed] = useState(() => {
+  // Auto-hide sidebar (desktop)
+  const [mode, setMode] = useState(() => {
     try {
-      return localStorage.getItem(CLAIM_COLLAPSE_KEY) !== "0";
+      return localStorage.getItem(MODE_KEY) === "pinned" ? "pinned" : "auto";
     } catch {
-      return true;
+      return "auto";
     }
   });
-  // Main menu and claim view remember their own collapsed / expanded choice
-  const collapsed = claimNav ? claimCollapsed : menuCollapsed;
-  const role = getRole(user, "OD");
-
-  // Collapse applies to desktop only; the mobile drawer always shows full labels
-  const c = collapsed && !mobileNav;
-  const hideWhenCollapsed = c ? "lg:hidden" : "";
-
-  function toggleCollapsed() {
-    const next = !collapsed;
-    (claimNav ? setClaimCollapsed : setMenuCollapsed)(next);
+  const auto = mode === "auto";
+  const [peek, setPeek] = useState(false); // false | "hover" | "click"
+  const closeTimer = useRef(0);
+  const openPeek = () => {
+    window.clearTimeout(closeTimer.current);
+    setPeek((v) => v || "hover");
+  };
+  const closePeekSoon = () => {
+    window.clearTimeout(closeTimer.current);
+    closeTimer.current = window.setTimeout(() => setPeek(false), 250);
+  };
+  useEffect(() => () => window.clearTimeout(closeTimer.current), []);
+  useEffect(() => {
+    if (!peek) return undefined;
+    const onKey = (e) => e.key === "Escape" && setPeek(false);
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [peek]);
+  function setSidebarMode(next) {
+    setMode(next);
+    setPeek(false);
     try {
-      localStorage.setItem(claimNav ? CLAIM_COLLAPSE_KEY : COLLAPSE_KEY, next ? "1" : "0");
+      localStorage.setItem(MODE_KEY, next);
     } catch {
       /* ignore */
     }
   }
+  const sidebarOpen = mobileNav || peek; // slid in (auto mode / mobile)
+  const role = getRole(user, "OD");
+
+  // Collapse applies to desktop only; the mobile drawer always shows full labels
+  const c = false; // no icons-only rail: the sidebar is either hidden or fully open
+  const hideWhenCollapsed = c ? "lg:hidden" : "";
+
+  // "Collapse menu" always hides the sidebar entirely
+  function toggleCollapsed() {
+    if (auto) setPeek(false);
+    else setSidebarMode("auto");
+  }
+
 
   function go(item) {
     setMobileNav(false);
@@ -185,10 +200,24 @@ export default function ODShell({ active = "dashboard", title, subtitle, childre
   return (
     <div className="flex h-screen overflow-hidden bg-slate-100 text-slate-800">
       {/* ---------------- Sidebar ---------------- */}
+      {/* Auto-hide: thin strip on the left edge – hovering it slides the sidebar in */}
+      {auto && !sidebarOpen && (
+        <div
+          onMouseEnter={openPeek}
+          aria-hidden="true"
+          className="fixed inset-y-0 left-0 z-30 hidden w-2.5 lg:block"
+          title="Menu"
+        >
+          <span className="absolute inset-y-0 left-0 w-1 bg-[#0B1F3A]/80" />
+        </div>
+      )}
       <aside
-        className={`fixed inset-y-0 left-0 z-40 flex w-60 flex-none flex-col bg-[#0B1F3A] text-slate-300 transition-[width,transform] duration-200 lg:static lg:h-full lg:translate-x-0 ${
-          mobileNav ? "translate-x-0" : "-translate-x-full"
-        } ${c ? "lg:w-[68px]" : ""}`}
+        onMouseEnter={auto ? openPeek : undefined}
+        onMouseLeave={auto && peek === "hover" ? closePeekSoon : undefined}
+        inert={auto && !sidebarOpen ? true : undefined}
+        className={`fixed inset-y-0 left-0 z-40 flex w-60 flex-none flex-col bg-[#0B1F3A] text-slate-300 transition-[width,transform] duration-200 ${
+          auto ? "" : "lg:static lg:h-full lg:translate-x-0"
+        } ${sidebarOpen ? "translate-x-0 shadow-2xl" : "-translate-x-full"} ${c ? "lg:w-[68px]" : ""}`}
       >
         <div className={`flex h-12 items-center justify-between gap-2 border-b border-white/10 ${c ? "px-4 lg:justify-center lg:px-0" : "px-4"}`}>
           <div className="flex items-center gap-2.5">
@@ -377,21 +406,32 @@ export default function ODShell({ active = "dashboard", title, subtitle, childre
             </button>
           ))}
 
-          {/* Collapse / expand – desktop only */}
+          {/* Pin – desktop only, while the sidebar is in hidden (auto) mode */}
+          {auto && (
           <button
             type="button"
-            onClick={toggleCollapsed}
-            aria-label={collapsed ? "Expand menu" : "Collapse menu"}
-            aria-expanded={!collapsed}
+            onClick={() => setSidebarMode("pinned")}
+            aria-label="Pin menu"
             className={`group relative mt-1 hidden h-10 w-full items-center gap-3 rounded-lg px-3 text-left text-sm text-slate-400 hover:bg-white/5 hover:text-white lg:flex ${
               c ? "lg:justify-center lg:px-0" : ""
             }`}
           >
-            {collapsed ? (
-              <PanelLeftOpen className="h-[18px] w-[18px] flex-none" aria-hidden="true" />
-            ) : (
-              <PanelLeftClose className="h-[18px] w-[18px] flex-none" aria-hidden="true" />
-            )}
+            <Pin className="h-[18px] w-[18px] flex-none" aria-hidden="true" />
+            <span className={hideWhenCollapsed}>Pin menu</span>
+            <Tip show={c}>Pin menu</Tip>
+          </button>
+          )}
+
+          {/* Collapse – hides the sidebar entirely */}
+          <button
+            type="button"
+            onClick={toggleCollapsed}
+            aria-label="Collapse menu"
+            className={`group relative mt-1 hidden h-10 w-full items-center gap-3 rounded-lg px-3 text-left text-sm text-slate-400 hover:bg-white/5 hover:text-white lg:flex ${
+              c ? "lg:justify-center lg:px-0" : ""
+            }`}
+          >
+            <PanelLeftClose className="h-[18px] w-[18px] flex-none" aria-hidden="true" />
             <span className={hideWhenCollapsed}>Collapse menu</span>
             <Tip show={c}>Expand menu</Tip>
           </button>
@@ -405,14 +445,18 @@ export default function ODShell({ active = "dashboard", title, subtitle, childre
           className="fixed inset-0 z-30 bg-slate-900/40 lg:hidden"
         />
       )}
+      {/* Opened with ☰: click outside to close (hover-open closes when the mouse leaves) */}
+      {peek === "click" && (
+        <button type="button" aria-label="Close menu" tabIndex={-1} onClick={() => setPeek(false)} className="fixed inset-0 z-30 hidden cursor-default bg-slate-900/20 lg:block" />
+      )}
 
       {/* ---------------- Main column ---------------- */}
       <div className="flex h-full min-w-0 flex-1 flex-col">
         <header className="relative z-20 flex h-12 flex-none items-center gap-3 border-b border-slate-200 bg-white px-4 lg:px-5">
           <button
             type="button"
-            onClick={() => setMobileNav(true)}
-            className="grid h-9 w-9 place-items-center rounded-md text-slate-600 hover:bg-slate-100 lg:hidden"
+            onClick={() => (window.innerWidth >= 1024 ? setPeek("click") : setMobileNav(true))}
+            className={`grid h-9 w-9 place-items-center rounded-md text-slate-600 hover:bg-slate-100 ${auto ? "" : "lg:hidden"}`}
             aria-label="Open menu"
           >
             <Menu className="h-5 w-5" />
