@@ -233,7 +233,7 @@ function StageBars({ items }) {
   return (
     <div className="relative mt-1" onMouseLeave={() => setHover(null)}>
       {h && <StageTip s={h} />}
-      <ul className="flex flex-col gap-1.5 pt-1">
+      <ul className="flex flex-col gap-1 pt-1">
         {items.map((s) => {
           const over = s.actual > s.target;
           const on = hover === s.stage;
@@ -244,7 +244,7 @@ function StageBars({ items }) {
               onMouseEnter={() => setHover(s.stage)}
               onFocus={() => setHover(s.stage)}
               aria-label={`${s.stage}: average ${s.actual} days, target ${s.target} days`}
-              className={`grid grid-cols-[minmax(0,150px)_minmax(0,1fr)_44px] items-center gap-2 rounded px-1 py-0.5 text-[11.5px] ${on ? "bg-slate-100" : ""}`}
+              className={`grid grid-cols-[minmax(0,150px)_minmax(0,1fr)_44px] items-center gap-2 rounded px-1 py-px text-[11.5px] ${on ? "bg-slate-100" : ""}`}
             >
               <span className="truncate text-slate-700" title={s.stage}>
                 {(STAGE_SHORT[s.stage] || [s.stage]).join(" ")}
@@ -277,7 +277,7 @@ function StageBars({ items }) {
 /** Line: Avg TAT across stages vs the target line; dots turn red when over */
 function StageLine({ items }) {
   const [hover, setHover] = useState(null);
-  const W = 640, H = 190, L = 28, R = 12, T = 18, B = 34;
+  const W = 640, H = 168, L = 28, R = 12, T = 18, B = 34;
   const top = Math.ceil(Math.max(...items.map((s) => Math.max(s.actual, s.target))) / 2) * 2 + 2;
   const x = (i) => L + ((W - L - R) * (i + 0.5)) / items.length;
   const y = (v) => T + (H - T - B) * (1 - v / top);
@@ -325,7 +325,7 @@ function StageVariance({ items }) {
   return (
     <div className="relative mt-1" onMouseLeave={() => setHover(null)}>
       {h && <StageTip s={h} />}
-      <ul className="flex flex-col gap-1.5 pt-1">
+      <ul className="flex flex-col gap-1 pt-1">
         {items.map((s) => {
           const d = overBy(s);
           const on = hover === s.stage;
@@ -337,7 +337,7 @@ function StageVariance({ items }) {
               onMouseEnter={() => setHover(s.stage)}
               onFocus={() => setHover(s.stage)}
               aria-label={`${s.stage}: ${d > 0 ? `${d} days over target` : `${Math.abs(d)} days under target`}`}
-              className={`grid grid-cols-[minmax(0,150px)_minmax(0,1fr)_58px] items-center gap-2 rounded px-1 py-0.5 text-[11.5px] ${on ? "bg-slate-100" : ""}`}
+              className={`grid grid-cols-[minmax(0,150px)_minmax(0,1fr)_58px] items-center gap-2 rounded px-1 py-px text-[11.5px] ${on ? "bg-slate-100" : ""}`}
             >
               <span className="truncate text-slate-700" title={s.stage}>
                 {(STAGE_SHORT[s.stage] || [s.stage]).join(" ")}
@@ -375,7 +375,7 @@ function StageColumns({ items }) {
   const [hover, setHover] = useState(null);
   const top = Math.ceil(Math.max(...items.map((s) => Math.max(s.actual, s.target))) / 2) * 2 + 2; // round up to even, + headroom
   const ticks = Array.from({ length: top / 2 + 1 }, (_, i) => i * 2);
-  const H = 168; // plot height px
+  const H = 140; // plot height px
   const y = (v) => (v / top) * H;
   const h = items.find((s) => s.stage === hover);
   return (
@@ -1228,10 +1228,10 @@ export default function ODHandlerDashboard() {
           <table className="w-full self-start text-left text-[12px]">
             <thead>
               <tr className="bg-slate-50 text-[10.5px] uppercase tracking-wide text-slate-500">
-                <th scope="col" className="px-3 py-1.5 font-semibold">Stage</th>
-                <th scope="col" className="whitespace-nowrap px-3 py-1.5 text-right font-semibold">Avg TAT / target</th>
-                <th scope="col" className="hidden px-3 py-1.5 font-semibold sm:table-cell">Status</th>
-                <th scope="col" className="px-3 py-1.5 text-right font-semibold">Breached</th>
+                <th scope="col" className="px-3 py-1 font-semibold">Stage</th>
+                <th scope="col" className="whitespace-nowrap px-3 py-1 text-right font-semibold">Avg TAT / target</th>
+                <th scope="col" className="hidden px-3 py-1 font-semibold sm:table-cell">Status</th>
+                <th scope="col" className="px-3 py-1 text-right font-semibold">Breached</th>
               </tr>
             </thead>
             <tbody>
@@ -1240,15 +1240,15 @@ export default function ODHandlerDashboard() {
                 const diff = Math.abs(s.actual - s.target).toFixed(1);
                 return (
                   <tr key={s.stage} className="border-t border-slate-100">
-                    <td className="px-3 py-1.5 text-slate-700">{s.stage}</td>
-                    <td className="whitespace-nowrap px-3 py-1.5 text-right tabular-nums">
+                    <td className="px-3 py-1 text-slate-700">{s.stage}</td>
+                    <td className="whitespace-nowrap px-3 py-1 text-right tabular-nums">
                       <span className={`font-semibold ${over ? "text-red-700" : "text-slate-800"}`}>{fmtDays(s.actual)}</span>
                       <span className="text-slate-400"> / {fmtDays(s.target)}</span>
                     </td>
-                    <td className="hidden px-3 py-1.5 sm:table-cell">
+                    <td className="hidden px-3 py-1 sm:table-cell">
                       {over ? <StatusChip kind="breach">Over by {diff} d</StatusChip> : <StatusChip kind="ok">On track</StatusChip>}
                     </td>
-                    <td className="px-3 py-1.5 text-right tabular-nums">
+                    <td className="px-3 py-1 text-right tabular-nums">
                       {s.breachedOpen > 0 ? (
                         <button
                           type="button"
