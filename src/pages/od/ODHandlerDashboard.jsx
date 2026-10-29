@@ -31,6 +31,11 @@ import {
   CLOSED_TREND,
 } from "../../data/odHandlerMock";
 
+// Stages the system does automatically (intimation submit runs the registration jobs and
+// generates the claim no) – no handler TAT to track, so they are left out of the stage table.
+const AUTOMATED_STAGES = ["Intimation → Registration"];
+const HANDLER_TAT_STAGES = TAT_STAGES.filter((s) => !AUTOMATED_STAGES.includes(s.stage));
+
 function greeting() {
   const h = new Date().getHours();
   if (h < 12) return "Good morning";
@@ -148,6 +153,297 @@ function ViewSelect({ value, onChange, views, label }) {
 /* ------------------------------------------------------------------ */
 /* Building blocks                                                     */
 /* ------------------------------------------------------------------ */
+// Short x-axis names for the stage chart
+const STAGE_SHORT = {
+  "Registration → Surveyor appointed": ["Surveyor", "appointed"],
+  "Surveyor appointed → Survey done": ["Survey", "done"],
+  "Survey → Assessment report": ["Assessment", "report"],
+  "Document collection": ["Document", "collection"],
+  Approval: ["Approval", ""],
+  "Final invoice → Delivery order": ["Delivery", "order"],
+  "Delivery order → Payment": ["Payment", ""],
+};
+
+// Chart types for the Stage-wise TAT card (all compare actual vs target per stage)
+const STAGE_CHARTS = [
+  { key: "column", label: "Column" },
+  { key: "bar", label: "Bar" },
+  { key: "line", label: "Line" },
+  { key: "variance", label: "Variance" },
+];
+const STAGE_CHART_KEY = "smartclaims-od-stage-chart";
+const overBy = (s) => +(s.actual - s.target).toFixed(1);
+
+/** Shared legend for the stage charts */
+function StageLegend({ type }) {
+  return (
+    <div className="flex flex-wrap items-center gap-x-3 gap-y-1 text-[11px] text-slate-600">
+      {type === "variance" ? (
+        <>
+          <span className="flex items-center gap-1.5"><span className="h-2.5 w-2.5 rounded-sm bg-teal-600" aria-hidden="true" />Under target (days spare)</span>
+          <span className="flex items-center gap-1.5"><span className="h-2.5 w-2.5 rounded-sm bg-red-600" aria-hidden="true" />Over target (days late)</span>
+        </>
+      ) : type === "line" ? (
+        <>
+          <span className="flex items-center gap-1.5"><span className="h-0.5 w-3.5 rounded bg-teal-600" aria-hidden="true" />Avg TAT</span>
+          <span className="flex items-center gap-1.5"><span className="h-2 w-2 rounded-full bg-red-600" aria-hidden="true" />Over target</span>
+          <span className="flex items-center gap-1.5"><span className="w-3.5 border-t-2 border-dashed border-slate-800" aria-hidden="true" />Target</span>
+        </>
+      ) : (
+        <>
+          <span className="flex items-center gap-1.5"><span className="h-2.5 w-2.5 rounded-sm bg-teal-600" aria-hidden="true" />Avg TAT – on track</span>
+          <span className="flex items-center gap-1.5"><span className="h-2.5 w-2.5 rounded-sm bg-red-600" aria-hidden="true" />Avg TAT – over target</span>
+          <span className="flex items-center gap-1.5"><span className="w-3.5 border-t-2 border-dashed border-slate-800" aria-hidden="true" />Target</span>
+        </>
+      )}
+      <span className="ml-auto text-slate-400">days</span>
+    </div>
+  );
+}
+
+/** Tooltip text for a stage */
+function StageTip({ s }) {
+  return (
+    <div className="pointer-events-none absolute left-1/2 top-0 z-30 -translate-x-1/2 whitespace-nowrap rounded-md bg-slate-900 px-2.5 py-1.5 text-[11px] text-white shadow-lg">
+      <p className="font-semibold">{s.stage}</p>
+      <p className="tabular-nums text-slate-300">
+        Avg {s.actual} d · target {s.target} d ·{" "}
+        {s.actual > s.target ? <span className="text-red-300">over by {overBy(s)} d</span> : <span className="text-emerald-300">on track</span>}
+        {s.breachedOpen > 0 && ` · ${s.breachedOpen} breached now`}
+      </p>
+    </div>
+  );
+}
+
+/** Stage-wise TAT chart – picks the chart type */
+function StageTatChart({ items, type }) {
+  return (
+    <div className="flex flex-col gap-1.5 px-3 pb-2 pt-2">
+      <StageLegend type={type} />
+      {type === "bar" ? <StageBars items={items} /> : type === "line" ? <StageLine items={items} /> : type === "variance" ? <StageVariance items={items} /> : <StageColumns items={items} />}
+    </div>
+  );
+}
+
+/** Horizontal bars: bar = average TAT, dashed tick = target */
+function StageBars({ items }) {
+  const [hover, setHover] = useState(null);
+  const top = Math.ceil(Math.max(...items.map((s) => Math.max(s.actual, s.target))) / 2) * 2;
+  const h = items.find((s) => s.stage === hover);
+  return (
+    <div className="relative mt-1" onMouseLeave={() => setHover(null)}>
+      {h && <StageTip s={h} />}
+      <ul className="flex flex-col gap-1.5 pt-1">
+        {items.map((s) => {
+          const over = s.actual > s.target;
+          const on = hover === s.stage;
+          return (
+            <li
+              key={s.stage}
+              tabIndex={0}
+              onMouseEnter={() => setHover(s.stage)}
+              onFocus={() => setHover(s.stage)}
+              aria-label={`${s.stage}: average ${s.actual} days, target ${s.target} days`}
+              className={`grid grid-cols-[minmax(0,150px)_minmax(0,1fr)_44px] items-center gap-2 rounded px-1 py-0.5 text-[11.5px] ${on ? "bg-slate-100" : ""}`}
+            >
+              <span className="truncate text-slate-700" title={s.stage}>
+                {(STAGE_SHORT[s.stage] || [s.stage]).join(" ")}
+              </span>
+              <span className="relative h-3 rounded-r bg-slate-100">
+                <span className={`absolute inset-y-0 left-0 rounded-r ${over ? "bg-red-600" : "bg-teal-600"}`} style={{ width: `${(s.actual / top) * 100}%` }} />
+                <span className="absolute -inset-y-1 border-l-2 border-dashed border-slate-800" style={{ left: `${(s.target / top) * 100}%` }} aria-hidden="true" />
+              </span>
+              <span className={`flex items-center justify-end gap-0.5 font-semibold tabular-nums ${over ? "text-red-700" : "text-slate-700"}`}>
+                {over && <AlertTriangle className="h-3 w-3" aria-hidden="true" />}
+                {s.actual}
+              </span>
+            </li>
+          );
+        })}
+      </ul>
+      <div className="mt-1 grid grid-cols-[minmax(0,150px)_minmax(0,1fr)_44px] gap-2 px-1 text-[10px] text-slate-400" aria-hidden="true">
+        <span />
+        <span className="flex justify-between tabular-nums">
+          {Array.from({ length: top / 2 + 1 }, (_, i) => (
+            <span key={i}>{i * 2}</span>
+          ))}
+        </span>
+        <span />
+      </div>
+    </div>
+  );
+}
+
+/** Line: Avg TAT across stages vs the target line; dots turn red when over */
+function StageLine({ items }) {
+  const [hover, setHover] = useState(null);
+  const W = 640, H = 190, L = 28, R = 12, T = 18, B = 34;
+  const top = Math.ceil(Math.max(...items.map((s) => Math.max(s.actual, s.target))) / 2) * 2 + 2;
+  const x = (i) => L + ((W - L - R) * (i + 0.5)) / items.length;
+  const y = (v) => T + (H - T - B) * (1 - v / top);
+  const ticks = Array.from({ length: top / 2 + 1 }, (_, i) => i * 2);
+  const path = (k) => items.map((s, i) => `${i ? "L" : "M"}${x(i)},${y(s[k])}`).join(" ");
+  const h = items.find((s) => s.stage === hover);
+  return (
+    <div className="relative mt-1" onMouseLeave={() => setHover(null)}>
+      {h && <StageTip s={h} />}
+      <svg viewBox={`0 0 ${W} ${H}`} className="h-auto w-full" role="img" aria-label="Average TAT by stage compared with target">
+        {ticks.map((t) => (
+          <g key={t}>
+            <line x1={L} x2={W - R} y1={y(t)} y2={y(t)} stroke={t === 0 ? "#cbd5e1" : "#f1f5f9"} />
+            <text x={L - 6} y={y(t) + 3} textAnchor="end" fontSize="10" fill="#94a3b8">{t}</text>
+          </g>
+        ))}
+        <path d={path("target")} fill="none" stroke="#1e293b" strokeWidth="2" strokeDasharray="5 4" />
+        <path d={path("actual")} fill="none" stroke="#0d9488" strokeWidth="2" />
+        {items.map((s, i) => {
+          const over = s.actual > s.target;
+          const [l1, l2] = STAGE_SHORT[s.stage] || [s.stage, ""];
+          return (
+            <g key={s.stage} onMouseEnter={() => setHover(s.stage)}>
+              {hover === s.stage && <rect x={x(i) - 30} y={T - 6} width="60" height={H - T - B + 6} rx="4" fill="#f1f5f9" opacity="0.8" />}
+              <circle cx={x(i)} cy={y(s.actual)} r="5" fill={over ? "#dc2626" : "#0d9488"} stroke="#fff" strokeWidth="2" />
+              <text x={x(i)} y={y(Math.max(s.actual, s.target)) - 9} textAnchor="middle" fontSize="11" fontWeight="600" fill={over ? "#b91c1c" : "#334155"}>
+                {s.actual}
+              </text>
+              <text x={x(i)} y={H - B + 14} textAnchor="middle" fontSize="10.5" fill="#64748b">{l1}</text>
+              <text x={x(i)} y={H - B + 27} textAnchor="middle" fontSize="10.5" fill="#64748b">{l2}</text>
+              <rect x={x(i) - 40} y="0" width="80" height={H} fill="transparent" />
+            </g>
+          );
+        })}
+      </svg>
+    </div>
+  );
+}
+
+/** Variance: days over (right, red) or under (left, teal) each stage's target */
+function StageVariance({ items }) {
+  const [hover, setHover] = useState(null);
+  const max = Math.max(1, ...items.map((s) => Math.abs(overBy(s))));
+  const h = items.find((s) => s.stage === hover);
+  return (
+    <div className="relative mt-1" onMouseLeave={() => setHover(null)}>
+      {h && <StageTip s={h} />}
+      <ul className="flex flex-col gap-1.5 pt-1">
+        {items.map((s) => {
+          const d = overBy(s);
+          const on = hover === s.stage;
+          const pct = (Math.abs(d) / max) * 50;
+          return (
+            <li
+              key={s.stage}
+              tabIndex={0}
+              onMouseEnter={() => setHover(s.stage)}
+              onFocus={() => setHover(s.stage)}
+              aria-label={`${s.stage}: ${d > 0 ? `${d} days over target` : `${Math.abs(d)} days under target`}`}
+              className={`grid grid-cols-[minmax(0,150px)_minmax(0,1fr)_58px] items-center gap-2 rounded px-1 py-0.5 text-[11.5px] ${on ? "bg-slate-100" : ""}`}
+            >
+              <span className="truncate text-slate-700" title={s.stage}>
+                {(STAGE_SHORT[s.stage] || [s.stage]).join(" ")}
+              </span>
+              <span className="relative h-3">
+                <span className="absolute inset-y-[-3px] left-1/2 w-px bg-slate-400" aria-hidden="true" />
+                <span
+                  className={`absolute inset-y-0 ${d > 0 ? "left-1/2 rounded-r bg-red-600" : "right-1/2 rounded-l bg-teal-600"}`}
+                  style={{ width: `${pct}%` }}
+                />
+              </span>
+              <span className={`flex items-center justify-end gap-0.5 font-semibold tabular-nums ${d > 0 ? "text-red-700" : "text-teal-800"}`}>
+                {d > 0 && <AlertTriangle className="h-3 w-3" aria-hidden="true" />}
+                {d > 0 ? `+${d}` : d} d
+              </span>
+            </li>
+          );
+        })}
+      </ul>
+      <div className="mt-1 grid grid-cols-[minmax(0,150px)_minmax(0,1fr)_58px] gap-2 px-1 text-[10px] text-slate-400" aria-hidden="true">
+        <span />
+        <span className="flex justify-between">
+          <span>← spare</span>
+          <span>target</span>
+          <span>late →</span>
+        </span>
+        <span />
+      </div>
+    </div>
+  );
+}
+
+/** Column per stage: height = average TAT, dashed line = target. Over target → red + ⚠ label. */
+function StageColumns({ items }) {
+  const [hover, setHover] = useState(null);
+  const top = Math.ceil(Math.max(...items.map((s) => Math.max(s.actual, s.target))) / 2) * 2 + 2; // round up to even, + headroom
+  const ticks = Array.from({ length: top / 2 + 1 }, (_, i) => i * 2);
+  const H = 168; // plot height px
+  const y = (v) => (v / top) * H;
+  const h = items.find((s) => s.stage === hover);
+  return (
+    <div>
+      <div className="relative mt-2 flex" style={{ height: H + 34 }} onMouseLeave={() => setHover(null)}>
+        {/* y axis */}
+        <div className="relative w-6 flex-none" style={{ height: H }} aria-hidden="true">
+          {ticks.map((t) => (
+            <span key={t} className="absolute right-1 translate-y-1/2 text-[10px] leading-none tabular-nums text-slate-400" style={{ bottom: y(t) }}>
+              {t}
+            </span>
+          ))}
+        </div>
+        <div className="relative min-w-0 flex-1">
+          {/* grid */}
+          {ticks.map((t) => (
+            <span key={t} className={`absolute inset-x-0 border-t ${t === 0 ? "border-slate-300" : "border-slate-100"}`} style={{ bottom: 34 + y(t) }} aria-hidden="true" />
+          ))}
+          <ul className="absolute inset-0 flex">
+            {items.map((s) => {
+              const over = s.actual > s.target;
+              const [l1, l2] = STAGE_SHORT[s.stage] || [s.stage, ""];
+              const on = hover === s.stage;
+              return (
+                <li
+                  key={s.stage}
+                  className="relative flex min-w-0 flex-1 flex-col items-center justify-end"
+                  onMouseEnter={() => setHover(s.stage)}
+                  onFocus={() => setHover(s.stage)}
+                  tabIndex={0}
+                  aria-label={`${s.stage}: average ${s.actual} days, target ${s.target} days${over ? `, over by ${(s.actual - s.target).toFixed(1)} days` : ", on track"}`}
+                >
+                  {on && <span className="absolute inset-x-1 bottom-[34px] top-0 rounded bg-slate-100/70" aria-hidden="true" />}
+                  {/* value label – above the bar or the target line, whichever is higher */}
+                  <span
+                    className={`absolute z-20 flex items-center gap-0.5 whitespace-nowrap text-[11px] font-semibold tabular-nums ${over ? "text-red-700" : "text-slate-700"}`}
+                    style={{ bottom: 34 + y(Math.max(s.actual, s.target)) + 4 }}
+                  >
+                    {over && <AlertTriangle className="h-3 w-3" aria-hidden="true" />}
+                    {s.actual}
+                  </span>
+                  {/* bar */}
+                  <span
+                    className={`relative z-10 w-[clamp(14px,40%,30px)] rounded-t ${over ? "bg-red-600" : "bg-teal-600"} ${hover && !on ? "opacity-50" : ""}`}
+                    style={{ height: y(s.actual) }}
+                  />
+                  {/* target line */}
+                  <span
+                    className="absolute z-20 w-[clamp(26px,70%,52px)] border-t-2 border-dashed border-slate-800"
+                    style={{ bottom: 34 + y(s.target) - 1 }}
+                    aria-hidden="true"
+                  />
+                  {/* x label */}
+                  <span className="flex h-[34px] w-full flex-col items-center justify-start pt-1 text-center text-[10.5px] leading-tight text-slate-500">
+                    <span className="max-w-full truncate">{l1}</span>
+                    <span className="max-w-full truncate">{l2}</span>
+                  </span>
+                </li>
+              );
+            })}
+          </ul>
+          {h && <StageTip s={h} />}
+        </div>
+      </div>
+    </div>
+  );
+}
+
 function Card({ title, note, action, children, className = "" }) {
   return (
     <section className={`flex flex-col rounded-lg border border-slate-200 bg-white ${className}`}>
@@ -471,6 +767,7 @@ export default function ODHandlerDashboard() {
   const [hTat, setHTat] = useState(null);
   const [slaView, setSlaView] = useState(() => readView(SLA_VIEW_KEY, SLA_VIEWS));
   const [portView, setPortView] = useState(() => readView(PORT_VIEW_KEY, PORT_VIEWS));
+  const [stageChart, setStageChart] = useState(() => readView(STAGE_CHART_KEY, STAGE_CHARTS));
   const [slaChartPick, setSlaChartPick] = useState(() => readChart(SLA_CHART_KEY));
   const [portChartPick, setPortChartPick] = useState(() => readChart(PORT_CHART_KEY));
   const [workView, setWorkView] = useState(() => readView(WORK_VIEW_KEY, WORK_VIEWS));
@@ -494,6 +791,10 @@ export default function ODHandlerDashboard() {
   const slaChart = SLA_CHARTS[slaView].includes(slaChartPick) ? slaChartPick : SLA_CHARTS[slaView][0];
   const portChart = PORT_CHARTS[portView].includes(portChartPick) ? portChartPick : PORT_CHARTS[portView][0];
 
+  function changeStageChart(t) {
+    setStageChart(t);
+    saveView(STAGE_CHART_KEY, t);
+  }
   function changeSlaChart(t) {
     setSlaChartPick(t);
     saveView(SLA_CHART_KEY, t);
@@ -582,7 +883,6 @@ export default function ODHandlerDashboard() {
     },
   ];
 
-  const maxTat = Math.max(...TAT_STAGES.map((s) => Math.max(s.actual, s.target))) * 1.1;
 
   return (
     <ODShell
@@ -913,73 +1213,61 @@ export default function ODHandlerDashboard() {
           </Card>
         </div>
 
-        {/* ---------------- Row 3: Stage-wise TAT vs target ---------------- */}
-        <Card title="Stage-wise TAT vs target" note="Average days, last 90 days">
-          <div className="overflow-x-auto">
-            <table className="w-full min-w-[720px] text-left text-[12px]">
-              <thead>
-                <tr className="text-[10.5px] uppercase tracking-wide text-slate-500">
-                  <th scope="col" className="px-3 py-1 font-semibold">Stage</th>
-                  <th scope="col" className="w-[38%] px-2 py-0.5 font-semibold">Actual vs target</th>
-                  <th scope="col" className="px-2 py-0.5 text-right font-semibold">Actual</th>
-                  <th scope="col" className="px-2 py-0.5 text-right font-semibold">Target</th>
-                  <th scope="col" className="px-2 py-0.5 font-semibold">Status</th>
-                  <th scope="col" className="px-3 py-1 text-right font-semibold">Breached now</th>
-                </tr>
-              </thead>
-              <tbody>
-                {TAT_STAGES.map((s) => {
-                  const over = s.actual > s.target;
-                  const diff = Math.abs(s.actual - s.target).toFixed(1);
-                  return (
-                    <tr key={s.stage} className="border-t border-slate-100">
-                      <td className="px-3 py-0.5 text-slate-700">{s.stage}</td>
-                      <td className="px-2 py-0.5">
-                        <span className="relative block h-2 rounded-r bg-slate-100">
-                          <span
-                            className={`block h-2 rounded-r ${over ? "bg-teal-800" : "bg-teal-600"}`}
-                            style={{ width: `${(s.actual / maxTat) * 100}%` }}
-                          />
-                          <span
-                            className="absolute -top-[3px] h-[14px] w-[2px] rounded bg-slate-800"
-                            style={{ left: `${(s.target / maxTat) * 100}%` }}
-                            title={`Target ${s.target} d`}
-                            aria-hidden="true"
-                          />
-                        </span>
-                      </td>
-                      <td className="px-2 py-0.5 text-right font-semibold tabular-nums text-slate-800">{fmtDays(s.actual)}</td>
-                      <td className="px-2 py-0.5 text-right tabular-nums text-slate-500">{fmtDays(s.target)}</td>
-                      <td className="px-2 py-0.5">
-                        {over ? (
-                          <StatusChip kind="breach">Over by {diff} d</StatusChip>
-                        ) : (
-                          <StatusChip kind="ok">Within · {diff} d spare</StatusChip>
-                        )}
-                      </td>
-                      <td className="px-3 py-0.5 text-right tabular-nums">
-                        {s.breachedOpen > 0 ? (
-                          <button
-                            type="button"
-                            onClick={() => navigate("/od/worklist?tab=breach")}
-                            className="font-semibold text-red-700 hover:underline"
-                          >
-                            {s.breachedOpen}
-                          </button>
-                        ) : (
-                          <span className="text-slate-400">0</span>
-                        )}
-                      </td>
-                    </tr>
-                  );
-                })}
-              </tbody>
-            </table>
+        {/* ---------------- Row 3: Stage-wise TAT vs target (only what a handler needs) ---------------- */}
+        <Card
+          title="Stage-wise TAT vs target"
+          action={
+            <div className="flex items-center gap-2">
+              <span className="hidden text-xs text-slate-500 sm:inline">Average days · last 90 days</span>
+              <ViewSelect value={stageChart} onChange={changeStageChart} views={STAGE_CHARTS} label="Chart type" />
+            </div>
+          }
+        >
+          <div className="grid grid-cols-1 lg:grid-cols-[minmax(0,1.15fr)_minmax(0,1fr)] lg:divide-x lg:divide-slate-100">
+          <StageTatChart items={HANDLER_TAT_STAGES} type={stageChart} />
+          <table className="w-full self-start text-left text-[12px]">
+            <thead>
+              <tr className="bg-slate-50 text-[10.5px] uppercase tracking-wide text-slate-500">
+                <th scope="col" className="px-3 py-1.5 font-semibold">Stage</th>
+                <th scope="col" className="whitespace-nowrap px-3 py-1.5 text-right font-semibold">Avg TAT / target</th>
+                <th scope="col" className="hidden px-3 py-1.5 font-semibold sm:table-cell">Status</th>
+                <th scope="col" className="px-3 py-1.5 text-right font-semibold">Breached</th>
+              </tr>
+            </thead>
+            <tbody>
+              {HANDLER_TAT_STAGES.map((s) => {
+                const over = s.actual > s.target;
+                const diff = Math.abs(s.actual - s.target).toFixed(1);
+                return (
+                  <tr key={s.stage} className="border-t border-slate-100">
+                    <td className="px-3 py-1.5 text-slate-700">{s.stage}</td>
+                    <td className="whitespace-nowrap px-3 py-1.5 text-right tabular-nums">
+                      <span className={`font-semibold ${over ? "text-red-700" : "text-slate-800"}`}>{fmtDays(s.actual)}</span>
+                      <span className="text-slate-400"> / {fmtDays(s.target)}</span>
+                    </td>
+                    <td className="hidden px-3 py-1.5 sm:table-cell">
+                      {over ? <StatusChip kind="breach">Over by {diff} d</StatusChip> : <StatusChip kind="ok">On track</StatusChip>}
+                    </td>
+                    <td className="px-3 py-1.5 text-right tabular-nums">
+                      {s.breachedOpen > 0 ? (
+                        <button
+                          type="button"
+                          onClick={() => navigate("/od/worklist?tab=breach")}
+                          title="Open the breached claims in My Work Queue"
+                          className="font-semibold text-red-700 hover:underline"
+                        >
+                          {s.breachedOpen}
+                        </button>
+                      ) : (
+                        <span className="text-slate-300">–</span>
+                      )}
+                    </td>
+                  </tr>
+                );
+              })}
+            </tbody>
+          </table>
           </div>
-          <p className="flex items-center gap-2 border-t border-slate-100 px-3 py-1 text-[10.5px] text-slate-500">
-            <span className="inline-block h-3 w-[2px] rounded bg-slate-800" aria-hidden="true" />
-            Black line = target. Targets are internal SLAs, configurable in the SLA master.
-          </p>
         </Card>
 
       </div>
