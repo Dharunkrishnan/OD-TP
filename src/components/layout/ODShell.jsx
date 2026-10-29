@@ -143,22 +143,36 @@ export default function ODShell({ active = "dashboard", title, subtitle, childre
   });
   const auto = mode === "auto";
   const [peek, setPeek] = useState(false); // false | "hover" | "click"
+  // Keep the full (labelled) layout until a slide-out has finished, so it never shrinks on screen
+  const [fullLayout, setFullLayout] = useState(false);
+  const layoutTimer = useRef(0);
   const closeTimer = useRef(0);
-  const openPeek = () => {
+  const asideRef = useRef(null);
+  useEffect(
+    () => () => {
+      window.clearTimeout(closeTimer.current);
+      window.clearTimeout(layoutTimer.current);
+    },
+    []
+  );
+  function holdFullLayout() {
+    window.clearTimeout(layoutTimer.current);
+    setFullLayout(true);
+    layoutTimer.current = window.setTimeout(() => setFullLayout(false), 320);
+  }
+  function openPeek() {
     window.clearTimeout(closeTimer.current);
     setPeek((v) => v || "hover");
-  };
-  const closePeekSoon = () => {
-    window.clearTimeout(closeTimer.current);
-    closeTimer.current = window.setTimeout(() => setPeek(false), 250);
-  };
-  useEffect(() => () => window.clearTimeout(closeTimer.current), []);
-  useEffect(() => {
-    if (!peek) return undefined;
-    const onKey = (e) => e.key === "Escape" && setPeek(false);
-    window.addEventListener("keydown", onKey);
-    return () => window.removeEventListener("keydown", onKey);
-  }, [peek]);
+  }
+  function openFull() {
+    window.clearTimeout(layoutTimer.current);
+    setFullLayout(true);
+    setPeek("click");
+  }
+  function closePeek() {
+    if (peek === "click" || fullLayout) holdFullLayout();
+    setPeek(false);
+  }
   function setSidebarMode(next) {
     setMode(next);
     setPeek(false);
@@ -168,18 +182,57 @@ export default function ODShell({ active = "dashboard", title, subtitle, childre
       /* ignore */
     }
   }
+  // Esc closes an open sidebar
+  useEffect(() => {
+    if (!peek) return undefined;
+    const onKey = (e) => {
+      if (e.key !== "Escape") return;
+      if (peek === "click") holdFullLayout();
+      setPeek(false);
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [peek]);
+  // Hover-open: follow the cursor itself (mouseleave is unreliable when the panel slides in
+  // under a cursor that is standing still). Cursor clearly right of the panel → close.
+  useEffect(() => {
+    if (peek !== "hover") return undefined;
+    const onMove = (e) => {
+      const right = asideRef.current?.getBoundingClientRect().right ?? 0;
+      if (e.clientX > right + 12) {
+        if (!closeTimer.current) closeTimer.current = window.setTimeout(() => {
+          closeTimer.current = 0;
+          setPeek(false);
+        }, 180);
+      } else if (closeTimer.current) {
+        window.clearTimeout(closeTimer.current);
+        closeTimer.current = 0;
+      }
+    };
+    window.addEventListener("mousemove", onMove);
+    return () => {
+      window.removeEventListener("mousemove", onMove);
+      window.clearTimeout(closeTimer.current);
+      closeTimer.current = 0;
+    };
+  }, [peek]);
   const sidebarOpen = mobileNav || peek; // slid in (auto mode / mobile)
   const role = getRole(user, "OD");
 
   // Collapse applies to desktop only; the mobile drawer always shows full labels
   // Hover on the left edge → slim icons-only bar (names as tooltips). ☰ / pinned / mobile → full labels.
-  const c = auto && peek === "hover" && !mobileNav;
+  // Auto mode keeps the slim (icons-only) layout while hidden, so a hover only SLIDES it in –
+  // the width never changes on screen (that caused the "wide then shrink" jump). ☰ opens full.
+  const c = auto && !fullLayout && peek !== "click" && !mobileNav;
   const hideWhenCollapsed = c ? "lg:hidden" : "";
 
   // "Collapse menu" always hides the sidebar entirely
   function toggleCollapsed() {
-    if (auto) setPeek(false);
-    else setSidebarMode("auto");
+    if (auto) closePeek();
+    else {
+      holdFullLayout(); // pinned (full) → slide out at full width, then switch to slim
+      setSidebarMode("auto");
+    }
   }
 
 
@@ -214,12 +267,13 @@ export default function ODShell({ active = "dashboard", title, subtitle, childre
         </div>
       )}
       <aside
+        ref={asideRef}
         onMouseEnter={auto ? openPeek : undefined}
-        onMouseLeave={auto && peek === "hover" ? closePeekSoon : undefined}
         inert={auto && !sidebarOpen ? true : undefined}
-        className={`fixed inset-y-0 left-0 z-40 flex w-60 flex-none flex-col bg-[#0B1F3A] text-slate-300 transition-[width,transform] duration-200 ${
+        style={{ transitionTimingFunction: "cubic-bezier(0.22, 1, 0.36, 1)" }}
+        className={`fixed inset-y-0 left-0 z-40 flex w-60 flex-none flex-col bg-[#0B1F3A] text-slate-300 shadow-2xl transition-transform duration-300 will-change-transform motion-reduce:transition-none ${
           auto ? "" : "lg:static lg:h-full lg:translate-x-0"
-        } ${sidebarOpen ? "translate-x-0 shadow-2xl" : "-translate-x-full"} ${c ? "lg:w-[68px]" : ""}`}
+        } ${sidebarOpen ? "translate-x-0" : "-translate-x-full"} ${c ? "lg:w-[68px]" : ""}`}
       >
         <div className={`flex h-12 items-center justify-between gap-2 border-b border-white/10 ${c ? "px-4 lg:justify-center lg:px-0" : "px-4"}`}>
           <div className="flex items-center gap-2.5">
@@ -449,7 +503,7 @@ export default function ODShell({ active = "dashboard", title, subtitle, childre
       )}
       {/* Opened with ☰: click outside to close (hover-open closes when the mouse leaves) */}
       {peek === "click" && (
-        <button type="button" aria-label="Close menu" tabIndex={-1} onClick={() => setPeek(false)} className="fixed inset-0 z-30 hidden cursor-default bg-slate-900/20 lg:block" />
+        <button type="button" aria-label="Close menu" tabIndex={-1} onClick={closePeek} className="fixed inset-0 z-30 hidden cursor-default bg-slate-900/20 lg:block" />
       )}
 
       {/* ---------------- Main column ---------------- */}
@@ -457,7 +511,7 @@ export default function ODShell({ active = "dashboard", title, subtitle, childre
         <header className="relative z-20 flex h-12 flex-none items-center gap-3 border-b border-slate-200 bg-white px-4 lg:px-5">
           <button
             type="button"
-            onClick={() => (window.innerWidth >= 1024 ? setPeek("click") : setMobileNav(true))}
+            onClick={() => (window.innerWidth >= 1024 ? openFull() : setMobileNav(true))}
             className={`grid h-9 w-9 place-items-center rounded-md text-slate-600 hover:bg-slate-100 ${auto ? "" : "lg:hidden"}`}
             aria-label="Open menu"
           >
