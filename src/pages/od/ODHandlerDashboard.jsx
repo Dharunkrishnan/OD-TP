@@ -5,7 +5,7 @@
 // Catalogue refs: SLA / TAT Management 165–170, Search / Dashboard 178–181
 // Page scrolls normally; sidebar and header stay fixed.
 
-import { useState } from "react";
+import { useEffect, useId, useRef, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import {
   FolderOpen,
@@ -14,6 +14,21 @@ import {
   AlertTriangle,
   Clock,
   CheckCircle2,
+  Percent,
+  Hourglass,
+  Layers,
+  ListChecks,
+  Users,
+  CalendarCheck,
+  LayoutList,
+  BarChart3,
+  BarChartHorizontal,
+  PieChart as PieChartIcon,
+  Donut,
+  LineChart as LineChartIcon,
+  ArrowLeftRight,
+  Check,
+  ChevronDown,
 } from "lucide-react";
 import ODShell from "../../components/layout/ODShell";
 import { useAuth } from "../../auth";
@@ -57,23 +72,23 @@ const fmtDays = (d) => `${Number(d).toFixed(1)} d`;
 
 // Combined SLA card – views selectable from a dropdown (choice remembered per browser)
 const SLA_VIEWS = [
-  { key: "status", label: "SLA status (open)" },
-  { key: "compliance", label: "SLA % by month" },
-  { key: "tat", label: "Avg TAT by month" },
+  { key: "status", label: "SLA status (open)", icon: Gauge, hint: "On track · at risk · breached now" },
+  { key: "compliance", label: "SLA % by month", icon: Percent, hint: "Share of claims closed within SLA" },
+  { key: "tat", label: "Avg TAT by month", icon: Timer, hint: "Average days to settle a claim" },
 ];
 const SLA_VIEW_KEY = "smartclaims-od-sla-view";
 
 // Combined portfolio card – same pattern
 const PORT_VIEWS = [
-  { key: "ageing", label: "Ageing" },
-  { key: "stage", label: "By stage" },
-  { key: "loss", label: "By loss type" },
+  { key: "ageing", label: "Ageing", icon: Hourglass, hint: "Open claims by days since registration" },
+  { key: "stage", label: "By stage", icon: Layers, hint: "Where your open claims are in the lifecycle" },
+  { key: "loss", label: "By loss type", icon: ListChecks, hint: "Accident, flood, theft, fire…" },
 ];
 
 // Third card – workload & productivity
 const WORK_VIEWS = [
-  { key: "pending", label: "Pending with" },
-  { key: "closed", label: "Closed by month" },
+  { key: "pending", label: "Pending with", icon: Users, hint: "Who your open claims are waiting on" },
+  { key: "closed", label: "Closed by month", icon: CalendarCheck, hint: "Claims you closed each month" },
 ];
 const WORK_VIEW_KEY = "smartclaims-od-work-view";
 const PORT_VIEW_KEY = "smartclaims-od-portfolio-view";
@@ -110,7 +125,8 @@ const readChart = (key) => {
     return "";
   }
 };
-const chartOptions = (types) => types.map((t) => ({ key: t, label: CHART_LABEL[t] }));
+const CHART_ICON = { summary: LayoutList, bar: BarChart3, pie: PieChartIcon, donut: Donut, line: LineChartIcon };
+const chartOptions = (types) => types.map((t) => ({ key: t, label: CHART_LABEL[t], icon: CHART_ICON[t] }));
 
 // Slice colours. Status = reserved SLA colours; ageing = one-hue ramp (ordered);
 // stage / loss type = fixed categorical order (colour follows the category).
@@ -130,23 +146,104 @@ function foldToSix(items, labelKey) {
   ];
 }
 
-/** Dropdown used in a card header to switch the card's view. */
+/** Dropdown used in a card header to switch the card's view / chart type.
+ *  Styled menu: icon + label (+ one-line hint), ✓ on the current choice, ↑ ↓ Enter Esc. */
 function ViewSelect({ value, onChange, views, label }) {
+  const [open, setOpen] = useState(false);
+  const [hi, setHi] = useState(0);
+  const wrap = useRef(null);
+  const listId = useId();
+  const cur = views.find((v) => v.key === value) || views[0];
+  const CurIcon = cur.icon;
+
+  useEffect(() => {
+    if (!open) return undefined;
+    const onDown = (e) => wrap.current && !wrap.current.contains(e.target) && setOpen(false);
+    document.addEventListener("mousedown", onDown);
+    return () => document.removeEventListener("mousedown", onDown);
+  }, [open]);
+
+  function openMenu() {
+    setHi(Math.max(0, views.findIndex((v) => v.key === value)));
+    setOpen(true);
+  }
+  function pick(v) {
+    onChange(v.key);
+    setOpen(false);
+  }
+  function onKey(e) {
+    if (!open && ["ArrowDown", "Enter", " "].includes(e.key)) {
+      e.preventDefault();
+      openMenu();
+    } else if (open && e.key === "ArrowDown") {
+      e.preventDefault();
+      setHi((i) => Math.min(i + 1, views.length - 1));
+    } else if (open && e.key === "ArrowUp") {
+      e.preventDefault();
+      setHi((i) => Math.max(i - 1, 0));
+    } else if (open && (e.key === "Enter" || e.key === " ")) {
+      e.preventDefault();
+      pick(views[hi]);
+    } else if (e.key === "Escape") setOpen(false);
+  }
+
   return (
-    <label className="flex items-center">
-      <span className="sr-only">{label}</span>
-      <select
-        value={value}
-        onChange={(e) => onChange(e.target.value)}
-        className="h-6 max-w-full rounded border border-slate-300 bg-white py-0 pl-2 pr-7 text-[11.5px] font-medium text-slate-800 hover:border-teal-600 focus:border-teal-700 focus:outline-none focus:ring-4 focus:ring-teal-700/15"
+    <div ref={wrap} className="relative">
+      <button
+        type="button"
+        onClick={() => (open ? setOpen(false) : openMenu())}
+        onKeyDown={onKey}
+        aria-haspopup="listbox"
+        aria-expanded={open}
+        aria-controls={listId}
+        aria-label={`${label}: ${cur.label}`}
+        className={`flex h-7 max-w-[190px] items-center gap-1.5 rounded-md border pl-2 pr-1.5 text-[12px] font-semibold transition ${
+          open ? "border-teal-600 bg-teal-50 text-teal-900" : "border-slate-200 bg-slate-50 text-slate-800 hover:border-slate-300 hover:bg-white"
+        } focus:outline-none focus-visible:ring-4 focus-visible:ring-teal-700/15`}
       >
-        {views.map((v) => (
-          <option key={v.key} value={v.key}>
-            {v.label}
-          </option>
-        ))}
-      </select>
-    </label>
+        {CurIcon && <CurIcon className={`h-3.5 w-3.5 flex-none ${open ? "text-teal-700" : "text-slate-500"}`} aria-hidden="true" />}
+        <span className="truncate">{cur.label}</span>
+        <ChevronDown className={`h-3.5 w-3.5 flex-none text-slate-400 transition ${open ? "rotate-180" : ""}`} aria-hidden="true" />
+      </button>
+      {open && (
+        <ul
+          id={listId}
+          role="listbox"
+          aria-label={label}
+          className="absolute right-0 top-full z-30 mt-1.5 w-max min-w-full max-w-[280px] rounded-xl border border-slate-200 bg-white p-1 shadow-xl"
+        >
+          <li className="px-2 pb-1 pt-1 text-[10px] font-semibold uppercase tracking-wider text-slate-400" role="presentation">
+            {label}
+          </li>
+          {views.map((v, i) => {
+            const sel = v.key === cur.key;
+            const Icon = v.icon;
+            return (
+              <li
+                key={v.key}
+                role="option"
+                aria-selected={sel}
+                onMouseEnter={() => setHi(i)}
+                onMouseDown={(e) => {
+                  e.preventDefault();
+                  pick(v);
+                }}
+                className={`flex cursor-pointer items-start gap-2 rounded-lg px-2 py-1.5 ${hi === i ? "bg-slate-100" : ""}`}
+              >
+                <span className={`mt-px grid h-6 w-6 flex-none place-items-center rounded-md ${sel ? "bg-teal-700 text-white" : "bg-slate-100 text-slate-500"}`}>
+                  {Icon ? <Icon className="h-3.5 w-3.5" aria-hidden="true" /> : null}
+                </span>
+                <span className="min-w-0 flex-1">
+                  <span className={`block text-[12.5px] leading-tight ${sel ? "font-semibold text-teal-900" : "font-medium text-slate-800"}`}>{v.label}</span>
+                  {v.hint && <span className="block text-[11px] leading-snug text-slate-500">{v.hint}</span>}
+                </span>
+                <Check className={`mt-1 h-3.5 w-3.5 flex-none ${sel ? "text-teal-700" : "text-transparent"}`} aria-hidden="true" />
+              </li>
+            );
+          })}
+        </ul>
+      )}
+    </div>
   );
 }
 
@@ -166,10 +263,10 @@ const STAGE_SHORT = {
 
 // Chart types for the Stage-wise TAT card (all compare actual vs target per stage)
 const STAGE_CHARTS = [
-  { key: "column", label: "Column" },
-  { key: "bar", label: "Bar" },
-  { key: "line", label: "Line" },
-  { key: "variance", label: "Variance" },
+  { key: "column", label: "Column", icon: BarChart3, hint: "Avg TAT per stage with target line" },
+  { key: "bar", label: "Bar", icon: BarChartHorizontal, hint: "Same, as horizontal bars" },
+  { key: "line", label: "Line", icon: LineChartIcon, hint: "Avg TAT vs target across stages" },
+  { key: "variance", label: "Variance", icon: ArrowLeftRight, hint: "Days over or under each target" },
 ];
 const STAGE_CHART_KEY = "smartclaims-od-stage-chart";
 const overBy = (s) => +(s.actual - s.target).toFixed(1);
