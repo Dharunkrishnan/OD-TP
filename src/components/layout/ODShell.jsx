@@ -64,6 +64,18 @@ const HANDLER_MENU = [
 const BUILT_ROUTES = ["/od/dashboard", "/od/worklist", "/od/intimation"];
 
 const MODE_KEY = "smartclaims-sidebar-mode"; // "auto" (default) | "pinned"
+// Set when a page is opened from the slid-in sidebar, so the next page starts with it open
+// and slides it out smoothly (each page draws its own sidebar)
+const NAV_PEEK_KEY = "smartclaims-sidebar-nav-peek";
+function takeNavPeek() {
+  try {
+    const v = sessionStorage.getItem(NAV_PEEK_KEY);
+    sessionStorage.removeItem(NAV_PEEK_KEY);
+    return v === "hover" || v === "click" ? v : false;
+  } catch {
+    return false;
+  }
+}
 
 /** Tooltip shown to the right of an icon when the sidebar is collapsed (desktop). */
 function Tip({ show, children }) {
@@ -142,9 +154,10 @@ export default function ODShell({ active = "dashboard", title, subtitle, childre
     }
   });
   const auto = mode === "auto";
-  const [peek, setPeek] = useState(false); // false | "hover" | "click"
+  const [navPeek] = useState(takeNavPeek); // opened from the sidebar on the previous page?
+  const [peek, setPeek] = useState(navPeek); // false | "hover" | "click"
   // Keep the full (labelled) layout until a slide-out has finished, so it never shrinks on screen
-  const [fullLayout, setFullLayout] = useState(false);
+  const [fullLayout, setFullLayout] = useState(navPeek === "click");
   const layoutTimer = useRef(0);
   const closeTimer = useRef(0);
   const asideRef = useRef(null);
@@ -159,6 +172,30 @@ export default function ODShell({ active = "dashboard", title, subtitle, childre
     window.clearTimeout(layoutTimer.current);
     setFullLayout(true);
     layoutTimer.current = window.setTimeout(() => setFullLayout(false), 320);
+  }
+  // Arrived from a sidebar click: show it for one frame, then slide it out
+  useEffect(() => {
+    if (!navPeek) return undefined;
+    let r2 = 0;
+    const r1 = requestAnimationFrame(() => {
+      r2 = requestAnimationFrame(() => {
+        if (navPeek === "click") holdFullLayout();
+        setPeek(false);
+      });
+    });
+    return () => {
+      cancelAnimationFrame(r1);
+      cancelAnimationFrame(r2);
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+  function rememberPeekForNextPage() {
+    if (!peek || !auto) return;
+    try {
+      sessionStorage.setItem(NAV_PEEK_KEY, peek);
+    } catch {
+      /* ignore */
+    }
   }
   function openPeek() {
     window.clearTimeout(closeTimer.current);
@@ -250,6 +287,7 @@ export default function ODShell({ active = "dashboard", title, subtitle, childre
       onNavigateMissing(item.label);
       return;
     }
+    rememberPeekForNextPage();
     navigate(item.to);
   }
 
@@ -308,7 +346,10 @@ export default function ODShell({ active = "dashboard", title, subtitle, childre
               onClick={() => {
                 setMobileNav(false);
                 if (claimNav.onBack) claimNav.onBack();
-                else navigate(claimNav.backTo || "/od/worklist");
+                else {
+                  rememberPeekForNextPage();
+                  navigate(claimNav.backTo || "/od/worklist");
+                }
               }}
               aria-label={c ? claimNav.backLabel || "Back to My Work Queue" : undefined}
               className={`group relative flex h-10 w-full items-center gap-3 rounded-lg px-3 text-left text-sm text-slate-300 hover:bg-white/5 hover:text-white ${
