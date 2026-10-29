@@ -26,6 +26,8 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import SearchPopover from "../SearchPopover";
+import NotificationsPopover from "../NotificationsPopover";
+import { NOTIFICATIONS } from "../../data/notifications";
 import { claimSlug } from "../../data/odClaimDetail";
 import { searchClaims, dueTodayClaims, searchPolicies, slaTone } from "../../data/searchIndex";
 import {
@@ -36,7 +38,6 @@ import {
   Inbox,
   CalendarClock,
   FileStack,
-  Bell,
   ChevronDown,
   LogOut,
   HelpCircle,
@@ -582,14 +583,14 @@ export default function ODShell({ active = "dashboard", title, subtitle, childre
                 OD workspace
               </span>
             )}
-            <button
-              type="button"
-              aria-label="Notifications, 4 unread"
-              className="relative grid h-9 w-9 place-items-center rounded-lg text-slate-600 hover:bg-slate-100"
-            >
-              <Bell className="h-5 w-5" />
-              <span className="absolute right-1.5 top-1.5 h-2 w-2 rounded-full bg-red-600 ring-2 ring-white" />
-            </button>
+            <NotificationsPopover
+              items={NOTIFICATIONS}
+              onOpenClaim={(no) => navigate(`/od/claims/${claimSlug(no)}`)}
+              onViewAll={() => {
+                if (window.location.pathname === "/od/worklist") window.dispatchEvent(new Event("smartclaims:open-alerts"));
+                else navigate("/od/worklist?alerts=1");
+              }}
+            />
 
             <div className="relative">
               <button

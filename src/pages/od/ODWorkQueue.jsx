@@ -335,7 +335,20 @@ export default function ODWorkQueue() {
   const [page, setPage] = useState(1);
   const [toast, setToast] = useState("");
 
-  const [drawer, setDrawer] = useState(null); // null | "diary" | "alerts"
+  const [drawer, setDrawer] = useState(() => (params.get("alerts") ? "alerts" : null)); // null | "diary" | "alerts" (bell → ?alerts=1)
+  // Bell → "View alerts in My Work Queue": arriving from another page uses ?alerts=1 (read above);
+  // when already on this page the header sends an event instead.
+  useEffect(() => {
+    const open = () => setDrawer("alerts");
+    window.addEventListener("smartclaims:open-alerts", open);
+    return () => window.removeEventListener("smartclaims:open-alerts", open);
+  }, []);
+  useEffect(() => {
+    if (!params.get("alerts")) return;
+    const next = new URLSearchParams(params);
+    next.delete("alerts");
+    setParams(next, { replace: true }); // tidy the URL
+  }, [params, setParams]);
   const [colsOpen, setColsOpen] = useState(false);
   const [hidden, setHidden] = useState(() => {
     try {
