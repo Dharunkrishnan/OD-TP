@@ -193,17 +193,23 @@ export default function ODShell({ active = "dashboard", title, subtitle, childre
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
   }, [peek]);
-  // Hover-open: follow the cursor itself (mouseleave is unreliable when the panel slides in
-  // under a cursor that is standing still). Cursor clearly right of the panel → close.
+  // Follow the cursor itself (mouseleave is unreliable when the panel slides in under a cursor
+  // that is standing still). Cursor clearly right of the panel → close. Same for the full panel
+  // opened with ☰, so both behave alike (no need to click outside).
   useEffect(() => {
-    if (peek !== "hover") return undefined;
+    if (!peek) return undefined;
     const onMove = (e) => {
       const right = asideRef.current?.getBoundingClientRect().right ?? 0;
       if (e.clientX > right + 12) {
-        if (!closeTimer.current) closeTimer.current = window.setTimeout(() => {
-          closeTimer.current = 0;
-          setPeek(false);
-        }, 180);
+        if (!closeTimer.current)
+          closeTimer.current = window.setTimeout(
+            () => {
+              closeTimer.current = 0;
+              if (peek === "click") holdFullLayout(); // slide out at full width, then switch to slim
+              setPeek(false);
+            },
+            peek === "click" ? 300 : 180
+          );
       } else if (closeTimer.current) {
         window.clearTimeout(closeTimer.current);
         closeTimer.current = 0;
@@ -503,7 +509,7 @@ export default function ODShell({ active = "dashboard", title, subtitle, childre
       )}
       {/* Opened with ☰: click outside to close (hover-open closes when the mouse leaves) */}
       {peek === "click" && (
-        <button type="button" aria-label="Close menu" tabIndex={-1} onClick={closePeek} className="fixed inset-0 z-30 hidden cursor-default bg-slate-900/20 lg:block" />
+        <button type="button" aria-label="Close menu" tabIndex={-1} onClick={closePeek} className="fixed inset-0 z-30 hidden cursor-default lg:block" />
       )}
 
       {/* ---------------- Main column ---------------- */}
