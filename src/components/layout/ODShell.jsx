@@ -2,11 +2,7 @@
 // Common layout for all Motor OD pages: left sidebar + top header + content area.
 // Layout: sidebar and header never move. Only the content area scrolls.
 // (Own scroll container, so it works regardless of global CSS in index.css.)
-// Desktop default = HIDDEN: the sidebar is hidden entirely and the page uses the full width.
-//   Move the mouse to the left edge → a slim icons-only bar slides in (names show on hover);
-//   click ☰ in the header for the full panel with names;
-//   it hides again when the mouse leaves. "Pin menu" keeps it open beside the page;
-//   "Collapse menu" hides it entirely again. The choice is remembered per browser.
+// Desktop: sidebar can be collapsed to icons only (remembered per browser).
 // Mobile: sidebar opens as a drawer from the menu button.
 //
 // Props:
@@ -23,7 +19,7 @@
 //                 onBack     – runs instead of navigating to backTo (e.g. to confirm leaving)
 //                 step.onClick / step.disabled – makes a step clickable
 
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import SearchPopover from "../SearchPopover";
 import NotificationsPopover from "../NotificationsPopover";
@@ -44,7 +40,7 @@ import {
   Menu,
   X,
   PanelLeftClose,
-  Pin,
+  PanelLeftOpen,
   ArrowLeft,
   Check,
   FileText,
@@ -64,17 +60,16 @@ const HANDLER_MENU = [
 // Pages that exist so far. Add each new route here as it is built.
 const BUILT_ROUTES = ["/od/dashboard", "/od/worklist", "/od/intimation"];
 
-const MODE_KEY = "smartclaims-sidebar-mode"; // "auto" (default) | "pinned"
-// Set when a page is opened from the slid-in sidebar, so the next page starts with it open
-// and slides it out smoothly (each page draws its own sidebar)
-const NAV_PEEK_KEY = "smartclaims-sidebar-nav-peek";
-function takeNavPeek() {
+const COLLAPSE_KEY = "smartclaims-sidebar-collapsed";
+const CLAIM_COLLAPSE_KEY = "smartclaims-claimnav-collapsed-v2"; // claim / intimation view opens minimised (icons only) by default
+
+// Default = collapsed (icons only, name on hover). The user can expand it;
+// their choice is remembered in this browser.
+function readCollapsed() {
   try {
-    const v = sessionStorage.getItem(NAV_PEEK_KEY);
-    sessionStorage.removeItem(NAV_PEEK_KEY);
-    return v === "hover" || v === "click" ? v : false;
+    return localStorage.getItem(COLLAPSE_KEY) !== "0";
   } catch {
-    return false;
+    return true;
   }
 }
 
@@ -146,139 +141,31 @@ export default function ODShell({ active = "dashboard", title, subtitle, childre
   const { user, logout } = useAuth();
   const [menuOpen, setMenuOpen] = useState(false);
   const [mobileNav, setMobileNav] = useState(false);
-  // Auto-hide sidebar (desktop)
-  const [mode, setMode] = useState(() => {
+  const [menuCollapsed, setMenuCollapsed] = useState(readCollapsed);
+  const [claimCollapsed, setClaimCollapsed] = useState(() => {
     try {
-      return localStorage.getItem(MODE_KEY) === "pinned" ? "pinned" : "auto";
+      return localStorage.getItem(CLAIM_COLLAPSE_KEY) !== "0";
     } catch {
-      return "auto";
+      return true;
     }
   });
-  const auto = mode === "auto";
-  const [navPeek] = useState(takeNavPeek); // opened from the sidebar on the previous page?
-  const [peek, setPeek] = useState(navPeek); // false | "hover" | "click"
-  // Keep the full (labelled) layout until a slide-out has finished, so it never shrinks on screen
-  const [fullLayout, setFullLayout] = useState(navPeek === "click");
-  const layoutTimer = useRef(0);
-  const closeTimer = useRef(0);
-  const asideRef = useRef(null);
-  useEffect(
-    () => () => {
-      window.clearTimeout(closeTimer.current);
-      window.clearTimeout(layoutTimer.current);
-    },
-    []
-  );
-  function holdFullLayout() {
-    window.clearTimeout(layoutTimer.current);
-    setFullLayout(true);
-    layoutTimer.current = window.setTimeout(() => setFullLayout(false), 320);
-  }
-  // Arrived from a sidebar click: show it for one frame, then slide it out
-  useEffect(() => {
-    if (!navPeek) return undefined;
-    let r2 = 0;
-    const r1 = requestAnimationFrame(() => {
-      r2 = requestAnimationFrame(() => {
-        if (navPeek === "click") holdFullLayout();
-        setPeek(false);
-      });
-    });
-    return () => {
-      cancelAnimationFrame(r1);
-      cancelAnimationFrame(r2);
-    };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
-  function rememberPeekForNextPage() {
-    if (!peek || !auto) return;
-    try {
-      sessionStorage.setItem(NAV_PEEK_KEY, peek);
-    } catch {
-      /* ignore */
-    }
-  }
-  function openPeek() {
-    window.clearTimeout(closeTimer.current);
-    setPeek((v) => v || "hover");
-  }
-  function openFull() {
-    window.clearTimeout(layoutTimer.current);
-    setFullLayout(true);
-    setPeek("click");
-  }
-  function closePeek() {
-    if (peek === "click" || fullLayout) holdFullLayout();
-    setPeek(false);
-  }
-  function setSidebarMode(next) {
-    setMode(next);
-    setPeek(false);
-    try {
-      localStorage.setItem(MODE_KEY, next);
-    } catch {
-      /* ignore */
-    }
-  }
-  // Esc closes an open sidebar
-  useEffect(() => {
-    if (!peek) return undefined;
-    const onKey = (e) => {
-      if (e.key !== "Escape") return;
-      if (peek === "click") holdFullLayout();
-      setPeek(false);
-    };
-    window.addEventListener("keydown", onKey);
-    return () => window.removeEventListener("keydown", onKey);
-  }, [peek]);
-  // Follow the cursor itself (mouseleave is unreliable when the panel slides in under a cursor
-  // that is standing still). Cursor clearly right of the panel → close. Same for the full panel
-  // opened with ☰, so both behave alike (no need to click outside).
-  useEffect(() => {
-    if (!peek) return undefined;
-    const onMove = (e) => {
-      const right = asideRef.current?.getBoundingClientRect().right ?? 0;
-      if (e.clientX > right + 12) {
-        if (!closeTimer.current)
-          closeTimer.current = window.setTimeout(
-            () => {
-              closeTimer.current = 0;
-              if (peek === "click") holdFullLayout(); // slide out at full width, then switch to slim
-              setPeek(false);
-            },
-            peek === "click" ? 300 : 180
-          );
-      } else if (closeTimer.current) {
-        window.clearTimeout(closeTimer.current);
-        closeTimer.current = 0;
-      }
-    };
-    window.addEventListener("mousemove", onMove);
-    return () => {
-      window.removeEventListener("mousemove", onMove);
-      window.clearTimeout(closeTimer.current);
-      closeTimer.current = 0;
-    };
-  }, [peek]);
-  const sidebarOpen = mobileNav || peek; // slid in (auto mode / mobile)
+  // Main menu and claim view remember their own collapsed / expanded choice
+  const collapsed = claimNav ? claimCollapsed : menuCollapsed;
   const role = getRole(user, "OD");
 
   // Collapse applies to desktop only; the mobile drawer always shows full labels
-  // Hover on the left edge → slim icons-only bar (names as tooltips). ☰ / pinned / mobile → full labels.
-  // Auto mode keeps the slim (icons-only) layout while hidden, so a hover only SLIDES it in –
-  // the width never changes on screen (that caused the "wide then shrink" jump). ☰ opens full.
-  const c = auto && !fullLayout && peek !== "click" && !mobileNav;
+  const c = collapsed && !mobileNav;
   const hideWhenCollapsed = c ? "lg:hidden" : "";
 
-  // "Collapse menu" always hides the sidebar entirely
   function toggleCollapsed() {
-    if (auto) closePeek();
-    else {
-      holdFullLayout(); // pinned (full) → slide out at full width, then switch to slim
-      setSidebarMode("auto");
+    const next = !collapsed;
+    (claimNav ? setClaimCollapsed : setMenuCollapsed)(next);
+    try {
+      localStorage.setItem(claimNav ? CLAIM_COLLAPSE_KEY : COLLAPSE_KEY, next ? "1" : "0");
+    } catch {
+      /* ignore */
     }
   }
-
 
   function go(item) {
     setMobileNav(false);
@@ -288,7 +175,6 @@ export default function ODShell({ active = "dashboard", title, subtitle, childre
       onNavigateMissing(item.label);
       return;
     }
-    rememberPeekForNextPage();
     navigate(item.to);
   }
 
@@ -300,25 +186,10 @@ export default function ODShell({ active = "dashboard", title, subtitle, childre
   return (
     <div className="flex h-screen overflow-hidden bg-slate-100 text-slate-800">
       {/* ---------------- Sidebar ---------------- */}
-      {/* Auto-hide: thin strip on the left edge – hovering it slides the sidebar in */}
-      {auto && !sidebarOpen && (
-        <div
-          onMouseEnter={openPeek}
-          aria-hidden="true"
-          className="fixed inset-y-0 left-0 z-30 hidden w-2.5 lg:block"
-          title="Menu"
-        >
-          <span className="absolute inset-y-0 left-0 w-1 bg-[#0B1F3A]/80" />
-        </div>
-      )}
       <aside
-        ref={asideRef}
-        onMouseEnter={auto ? openPeek : undefined}
-        inert={auto && !sidebarOpen ? true : undefined}
-        style={{ transitionTimingFunction: "cubic-bezier(0.22, 1, 0.36, 1)" }}
-        className={`fixed inset-y-0 left-0 z-40 flex w-60 flex-none flex-col bg-[#0B1F3A] text-slate-300 shadow-2xl transition-transform duration-300 will-change-transform motion-reduce:transition-none ${
-          auto ? "" : "lg:static lg:h-full lg:translate-x-0"
-        } ${sidebarOpen ? "translate-x-0" : "-translate-x-full"} ${c ? "lg:w-[68px]" : ""}`}
+        className={`fixed inset-y-0 left-0 z-40 flex w-60 flex-none flex-col bg-[#0B1F3A] text-slate-300 transition-[width,transform] duration-200 lg:static lg:h-full lg:translate-x-0 ${
+          mobileNav ? "translate-x-0" : "-translate-x-full"
+        } ${c ? "lg:w-[68px]" : ""}`}
       >
         <div className={`flex h-12 items-center justify-between gap-2 border-b border-white/10 ${c ? "px-4 lg:justify-center lg:px-0" : "px-4"}`}>
           <div className="flex items-center gap-2.5">
@@ -347,10 +218,7 @@ export default function ODShell({ active = "dashboard", title, subtitle, childre
               onClick={() => {
                 setMobileNav(false);
                 if (claimNav.onBack) claimNav.onBack();
-                else {
-                  rememberPeekForNextPage();
-                  navigate(claimNav.backTo || "/od/worklist");
-                }
+                else navigate(claimNav.backTo || "/od/worklist");
               }}
               aria-label={c ? claimNav.backLabel || "Back to My Work Queue" : undefined}
               className={`group relative flex h-10 w-full items-center gap-3 rounded-lg px-3 text-left text-sm text-slate-300 hover:bg-white/5 hover:text-white ${
@@ -510,34 +378,23 @@ export default function ODShell({ active = "dashboard", title, subtitle, childre
             </button>
           ))}
 
-          {/* Pin – desktop only, while the sidebar is in hidden (auto) mode */}
-          {auto && (
-          <button
-            type="button"
-            onClick={() => setSidebarMode("pinned")}
-            aria-label="Pin menu"
-            className={`group relative mt-1 hidden h-10 w-full items-center gap-3 rounded-lg px-3 text-left text-sm text-slate-400 hover:bg-white/5 hover:text-white lg:flex ${
-              c ? "lg:justify-center lg:px-0" : ""
-            }`}
-          >
-            <Pin className="h-[18px] w-[18px] flex-none" aria-hidden="true" />
-            <span className={hideWhenCollapsed}>Pin menu</span>
-            <Tip show={c}>Pin menu</Tip>
-          </button>
-          )}
-
-          {/* Collapse – hides the sidebar entirely */}
+          {/* Collapse / expand – desktop only */}
           <button
             type="button"
             onClick={toggleCollapsed}
-            aria-label="Collapse menu"
+            aria-label={collapsed ? "Expand menu" : "Collapse menu"}
+            aria-expanded={!collapsed}
             className={`group relative mt-1 hidden h-10 w-full items-center gap-3 rounded-lg px-3 text-left text-sm text-slate-400 hover:bg-white/5 hover:text-white lg:flex ${
               c ? "lg:justify-center lg:px-0" : ""
             }`}
           >
-            <PanelLeftClose className="h-[18px] w-[18px] flex-none" aria-hidden="true" />
+            {collapsed ? (
+              <PanelLeftOpen className="h-[18px] w-[18px] flex-none" aria-hidden="true" />
+            ) : (
+              <PanelLeftClose className="h-[18px] w-[18px] flex-none" aria-hidden="true" />
+            )}
             <span className={hideWhenCollapsed}>Collapse menu</span>
-            <Tip show={c}>Collapse menu</Tip>
+            <Tip show={c}>Expand menu</Tip>
           </button>
         </div>
       </aside>
@@ -549,18 +406,14 @@ export default function ODShell({ active = "dashboard", title, subtitle, childre
           className="fixed inset-0 z-30 bg-slate-900/40 lg:hidden"
         />
       )}
-      {/* Opened with ☰: click outside to close (hover-open closes when the mouse leaves) */}
-      {peek === "click" && (
-        <button type="button" aria-label="Close menu" tabIndex={-1} onClick={closePeek} className="fixed inset-0 z-30 hidden cursor-default lg:block" />
-      )}
 
       {/* ---------------- Main column ---------------- */}
       <div className="flex h-full min-w-0 flex-1 flex-col">
         <header className="relative z-20 flex h-12 flex-none items-center gap-3 border-b border-slate-200 bg-white px-4 lg:px-5">
           <button
             type="button"
-            onClick={() => (window.innerWidth >= 1024 ? openFull() : setMobileNav(true))}
-            className={`grid h-9 w-9 place-items-center rounded-md text-slate-600 hover:bg-slate-100 ${auto ? "" : "lg:hidden"}`}
+            onClick={() => setMobileNav(true)}
+            className="grid h-9 w-9 place-items-center rounded-md text-slate-600 hover:bg-slate-100 lg:hidden"
             aria-label="Open menu"
           >
             <Menu className="h-5 w-5" />

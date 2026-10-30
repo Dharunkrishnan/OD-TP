@@ -104,17 +104,17 @@ const fmtDate = (iso) => `${iso.slice(8, 10)} ${MON[Number(iso.slice(5, 7)) - 1]
    their min width; the rest move out automatically (never squeezed, no sideways scroll) and come
    back when there is room. w = share of the spare width. The user can also hide columns. */
 const COLUMNS = [
-  { key: "claimNo", label: "Claim no", w: 164, min: 158, fixed: true },
-  { key: "regNo", label: "Vehicle no", w: 110, min: 110 },
+  { key: "claimNo", label: "Claim no", w: 164, min: 150, fixed: true },
+  { key: "regNo", label: "Vehicle no", w: 110, min: 106 },
   { key: "insured", label: "Insured", w: 118, min: 116 },
-  { key: "stage", label: "Stage", w: 140, min: 140 },
+  { key: "stage", label: "Stage", w: 140, min: 136 },
   { key: "pendingWith", label: "Pending with", w: 122, min: 114 },
   { key: "sla", label: "SLA", w: 118, min: 114 },
   { key: "due", label: "Due", w: 82, min: 80 },
   { key: "regDate", label: "Registered date", w: 114, min: 112 },
   { key: "age", label: "Age", w: 46, min: 46, right: true },
   { key: "reserve", label: "Reserve", w: 84, min: 80, right: true },
-  { key: "nextAction", label: "Next action", w: 260, min: 150 },
+  { key: "nextAction", label: "Next action", w: 260, min: 118 },
   { key: "vehicle", label: "Make / model", w: 170, min: 150 },
   { key: "lossType", label: "Loss type", w: 120, min: 120 },
   { key: "lossDate", label: "Loss date", w: 74, min: 74 },
