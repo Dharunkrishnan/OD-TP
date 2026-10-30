@@ -19,7 +19,7 @@
 //                 onBack     – runs instead of navigating to backTo (e.g. to confirm leaving)
 //                 step.onClick / step.disabled – makes a step clickable
 
-import { useCallback, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import SearchPopover from "../SearchPopover";
 import NotificationsPopover from "../NotificationsPopover";
@@ -149,15 +149,39 @@ export default function ODShell({ active = "dashboard", title, subtitle, childre
       return true;
     }
   });
+  // My Work Queue (desktop): the left nav cycles through three states –
+  //   hidden  → (☰ in header)      → minimised (68 px icons)
+  //   minimised → (Expand menu)    → maximised (240 px with names)
+  //   maximised → (Collapse menu)  → hidden again
+  // It always starts hidden when the queue opens, so the queue gets the full width.
+  // On mobile, ☰ opens the usual slide-in drawer.
+  const isQueue = active === "queue" && !claimNav;
+  const [queueNav, setQueueNav] = useState("hidden"); // "hidden" | "mini" | "full"
+  const navHidden = isQueue && queueNav === "hidden";
+
   // Main menu and claim view remember their own collapsed / expanded choice
-  const collapsed = claimNav ? claimCollapsed : menuCollapsed;
+  const collapsed = claimNav ? claimCollapsed : isQueue ? queueNav !== "full" : menuCollapsed;
   const role = getRole(user, "OD");
+
+  // Esc closes the slide-in menu
+  useEffect(() => {
+    if (!mobileNav) return undefined;
+    const onKey = (e) => {
+      if (e.key === "Escape") setMobileNav(false);
+    };
+    document.addEventListener("keydown", onKey);
+    return () => document.removeEventListener("keydown", onKey);
+  }, [mobileNav]);
 
   // Collapse applies to desktop only; the mobile drawer always shows full labels
   const c = collapsed && !mobileNav;
   const hideWhenCollapsed = c ? "lg:hidden" : "";
 
   function toggleCollapsed() {
+    if (isQueue) {
+      setQueueNav(queueNav === "full" ? "hidden" : "full");
+      return;
+    }
     const next = !collapsed;
     (claimNav ? setClaimCollapsed : setMenuCollapsed)(next);
     try {
@@ -187,9 +211,10 @@ export default function ODShell({ active = "dashboard", title, subtitle, childre
     <div className="flex h-screen overflow-hidden bg-slate-100 text-slate-800">
       {/* ---------------- Sidebar ---------------- */}
       <aside
-        className={`fixed inset-y-0 left-0 z-40 flex w-60 flex-none flex-col bg-[#0B1F3A] text-slate-300 transition-[width,transform] duration-200 lg:static lg:h-full lg:translate-x-0 ${
+        className={`fixed inset-y-0 left-0 z-40 flex w-60 flex-none flex-col bg-[#0B1F3A] text-slate-300 transition-[width,transform] duration-200 ease-out lg:static lg:h-full lg:translate-x-0 ${
           mobileNav ? "translate-x-0" : "-translate-x-full"
-        } ${c ? "lg:w-[68px]" : ""}`}
+        } ${navHidden ? "lg:w-0 lg:overflow-hidden" : c ? "lg:w-[68px]" : ""}`}
+        inert={navHidden && !mobileNav ? true : undefined}
       >
         <div className={`flex h-12 items-center justify-between gap-2 border-b border-white/10 ${c ? "px-4 lg:justify-center lg:px-0" : "px-4"}`}>
           <div className="flex items-center gap-2.5">
@@ -378,7 +403,7 @@ export default function ODShell({ active = "dashboard", title, subtitle, childre
             </button>
           ))}
 
-          {/* Collapse / expand – desktop only */}
+          {/* Collapse / expand – desktop only. On My Work Queue, Collapse hides the nav entirely. */}
           <button
             type="button"
             onClick={toggleCollapsed}
@@ -412,12 +437,22 @@ export default function ODShell({ active = "dashboard", title, subtitle, childre
         <header className="relative z-20 flex h-12 flex-none items-center gap-3 border-b border-slate-200 bg-white px-4 lg:px-5">
           <button
             type="button"
-            onClick={() => setMobileNav(true)}
-            className="grid h-9 w-9 place-items-center rounded-md text-slate-600 hover:bg-slate-100 lg:hidden"
+            onClick={() => {
+              // Desktop on My Work Queue: bring the nav back as the minimised icon bar
+              if (navHidden && window.matchMedia("(min-width: 1024px)").matches) setQueueNav("mini");
+              else setMobileNav(true);
+            }}
+            className={`grid h-9 w-9 flex-none place-items-center rounded-md text-slate-600 hover:bg-slate-100 ${navHidden ? "" : "lg:hidden"}`}
             aria-label="Open menu"
+            title="Show menu"
           >
             <Menu className="h-5 w-5" />
           </button>
+          {navHidden && (
+            <span className="hidden h-8 w-8 flex-none place-items-center rounded-lg bg-[#0B1F3A] lg:grid" title="Smart Claims · Motor Own Damage">
+              <ShieldCheck className="h-[18px] w-[18px] text-teal-300" aria-hidden="true" />
+            </span>
+          )}
 
           <div className="min-w-0 flex-1">
             <h1 className="truncate text-[15px] font-semibold leading-tight text-[#0B1F3A]">{title}</h1>
