@@ -19,7 +19,7 @@
 //                 onBack     – runs instead of navigating to backTo (e.g. to confirm leaving)
 //                 step.onClick / step.disabled – makes a step clickable
 
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import SearchPopover from "../SearchPopover";
 import NotificationsPopover from "../NotificationsPopover";
@@ -153,11 +153,23 @@ export default function ODShell({ active = "dashboard", title, subtitle, childre
   //   hidden  → (☰ in header)      → minimised (68 px icons)
   //   minimised → (Expand menu)    → maximised (240 px with names)
   //   maximised → (Collapse menu)  → hidden again
+  // While hidden, resting the cursor on the left edge of the screen slides the icon bar
+  // in OVER the queue (the table does not move) and it slides away when the cursor leaves.
+  // Clicking the logo in the header pins the icon bar open (minimised).
   // It always starts hidden when the queue opens, so the queue gets the full width.
   // On mobile, ☰ opens the usual slide-in drawer.
   const isQueue = active === "queue" && !claimNav;
   const [queueNav, setQueueNav] = useState("hidden"); // "hidden" | "mini" | "full"
+  const [peek, setPeek] = useState(false); // hidden nav shown temporarily on hover
   const navHidden = isQueue && queueNav === "hidden";
+  const peeking = navHidden && peek;
+  const peekTimer = useRef(0);
+
+  function peekSoon(show, delay) {
+    window.clearTimeout(peekTimer.current);
+    peekTimer.current = window.setTimeout(() => setPeek(show), delay);
+  }
+  useEffect(() => () => window.clearTimeout(peekTimer.current), []);
 
   // Main menu and claim view remember their own collapsed / expanded choice
   const collapsed = claimNav ? claimCollapsed : isQueue ? queueNav !== "full" : menuCollapsed;
@@ -179,6 +191,8 @@ export default function ODShell({ active = "dashboard", title, subtitle, childre
 
   function toggleCollapsed() {
     if (isQueue) {
+      window.clearTimeout(peekTimer.current);
+      setPeek(false);
       setQueueNav(queueNav === "full" ? "hidden" : "full");
       return;
     }
@@ -211,10 +225,17 @@ export default function ODShell({ active = "dashboard", title, subtitle, childre
     <div className="flex h-screen overflow-hidden bg-slate-100 text-slate-800">
       {/* ---------------- Sidebar ---------------- */}
       <aside
-        className={`fixed inset-y-0 left-0 z-40 flex w-60 flex-none flex-col bg-[#0B1F3A] text-slate-300 transition-[width,transform] duration-200 ease-out lg:static lg:h-full lg:translate-x-0 ${
+        className={`fixed inset-y-0 left-0 z-40 flex w-60 flex-none flex-col bg-[#0B1F3A] text-slate-300 transition-[width,transform,box-shadow] duration-200 ease-out ${
           mobileNav ? "translate-x-0" : "-translate-x-full"
-        } ${navHidden ? "lg:w-0 lg:overflow-hidden" : c ? "lg:w-[68px]" : ""}`}
-        inert={navHidden && !mobileNav ? true : undefined}
+        } ${
+          navHidden
+            ? // Queue, nav hidden: floats over the page; slides in on hover (peek)
+              `lg:w-[68px] ${peeking ? "lg:translate-x-0 lg:shadow-[8px_0_24px_-8px_rgba(15,23,42,0.45)]" : ""}`
+            : `lg:static lg:h-full lg:translate-x-0 ${c ? "lg:w-[68px]" : ""}`
+        }`}
+        inert={navHidden && !mobileNav && !peeking ? true : undefined}
+        onMouseEnter={navHidden ? () => peekSoon(true, 0) : undefined}
+        onMouseLeave={navHidden ? () => peekSoon(false, 250) : undefined}
       >
         <div className={`flex h-12 items-center justify-between gap-2 border-b border-white/10 ${c ? "px-4 lg:justify-center lg:px-0" : "px-4"}`}>
           <div className="flex items-center gap-2.5">
@@ -423,6 +444,15 @@ export default function ODShell({ active = "dashboard", title, subtitle, childre
           </button>
         </div>
       </aside>
+      {navHidden && !peeking && (
+        // Invisible hot zone on the left edge: resting the cursor here slides the nav in
+        <div
+          aria-hidden="true"
+          className="fixed inset-y-0 left-0 z-30 hidden w-2.5 lg:block"
+          onMouseEnter={() => peekSoon(true, 120)}
+          onMouseLeave={() => peekSoon(false, 0)}
+        />
+      )}
       {mobileNav && (
         <button
           type="button"
@@ -437,21 +467,27 @@ export default function ODShell({ active = "dashboard", title, subtitle, childre
         <header className="relative z-20 flex h-12 flex-none items-center gap-3 border-b border-slate-200 bg-white px-4 lg:px-5">
           <button
             type="button"
-            onClick={() => {
-              // Desktop on My Work Queue: bring the nav back as the minimised icon bar
-              if (navHidden && window.matchMedia("(min-width: 1024px)").matches) setQueueNav("mini");
-              else setMobileNav(true);
-            }}
-            className={`grid h-9 w-9 flex-none place-items-center rounded-md text-slate-600 hover:bg-slate-100 ${navHidden ? "" : "lg:hidden"}`}
+            onClick={() => setMobileNav(true)}
+            className="grid h-9 w-9 flex-none place-items-center rounded-md text-slate-600 hover:bg-slate-100 lg:hidden"
             aria-label="Open menu"
-            title="Show menu"
           >
             <Menu className="h-5 w-5" />
           </button>
           {navHidden && (
-            <span className="hidden h-8 w-8 flex-none place-items-center rounded-lg bg-[#0B1F3A] lg:grid" title="Smart Claims · Motor Own Damage">
-              <ShieldCheck className="h-[18px] w-[18px] text-teal-300" aria-hidden="true" />
-            </span>
+            // Desktop, queue: our logo sits where the menu icon was; clicking it pins the icon bar open
+            <button
+              type="button"
+              onClick={() => {
+                window.clearTimeout(peekTimer.current);
+                setPeek(false);
+                setQueueNav("mini");
+              }}
+              aria-label="Show menu"
+              title="Smart Claims · show menu"
+              className="hidden h-9 w-9 flex-none place-items-center rounded-lg bg-[#0B1F3A] transition hover:ring-2 hover:ring-teal-400/60 lg:grid"
+            >
+              <ShieldCheck className="h-5 w-5 text-teal-300" aria-hidden="true" />
+            </button>
           )}
 
           <div className="min-w-0 flex-1">
