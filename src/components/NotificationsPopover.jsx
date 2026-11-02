@@ -1,10 +1,11 @@
 // src/components/NotificationsPopover.jsx
-// Bell icon in the header → notifications panel (same look as the search panel).
+// Bell icon in the header → notifications panel. Like the search panel, it opens ON the
+// bell in the header row itself (not dropped below it); the bell sits in the panel's first line.
 // Unread count badge · Unread / Earlier groups · click a notification → Claim 360 ·
 // "Mark all as read" (remembered in this browser) · link to the alerts in My Work Queue.
 
 import { useEffect, useRef, useState } from "react";
-import { Bell, ShieldAlert, FileCheck2, AlertTriangle, FileUp, TrendingUp, Clock, IndianRupee, CheckCheck, ChevronRight } from "lucide-react";
+import { Bell, ShieldAlert, FileCheck2, AlertTriangle, FileUp, TrendingUp, Clock, IndianRupee, CheckCheck, ChevronRight, X } from "lucide-react";
 
 const READ_KEY = "smartclaims-notifications-read";
 
@@ -83,14 +84,16 @@ export default function NotificationsPopover({ items, onOpenClaim, onViewAll }) 
         <div
           role="dialog"
           aria-label="Notifications"
-          className="absolute right-0 top-full z-50 mt-2 w-[400px] overflow-hidden rounded-2xl border border-slate-200/80 bg-white shadow-[0_24px_60px_-16px_rgba(15,23,42,0.35)] ring-1 ring-slate-900/5 max-sm:fixed max-sm:inset-x-2 max-sm:top-14 max-sm:mt-0 max-sm:w-auto"
+          className="absolute -right-1.5 -top-1.5 z-50 w-[400px] overflow-hidden rounded-2xl border border-slate-200/80 bg-white shadow-[0_24px_60px_-16px_rgba(15,23,42,0.35)] ring-1 ring-slate-900/5 max-sm:fixed max-sm:inset-x-2 max-sm:top-0 max-sm:w-auto"
         >
           {/* Header */}
-          <div className="flex h-12 items-center justify-between gap-2 border-b border-slate-100 px-4">
+          <div className="flex h-12 items-center justify-between gap-2 border-b border-slate-100 pl-4 pr-1.5">
             <p className="flex items-center gap-2 text-[14px] font-semibold text-slate-900">
+              <Bell className="h-[18px] w-[18px] flex-none text-teal-700" aria-hidden="true" />
               Notifications
               {unread > 0 && <span className="rounded-full bg-red-50 px-2 py-0.5 text-[11px] font-semibold text-red-700 ring-1 ring-inset ring-red-200">{unread} new</span>}
             </p>
+            <div className="flex items-center gap-1">
             <button
               type="button"
               onClick={markAll}
@@ -100,6 +103,16 @@ export default function NotificationsPopover({ items, onOpenClaim, onViewAll }) 
               <CheckCheck className="h-3.5 w-3.5" aria-hidden="true" />
               Mark all as read
             </button>
+            {/* Close – sits exactly where the bell was */}
+            <button
+              type="button"
+              onClick={() => setOpen(false)}
+              aria-label="Close notifications"
+              className="grid h-9 w-9 place-items-center rounded-lg text-slate-500 hover:bg-slate-100 hover:text-slate-700"
+            >
+              <X className="h-[18px] w-[18px]" aria-hidden="true" />
+            </button>
+            </div>
           </div>
 
           {/* List */}
