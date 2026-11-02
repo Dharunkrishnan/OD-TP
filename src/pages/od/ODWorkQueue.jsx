@@ -36,6 +36,7 @@ import {
   Car,
   ArrowUpDown,
   Check,
+  StickyNote,
   Eye,
   FilePen,
   ListFilter,
@@ -422,6 +423,26 @@ export default function ODWorkQueue() {
     });
   }
   const [diary, setDiary] = useState(DIARY);
+  // Diary: after ticking an item done, a small note box opens to record what was done
+  const [noteFor, setNoteFor] = useState(null); // index of the diary item whose note box is open
+  const [noteDraft, setNoteDraft] = useState("");
+  const nowHM = () => new Date().toTimeString().slice(0, 5);
+  function toggleDiary(idx) {
+    const item = diary[idx];
+    setDiary((list) => list.map((x, j) => (j === idx ? { ...x, done: !x.done } : x)));
+    if (!item.done) {
+      setNoteFor(idx); // just completed → ask what was done
+      setNoteDraft(item.note || "");
+    } else if (noteFor === idx) setNoteFor(null);
+  }
+  function saveDiaryNote(e) {
+    e.preventDefault();
+    const text = noteDraft.trim();
+    if (!text) return;
+    setDiary((list) => list.map((x, j) => (j === noteFor ? { ...x, note: text, noteAt: nowHM() } : x)));
+    setNoteFor(null);
+    setNoteDraft("");
+  }
   const [adding, setAdding] = useState(false);
   const [newItem, setNewItem] = useState({ time: "17:00", claimNo: "", text: "" });
 
@@ -956,7 +977,7 @@ export default function ODWorkQueue() {
                 <>
                   <div className="flex items-center justify-between px-3 pt-2">
                     <span className="text-[11.5px] text-slate-500">
-                      {diaryLeft} of {diary.length} follow-ups open · tick when done
+                      {diaryLeft} of {diary.length} open · tick when done, then add a note
                     </span>
                     <button
                       type="button"
@@ -1015,11 +1036,12 @@ export default function ODWorkQueue() {
             )}
             <ul className="flex flex-col px-1.5 py-1">
               {diary.map((d, idx) => (
-                <li key={d.time + d.claimNo + idx}>
+                <li key={d.time + d.claimNo + idx} className="rounded">
                   <button
                     type="button"
-                    onClick={() => setDiary((list) => list.map((x, j) => (j === idx ? { ...x, done: !x.done } : x)))}
+                    onClick={() => toggleDiary(idx)}
                     aria-pressed={d.done}
+                    title={d.done ? "Mark as not done" : "Mark as done"}
                     className="flex w-full items-start gap-2 rounded px-1.5 py-1 text-left hover:bg-slate-50"
                   >
                     {d.done ? (
@@ -1035,6 +1057,77 @@ export default function ODWorkQueue() {
                     </span>
                     <span className="flex-none text-[11px] font-semibold tabular-nums text-slate-600">{d.time}</span>
                   </button>
+
+                  {/* Completion note – what was done */}
+                  {d.done && noteFor === idx ? (
+                    <form onSubmit={saveDiaryNote} className="mb-1.5 ml-7 mr-1.5 flex flex-col gap-1.5">
+                      <label className="sr-only" htmlFor={`diary-note-${idx}`}>
+                        What was done
+                      </label>
+                      <textarea
+                        id={`diary-note-${idx}`}
+                        autoFocus
+                        rows={2}
+                        maxLength={200}
+                        value={noteDraft}
+                        onChange={(e) => setNoteDraft(e.target.value)}
+                        onKeyDown={(e) => {
+                          if (e.key === "Enter" && (e.ctrlKey || e.metaKey)) saveDiaryNote(e);
+                          if (e.key === "Escape") {
+                            e.stopPropagation();
+                            setNoteFor(null);
+                          }
+                        }}
+                        placeholder="What was done? e.g. Called insured – DL copy will be emailed today"
+                        className="w-full resize-none rounded-md border border-teal-300 bg-white px-2 py-1.5 text-[12px] leading-snug text-slate-800 placeholder:text-slate-400 focus:border-teal-600 focus:outline-none focus:ring-2 focus:ring-teal-600/20"
+                      />
+                      <div className="flex items-center justify-between gap-2">
+                        <span className="text-[10.5px] text-slate-400">{noteDraft.trim().length}/200 · Ctrl + Enter to save</span>
+                        <span className="flex gap-1.5">
+                          <button type="button" onClick={() => setNoteFor(null)} className="h-6 rounded px-2 text-[11.5px] font-medium text-slate-600 hover:bg-slate-100">
+                            Later
+                          </button>
+                          <button
+                            type="submit"
+                            disabled={!noteDraft.trim()}
+                            className="h-6 rounded bg-teal-700 px-2.5 text-[11.5px] font-semibold text-white hover:bg-teal-800 disabled:opacity-40"
+                          >
+                            Save note
+                          </button>
+                        </span>
+                      </div>
+                    </form>
+                  ) : d.done && d.note ? (
+                    <div className="mb-1 ml-7 mr-1.5 flex items-start gap-1.5 rounded-md bg-emerald-50/70 px-2 py-1 text-[11.5px] leading-snug text-slate-700 ring-1 ring-inset ring-emerald-100">
+                      <StickyNote className="mt-0.5 h-3 w-3 flex-none text-emerald-700" aria-hidden="true" />
+                      <span className="min-w-0 flex-1 whitespace-normal break-words">{d.note}</span>
+                      <span className="flex-none text-[10.5px] tabular-nums text-slate-400">{d.noteAt}</span>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setNoteFor(idx);
+                          setNoteDraft(d.note);
+                        }}
+                        aria-label="Edit note"
+                        title="Edit note"
+                        className="grid h-4 w-4 flex-none place-items-center rounded text-slate-400 hover:text-teal-700"
+                      >
+                        <FilePen className="h-3 w-3" aria-hidden="true" />
+                      </button>
+                    </div>
+                  ) : d.done ? (
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setNoteFor(idx);
+                        setNoteDraft("");
+                      }}
+                      className="mb-1 ml-7 flex items-center gap-1 rounded px-1 text-[11px] font-medium text-teal-700 hover:underline"
+                    >
+                      <Plus className="h-3 w-3" aria-hidden="true" />
+                      Add note – what was done
+                    </button>
+                  ) : null}
                 </li>
               ))}
             </ul>
