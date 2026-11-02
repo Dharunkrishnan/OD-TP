@@ -945,8 +945,8 @@ export default function ODWorkQueue() {
       {drawer && (
         <div className="fixed inset-0 z-40" role="dialog" aria-modal="true" aria-label={drawer === "diary" ? "Today's diary" : "Alerts"}>
           <button type="button" aria-label="Close panel" onClick={() => setDrawer(null)} className="absolute inset-0 cursor-default bg-slate-900/10" />
-          {/* Same size for Today's diary and Alerts – the list scrolls inside if it is longer */}
-          <aside className="absolute right-3 top-[92px] flex h-[min(310px,calc(100vh-104px))] w-[400px] max-w-[calc(100vw-24px)] flex-col overflow-hidden rounded-xl border border-slate-200 bg-white shadow-2xl max-sm:top-[128px] max-sm:h-[min(310px,calc(100vh-140px))]">
+          {/* Same size for Today's diary and Alerts (sized to their content); the list scrolls inside if it grows */}
+          <aside className="absolute right-3 top-[92px] flex h-[min(272px,calc(100vh-104px))] w-[400px] max-w-[calc(100vw-24px)] flex-col overflow-hidden rounded-xl border border-slate-200 bg-white shadow-2xl max-sm:top-[128px] max-sm:h-[min(272px,calc(100vh-140px))]">
             <div className="flex h-10 flex-none items-center justify-between gap-3 border-b border-slate-200 pl-2 pr-1.5">
               <div role="tablist" aria-label="Panel" className="flex gap-1">
                 {[

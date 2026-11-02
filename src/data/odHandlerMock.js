@@ -110,6 +110,12 @@ export const ALERTS = [
     time: "Yesterday",
   },
   {
+    severity: "warning",
+    title: "Document reminder overdue",
+    text: "OD/CHN/26/004529 – DL copy not received after 2 reminders",
+    time: "10:15",
+  },
+  {
     severity: "info",
     title: "Survey report received",
     text: "OD/CHN/26/004547 – final survey report uploaded",
