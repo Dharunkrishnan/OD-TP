@@ -24,6 +24,7 @@ import { useNavigate } from "react-router-dom";
 import SearchPopover from "../SearchPopover";
 import NotificationsPopover from "../NotificationsPopover";
 import { NOTIFICATIONS } from "../../data/notifications";
+import { HANDLER_KPIS, DIARY } from "../../data/odHandlerMock";
 import { claimSlug } from "../../data/odClaimDetail";
 import { searchClaims, dueTodayClaims, searchPolicies, slaTone } from "../../data/searchIndex";
 import {
@@ -50,11 +51,11 @@ import { useAuth, getRole, isDualAccess } from "../../auth";
 // Menu for OD Claims Handler. Other roles get their own menu later.
 const HANDLER_MENU = [
   { key: "dashboard", label: "Dashboard", icon: LayoutDashboard, to: "/od/dashboard" },
-  { key: "queue", label: "My Work Queue", icon: ListChecks, to: "/od/worklist", badge: 46 },
+  { key: "queue", label: "My Work Queue", icon: ListChecks, to: "/od/worklist", badge: HANDLER_KPIS.open },
   { key: "intimation", label: "Claim Intimation", icon: FilePlus2, to: "/od/intimation" },
-  { key: "nbnr", label: "NBNR Bucket", icon: Inbox, to: "/od/nbnr", badge: 3 },
-  { key: "diary", label: "Diary & Follow-ups", icon: CalendarClock, to: "/od/diary", badge: 4 },
-  { key: "docs", label: "Docs Pending", icon: FileStack, to: "/od/documents", badge: 11 },
+  { key: "nbnr", label: "NBNR Bucket", icon: Inbox, to: "/od/nbnr", badge: HANDLER_KPIS.nbnr },
+  { key: "diary", label: "Diary & Follow-ups", icon: CalendarClock, to: "/od/diary", badge: DIARY.filter((d) => !d.done).length },
+  { key: "docs", label: "Docs Pending", icon: FileStack, to: "/od/documents", badge: HANDLER_KPIS.docsPending },
 ];
 
 // Pages that exist so far. Add each new route here as it is built.

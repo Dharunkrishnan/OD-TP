@@ -14,39 +14,14 @@
 //  nbnr        : intimations parked as NBNR (Notified But Not Registered) assigned to me
 //  docsPending : claims waiting for documents (RC, DL, FIR, estimate, KYC etc.)
 //  closedMtd   : claims I closed this calendar month (settled + closed without payment)
-export const HANDLER_KPIS = {
-  open: 46,
-  dueToday: 9,
-  slaBreached: 4,
-  nbnr: 3,
-  docsPending: 11,
-  closedMtd: 28,
-};
 
-// Sums to HANDLER_KPIS.open (46)
-export const STAGE_COUNTS = [
-  { stage: "NBNR", short: "NBNR", count: 3 },
-  { stage: "Registered", short: "Registered", count: 4 },
-  { stage: "Survey pending", short: "Survey", count: 7 },
-  { stage: "Assessment", short: "Assessment", count: 8 },
-  { stage: "Documents pending", short: "Docs", count: 11 },
-  { stage: "Approval", short: "Approval", count: 5 },
-  { stage: "Repair / DO", short: "Repair / DO", count: 5 },
-  { stage: "Payment", short: "Payment", count: 3 },
-];
 
-// Ageing from claim registration date (intimation date for NBNR). Sums to 46.
-export const AGEING_BUCKETS = [
-  { bucket: "0–7 d", count: 14 },
-  { bucket: "8–15 d", count: 12 },
-  { bucket: "16–30 d", count: 10 },
-  { bucket: "31–60 d", count: 7 },
-  { bucket: "60+ d", count: 3 },
-];
 
-// My Work Queue – all 46 open claims assigned to Karthik (OD0123).
-// Counts match the dashboard: stage, pending with, SLA status, loss type, ageing,
-// due today (9), docs pending (11), NBNR (3).
+// My Work Queue – all open claims assigned to Karthik (OD0123).
+// The dashboard counts (KPIs, stage, pending with, SLA, loss type, ageing, TAT breaches)
+// are all calculated from this list further below, so the two always match.
+// Every lifecycle bucket (Intake · Survey / Investigation · Assessment · Decision · Settlement)
+// has claims that are due today, SLA breached, at risk and on track.
 //   sla.status : "breach" | "risk" | "ok"
 //   ageDays    : days since registration (intimation for NBNR)
 //   reserve    : current outstanding reserve in ₹
@@ -97,6 +72,12 @@ export const WORK_QUEUE = [
   {claimNo: "OD/CHN/26/004634", regNo: "TN 19 IH 2886", vehicle: "Tata Nexon XZ+", insured: "L. Meenakshi", lossType: "Accident – partial", lossDate: "2026-10-16", regDate: "2026-10-17", stage: "Survey pending", pendingWith: "Surveyor", ageDays: 5, sla: {status: "ok", label: "5 d left"}, nextAction: "Confirm survey slot at dealer", dueToday: false, flags: [], reserve: 42300},
   {claimNo: "OD/CHN/26/004641", regNo: "TN 04 JK 4265", vehicle: "Mahindra XUV700", insured: "M. Bharath", lossType: "Accident – partial", lossDate: "2026-10-15", regDate: "2026-10-16", stage: "Survey pending", pendingWith: "Surveyor", ageDays: 6, sla: {status: "ok", label: "2 d left"}, nextAction: "Chase surveyor visit", dueToday: false, flags: [], reserve: 27800},
   {claimNo: "OD/CHN/26/004648", regNo: "TN 11 KN 5644", vehicle: "Toyota Innova Crysta", insured: "N. Pavithra", lossType: "Accident – partial", lossDate: "2026-10-12", regDate: "2026-10-13", stage: "Survey pending", pendingWith: "Surveyor", ageDays: 9, sla: {status: "ok", label: "6 d left"}, nextAction: "Share garage address with surveyor", dueToday: false, flags: [], reserve: 65200},
+  // Added so every lifecycle bucket has due-today, breached, at-risk and on-track claims
+  {claimNo: "OD/CHN/26/004655", regNo: "TN 09 PX 3108", vehicle: "Hyundai Venue SX", insured: "P. Lakshmi", lossType: "Accident – partial", lossDate: "2026-10-18", regDate: "2026-10-19", stage: "Registered", pendingWith: "Me (handler)", ageDays: 3, sla: {status: "breach", label: "Breached 5 h"}, nextAction: "Appoint surveyor – overdue", dueToday: false, flags: [], reserve: 46800},
+  {claimNo: "NB/CHN/26/000194", regNo: "TN 04 QA 7720", vehicle: "Maruti Brezza ZXi", insured: "R. Meenakshi", lossType: "Accident – partial", lossDate: "2026-10-20", regDate: "2026-10-21", stage: "NBNR", pendingWith: "Me (handler)", ageDays: 1, sla: {status: "ok", label: "2 d left"}, nextAction: "Coverage check – TP-only policy", dueToday: true, flags: [], reserve: 35400},
+  {claimNo: "OD/CHN/26/004662", regNo: "TN 12 RB 4417", vehicle: "Honda Amaze VX", insured: "S. Murugan", lossType: "Accident – partial", lossDate: "2026-10-15", regDate: "2026-10-16", stage: "Survey pending", pendingWith: "Surveyor", ageDays: 6, sla: {status: "breach", label: "Breached 1 d"}, nextAction: "Escalate – surveyor visit overdue", dueToday: false, flags: [], reserve: 58900},
+  {claimNo: "OD/CHN/26/004669", regNo: "TN 01 SC 2286", vehicle: "Skoda Kushaq Style", insured: "V. Anitha", lossType: "Accident – partial", lossDate: "2026-10-11", regDate: "2026-10-12", stage: "Approval", pendingWith: "Me (handler)", ageDays: 10, sla: {status: "risk", label: "6 h left"}, nextAction: "Approve within my authority – ₹38,200", dueToday: true, flags: [], reserve: 38200},
+  {claimNo: "OD/CHN/26/004676", regNo: "TN 10 TD 9902", vehicle: "Toyota Glanza V", insured: "K. Ramesh", lossType: "Accident – partial", lossDate: "2026-09-27", regDate: "2026-09-28", stage: "Payment", pendingWith: "Me (handler)", ageDays: 24, sla: {status: "risk", label: "5 h left"}, nextAction: "Raise payment request to Finance", dueToday: true, flags: [], reserve: 61400},
 ];
 
 // Today's follow-ups (diary)
@@ -136,22 +117,7 @@ export const ALERTS = [
   },
 ];
 
-// SLA position of my open claims. Sums to HANDLER_KPIS.open (46).
-export const SLA_SUMMARY = [
-  { key: "ok", label: "On track", count: 30 },
-  { key: "risk", label: "At risk (≤ 24 h)", count: 12 },
-  { key: "breach", label: "Breached", count: 4 },
-];
 
-// Open claims by loss type. Sums to 46.
-export const LOSS_TYPES = [
-  { type: "Accident – partial loss", count: 34 },
-  { type: "Flood / CAT event", count: 4 },
-  { type: "Total loss / CTL", count: 3 },
-  { type: "Theft", count: 2 },
-  { type: "Partial theft", count: 2 },
-  { type: "Fire", count: 1 },
-];
 
 // Claims I closed per month (Oct = month to date)
 export const CLOSED_TREND = [
@@ -168,25 +134,24 @@ export const CLOSED_TREND = [
 /* TAT = turnaround time. Targets are INTERNAL SLAs (configurable in   */
 /* the SLA master). Confirm against current IRDAI timelines before go-live. */
 /* ------------------------------------------------------------------ */
-export const SLA_KPIS = {
+const SLA_KPIS_BASE = {
   slaCompliance: 91, // % of claims closed this month within overall SLA
   slaTarget: 90,
   avgSettlementTat: 18.4, // days, intimation → settlement, claims closed this month
   settlementTarget: 21,
-  atRisk: 12,
 };
 
 // Average days per stage (last 90 days) vs internal target.
-// breachedOpen = open claims currently breaching this stage SLA (sums to 4).
-export const TAT_STAGES = [
-  { stage: "Intimation → Registration", target: 1, actual: 0.6, breachedOpen: 0 },
-  { stage: "Registration → Surveyor appointed", target: 1, actual: 0.9, breachedOpen: 0 },
-  { stage: "Surveyor appointed → Survey done", target: 2, actual: 2.3, breachedOpen: 1 },
-  { stage: "Survey → Assessment report", target: 5, actual: 4.1, breachedOpen: 0 },
-  { stage: "Document collection", target: 7, actual: 8.6, breachedOpen: 2 },
-  { stage: "Approval", target: 2, actual: 1.6, breachedOpen: 1 },
-  { stage: "Final invoice → Delivery order", target: 3, actual: 2.7, breachedOpen: 0 },
-  { stage: "Delivery order → Payment", target: 2, actual: 1.8, breachedOpen: 0 },
+// breachedOpen = open claims currently breaching this stage SLA – counted from WORK_QUEUE below.
+const TAT_BASE = [
+  { stage: "Intimation → Registration", target: 1, actual: 0.6 },
+  { stage: "Registration → Surveyor appointed", target: 1, actual: 0.9 },
+  { stage: "Surveyor appointed → Survey done", target: 2, actual: 2.3 },
+  { stage: "Survey → Assessment report", target: 5, actual: 4.1 },
+  { stage: "Document collection", target: 7, actual: 8.6 },
+  { stage: "Approval", target: 2, actual: 1.6 },
+  { stage: "Final invoice → Delivery order", target: 3, actual: 2.7 },
+  { stage: "Delivery order → Payment", target: 2, actual: 1.8 },
 ];
 
 // % of claims closed within SLA, per month (Oct = month to date)
@@ -209,14 +174,65 @@ export const TAT_TREND = [
   { month: "Oct", value: 18.4, mtd: true },
 ];
 
-// Who each open claim is currently waiting on. Sums to HANDLER_KPIS.open (46).
-export const PENDING_WITH = [
-  { party: "Surveyor", count: 12 },
-  { party: "Insured", count: 9 },
-  { party: "Garage / dealer", count: 7 },
-  { party: "Me (handler)", count: 6 },
-  { party: "Claims approver", count: 5 },
-  { party: "Finance", count: 3 },
-  { party: "SIU / investigator", count: 2 },
-  { party: "PAS / underwriting", count: 2 },
+/* ------------------------------------------------------------------ */
+/* Dashboard counts – calculated from WORK_QUEUE so they always match  */
+/* the queue. (In the real system: GET /od/handler/summary.)          */
+/* ------------------------------------------------------------------ */
+const countWhere = (fn) => WORK_QUEUE.filter(fn).length;
+const tally = (key, order) => {
+  const m = new Map();
+  WORK_QUEUE.forEach((r) => m.set(r[key], (m.get(r[key]) || 0) + 1));
+  const keys = order ? order.filter((k) => m.has(k)) : [...m.keys()].sort((a, b) => m.get(b) - m.get(a));
+  return keys.map((k) => [k, m.get(k)]);
+};
+
+// KPI definitions (agree these with business before backend build) – see top of file
+export const HANDLER_KPIS = {
+  open: WORK_QUEUE.length,
+  dueToday: countWhere((r) => r.dueToday),
+  slaBreached: countWhere((r) => r.sla.status === "breach"),
+  nbnr: countWhere((r) => r.stage === "NBNR"),
+  docsPending: countWhere((r) => r.stage === "Documents pending"),
+  closedMtd: 28,
+};
+
+export const SLA_KPIS = { ...SLA_KPIS_BASE, atRisk: countWhere((r) => r.sla.status === "risk") };
+
+const STAGE_ORDER = ["NBNR", "Registered", "Survey pending", "Assessment", "Documents pending", "Approval", "Repair / DO", "Payment"];
+const STAGE_SHORT = { "Survey pending": "Survey", "Documents pending": "Docs" };
+export const STAGE_COUNTS = tally("stage", STAGE_ORDER).map(([stage, count]) => ({ stage, short: STAGE_SHORT[stage] || stage, count }));
+
+export const AGEING_BUCKETS = [
+  { bucket: "0–7 d", count: countWhere((r) => r.ageDays <= 7) },
+  { bucket: "8–15 d", count: countWhere((r) => r.ageDays >= 8 && r.ageDays <= 15) },
+  { bucket: "16–30 d", count: countWhere((r) => r.ageDays >= 16 && r.ageDays <= 30) },
+  { bucket: "31–60 d", count: countWhere((r) => r.ageDays >= 31 && r.ageDays <= 60) },
+  { bucket: "60+ d", count: countWhere((r) => r.ageDays > 60) },
 ];
+
+export const SLA_SUMMARY = [
+  { key: "ok", label: "On track", count: countWhere((r) => r.sla.status === "ok") },
+  { key: "risk", label: "At risk (≤ 24 h)", count: countWhere((r) => r.sla.status === "risk") },
+  { key: "breach", label: "Breached", count: countWhere((r) => r.sla.status === "breach") },
+];
+
+const LOSS_LABEL = { "Accident – partial": "Accident – partial loss", "Flood – CAT": "Flood / CAT event" };
+export const LOSS_TYPES = tally("lossType").map(([type, count]) => ({ type: LOSS_LABEL[type] || type, count }));
+
+export const PENDING_WITH = tally("pendingWith").map(([party, count]) => ({ party, count }));
+
+// Which TAT stage a claim's current stage is measured against
+const STAGE_TO_TAT = {
+  NBNR: "Intimation → Registration",
+  Registered: "Registration → Surveyor appointed",
+  "Survey pending": "Surveyor appointed → Survey done",
+  Assessment: "Survey → Assessment report",
+  "Documents pending": "Document collection",
+  Approval: "Approval",
+  "Repair / DO": "Final invoice → Delivery order",
+  Payment: "Delivery order → Payment",
+};
+export const TAT_STAGES = TAT_BASE.map((t) => ({
+  ...t,
+  breachedOpen: countWhere((r) => r.sla.status === "breach" && STAGE_TO_TAT[r.stage] === t.stage),
+}));

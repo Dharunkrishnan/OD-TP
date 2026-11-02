@@ -439,6 +439,8 @@ export default function ODWorkQueue() {
     setBucketState(b);
     setTabState(t);
     setStage("");
+    setPending("");
+    setLoss("");
     setPage(1);
     syncUrl(b, t);
   }
@@ -465,7 +467,10 @@ export default function ODWorkQueue() {
   );
   // Tabs shown in this bucket: Docs pending / NBNR only where they apply
   const tabsHere = TABS.filter((t) => !["docs", "nbnr"].includes(t.key) || counts[t.key] > 0 || t.key === tab);
+  // Filter options: only values that exist in this bucket, so no option is ever empty
   const stagesHere = STAGES.filter((st) => bucketRows.some((r) => r.stage === st));
+  const pendingHere = PENDING.filter((x) => bucketRows.some((r) => r.pendingWith === x));
+  const lossHere = LOSSES.filter((x) => bucketRows.some((r) => r.lossType === x));
 
   const filtered = useMemo(() => {
     const t = TABS.find((x) => x.key === tab);
@@ -719,8 +724,8 @@ export default function ODWorkQueue() {
               counts={{ __all: counts.all, ...counts }}
             />
             <FilterPill label="Stage" icon={Layers} value={stage} onChange={(v) => { setStage(v); setPage(1); }} options={stagesHere} allLabel="All" counts={optionCounts.stage} />
-            <FilterPill label="Pending with" icon={UserRound} value={pending} onChange={(v) => { setPending(v); setPage(1); }} options={PENDING} allLabel="Anyone" counts={optionCounts.pending} />
-            <FilterPill label="Loss type" icon={Car} value={loss} onChange={(v) => { setLoss(v); setPage(1); }} options={LOSSES} allLabel="All" counts={optionCounts.loss} />
+            <FilterPill label="Pending with" icon={UserRound} value={pending} onChange={(v) => { setPending(v); setPage(1); }} options={pendingHere} allLabel="Anyone" counts={optionCounts.pending} />
+            <FilterPill label="Loss type" icon={Car} value={loss} onChange={(v) => { setLoss(v); setPage(1); }} options={lossHere} allLabel="All" counts={optionCounts.loss} />
             {anyFilter && (
               <button type="button" onClick={clearFilters} className="flex h-8 items-center gap-1 rounded-full px-2.5 text-[12px] font-semibold text-teal-700 hover:bg-teal-50">
                 <FilterX className="h-3.5 w-3.5" aria-hidden="true" />
