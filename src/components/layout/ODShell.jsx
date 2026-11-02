@@ -245,7 +245,15 @@ export default function ODShell({ active = "dashboard", title, subtitle, childre
         }`}
         inert={navHidden && !mobileNav && !peeking ? true : undefined}
         onMouseEnter={navHidden ? () => peekSoon(true, 0) : undefined}
-        onMouseLeave={navHidden ? () => peekSoon(false, 250) : undefined}
+        onMouseLeave={
+          navHidden
+            ? (e) => {
+                // Cursor pushed off the left edge of the window → keep the nav open
+                if (!e.relatedTarget && e.clientX <= 2) return;
+                peekSoon(false, 400);
+              }
+            : undefined
+        }
       >
         <div
           className={`flex h-12 items-center justify-between gap-2 border-b border-white/10 ${c ? "px-4 lg:justify-center lg:px-0" : "px-4"} ${
@@ -462,7 +470,7 @@ export default function ODShell({ active = "dashboard", title, subtitle, childre
         // Invisible hot zone on the left edge: resting the cursor here slides the nav in
         <div
           aria-hidden="true"
-          className="fixed bottom-0 left-0 top-12 z-30 hidden w-2.5 lg:block"
+          className="fixed bottom-0 left-0 top-12 z-30 hidden w-4 lg:block"
           onMouseEnter={() => peekSoon(true, 120)}
           onMouseLeave={() => peekSoon(false, 0)}
         />
@@ -492,11 +500,11 @@ export default function ODShell({ active = "dashboard", title, subtitle, childre
             // The 68 px slot lines up with the nav; while the nav slides in, the slot turns navy so
             // logo + nav read as one sidebar (the page title is never covered).
             <span
-              className={`-my-px -ml-5 hidden w-[68px] flex-none place-items-center self-stretch transition-colors duration-200 lg:grid ${
+              className={`-my-px -ml-5 hidden w-[68px] flex-none place-items-center self-stretch lg:grid ${
                 peeking ? "bg-[#0B1F3A]" : ""
               }`}
               onMouseEnter={peeking ? () => peekSoon(true, 0) : undefined}
-              onMouseLeave={peeking ? () => peekSoon(false, 250) : undefined}
+              onMouseLeave={peeking ? () => peekSoon(false, 400) : undefined}
             >
               <button
                 type="button"
@@ -507,7 +515,7 @@ export default function ODShell({ active = "dashboard", title, subtitle, childre
                 }}
                 aria-label="Show menu"
                 title="Smart Claims · show menu"
-                className={`grid h-9 w-9 place-items-center rounded-lg transition hover:ring-2 hover:ring-teal-400/60 ${
+                className={`grid h-9 w-9 place-items-center rounded-lg hover:ring-2 hover:ring-teal-400/60 ${
                   peeking ? "bg-teal-500/15" : "bg-[#0B1F3A]"
                 }`}
               >
