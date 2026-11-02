@@ -124,12 +124,14 @@ function DocStatus({ status }) {
   );
 }
 
-function ActionButton({ icon: Icon, children, onClick, primary, danger }) {
+// compact: icon only on screens below 1536 px (name shows on hover), full label on wide screens
+function ActionButton({ icon: Icon, children, onClick, primary, danger, compact }) {
   return (
     <button
       type="button"
       onClick={onClick}
-      className={`flex h-8 items-center gap-1.5 rounded-md px-2.5 text-[12px] font-semibold transition ${
+      title={compact ? children : undefined}
+      className={`flex h-7 items-center gap-1.5 rounded-md text-[12px] font-semibold transition ${compact ? "px-2 2xl:px-2.5" : "px-2.5"} ${
         primary
           ? "bg-teal-700 text-white hover:bg-teal-800"
           : danger
@@ -138,7 +140,7 @@ function ActionButton({ icon: Icon, children, onClick, primary, danger }) {
       }`}
     >
       <Icon className="h-3.5 w-3.5" aria-hidden="true" />
-      {children}
+      <span className={compact ? "max-2xl:sr-only" : ""}>{children}</span>
     </button>
   );
 }
@@ -256,53 +258,21 @@ export default function ODClaim360() {
       claimNav={{ claimNo: c.claimNo, backTo: "/od/worklist", backLabel: "Back to My Work Queue", steps: lifecycleSteps }}
     >
       <div className="flex flex-col gap-2">
-        {/* ---------------- Back + actions ---------------- */}
-        <div className={`flex flex-wrap items-center justify-between gap-2 ${editMode ? "" : "lg:hidden"}`}>
+        {/* ---------------- Back (small screens only) ---------------- */}
+        <div className="flex items-center lg:hidden">
           <button
             type="button"
             onClick={() => navigate("/od/worklist")}
-            className="flex h-8 items-center gap-1 rounded-md px-1.5 text-[12.5px] font-medium text-slate-600 hover:bg-white hover:text-slate-900 lg:invisible"
+            className="flex h-8 items-center gap-1 rounded-md px-1.5 text-[12.5px] font-medium text-slate-600 hover:bg-white hover:text-slate-900"
           >
             <ArrowLeft className="h-4 w-4" aria-hidden="true" />
             Back to queue
           </button>
-          {/* Actions show only in edit mode (paper-and-pen icon in My Work Queue) */}
-          {editMode && (
-          <div className="flex flex-wrap items-center gap-1.5">
-            <ActionButton icon={StickyNote} onClick={() => setModal("note")}>
-              Add note
-            </ActionButton>
-            <ActionButton icon={FilePlus2} onClick={() => setModal("docs")}>
-              Request documents
-            </ActionButton>
-            <ActionButton icon={Upload} onClick={() => notBuilt("Upload document")}>
-              Upload
-            </ActionButton>
-            {c.stage === "Registered" && (
-              <ActionButton icon={UserCheck} onClick={() => notBuilt("Appoint surveyor")} primary>
-                Appoint surveyor
-              </ActionButton>
-            )}
-            {c.stage === "NBNR" && (
-              <ActionButton icon={CheckCircle2} onClick={() => notBuilt("Convert NBNR to claim")} primary>
-                Resolve NBNR
-              </ActionButton>
-            )}
-            {(c.stage === "Assessment" || c.stage === "Documents pending") && (
-              <ActionButton icon={Send} onClick={() => notBuilt("Send for approval")} primary>
-                Send for approval
-              </ActionButton>
-            )}
-            <ActionButton icon={ShieldAlert} onClick={() => notBuilt("Refer to SIU")} danger>
-              Refer to SIU
-            </ActionButton>
-          </div>
-          )}
         </div>
 
         {/* ---------------- Claim header ---------------- */}
         <Card>
-          {/* Row 1: claim no + status chips (left) · policy status (right) */}
+          {/* Row 1: claim no + status chips (left) · actions (edit mode only) + policy status (right) */}
           <div className="flex flex-wrap items-center justify-between gap-2 border-b border-slate-100 px-4 py-2">
             <div className="flex flex-wrap items-center gap-2">
               <span className="text-[15px] font-semibold leading-6 tracking-wide text-[#0B1F3A] tabular-nums">{c.claimNo}</span>
@@ -316,13 +286,48 @@ export default function ODClaim360() {
               ))}
               {c.loss.catEvent && <span className={`${CHIP} bg-sky-50 text-sky-800`}>CAT event</span>}
             </div>
-            <span
-              className={`${CHIP} ${c.policy.status === "In force" ? "bg-emerald-50 text-emerald-800" : "bg-amber-50 text-amber-900"}`}
-              title={c.policy.policyNo}
-            >
-              {c.policy.status === "In force" ? <CheckCircle2 className="h-3.5 w-3.5" aria-hidden="true" /> : <Clock className="h-3.5 w-3.5" aria-hidden="true" />}
-              Policy · {c.policy.status}
-            </span>
+            <div className="flex flex-wrap items-center justify-end gap-1.5">
+              {/* Actions show only in edit mode (paper-and-pen icon in My Work Queue) */}
+              {editMode && (
+                <>
+                <ActionButton icon={StickyNote} onClick={() => setModal("note")} compact>
+                  Add note
+                </ActionButton>
+                <ActionButton icon={FilePlus2} onClick={() => setModal("docs")} compact>
+                  Request documents
+                </ActionButton>
+                <ActionButton icon={Upload} onClick={() => notBuilt("Upload document")} compact>
+                  Upload
+                </ActionButton>
+                {c.stage === "Registered" && (
+                  <ActionButton icon={UserCheck} onClick={() => notBuilt("Appoint surveyor")} primary>
+                    Appoint surveyor
+                  </ActionButton>
+                )}
+                {c.stage === "NBNR" && (
+                  <ActionButton icon={CheckCircle2} onClick={() => notBuilt("Convert NBNR to claim")} primary>
+                    Resolve NBNR
+                  </ActionButton>
+                )}
+                {(c.stage === "Assessment" || c.stage === "Documents pending") && (
+                  <ActionButton icon={Send} onClick={() => notBuilt("Send for approval")} primary>
+                    Send for approval
+                  </ActionButton>
+                )}
+                <ActionButton icon={ShieldAlert} onClick={() => notBuilt("Refer to SIU")} danger>
+                  Refer to SIU
+                </ActionButton>
+                  <span className="mx-0.5 h-5 w-px bg-slate-200" aria-hidden="true" />
+                </>
+              )}
+              <span
+                className={`${CHIP} ${c.policy.status === "In force" ? "bg-emerald-50 text-emerald-800" : "bg-amber-50 text-amber-900"}`}
+                title={c.policy.policyNo}
+              >
+                {c.policy.status === "In force" ? <CheckCircle2 className="h-3.5 w-3.5" aria-hidden="true" /> : <Clock className="h-3.5 w-3.5" aria-hidden="true" />}
+                Policy · {c.policy.status}
+              </span>
+            </div>
           </div>
 
           {/* Row 2: key facts – one line each, same font, same baseline */}
