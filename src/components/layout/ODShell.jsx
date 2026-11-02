@@ -17,7 +17,7 @@
 //                 headLabel  – small caption above claimNo (default "Claim")
 //                 stepsTitle – caption above the stepper (default "Claim lifecycle")
 //                 onBack     – runs instead of navigating to backTo (e.g. to confirm leaving)
-//                 step.onClick / step.disabled – makes a step clickable
+//                 step.onClick / step.disabled – makes a step clickable; step.selected – highlights it
 
 import { useCallback, useEffect, useRef, useState } from "react";
 import { useNavigate } from "react-router-dom";
@@ -309,7 +309,7 @@ export default function ODShell({ active = "dashboard", title, subtitle, childre
                 return (
                   <li
                     key={st.label}
-                    aria-current={st.state === "active" || st.state === "hold" ? "step" : undefined}
+                    aria-current={st.selected ? "step" : st.state === "active" || st.state === "hold" ? "step" : undefined}
                     className="group relative"
                   >
                     <Row
@@ -325,8 +325,8 @@ export default function ODShell({ active = "dashboard", title, subtitle, childre
                           }
                         : {})}
                       className={`flex w-full gap-3 rounded-md px-3 text-left ${c ? "lg:justify-center lg:px-0" : ""} ${
-                        clickable ? "cursor-pointer hover:bg-white/5" : "cursor-default"
-                      }`}
+                        st.selected ? "bg-white/10" : clickable ? "cursor-pointer hover:bg-white/5" : "cursor-default"
+                      } ${st.selected && clickable ? "cursor-pointer" : ""} ${st.disabled ? "cursor-not-allowed" : ""}`}
                     >
                     <span className="relative flex flex-col items-center">
                       <span

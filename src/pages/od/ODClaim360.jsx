@@ -162,6 +162,190 @@ function Modal({ title, onClose, children }) {
 }
 
 /* ------------------------------------------------------------------ */
+/* Completed stage view (click a done step in the lifecycle sidebar)   */
+/* Read only: what happened in that stage, who did it and when.        */
+/* ------------------------------------------------------------------ */
+const STAGE_EVENTS = [
+  ["Claim intimated", "Parked as NBNR", "Policy & coverage validated", "Claim registered", "Assigned to handler"],
+  ["Surveyor appointed", "Survey completed", "Flag raised"],
+  ["Reserve revised", "Document requested", "Document received"],
+  ["Sent for approval", "Approved", "Repudiated"],
+  ["Repair authorised", "Payment requested", "Payment made"],
+];
+const inrAmt = (n) => (n == null ? "–" : "₹" + Number(n).toLocaleString("en-IN"));
+
+function StageView({ c, index, label, documents, timeline, onBack }) {
+  const events = timeline.filter((e) => STAGE_EVENTS[index].some((k) => e.event.startsWith(k)));
+  const ev = (name) => timeline.find((e) => e.event.startsWith(name));
+  const registered = ev("Claim registered");
+  const approvalSent = ev("Sent for approval");
+  const authorised = ev("Repair authorised");
+  const completedOn = [registered, ev("Survey completed"), ev("Reserve revised"), authorised, ev("Payment requested")][index];
+
+  let sections = [];
+  if (index === 0) {
+    sections = [
+      {
+        title: "Intimation",
+        items: [
+          ["Intimated on", dt(c.loss.intimatedOn)],
+          ["Channel", c.loss.intimationChannel],
+          ["Intimation delay", `${c.loss.intimationDelayDays} day(s) after loss`],
+          ["Loss date / time", `${dt(c.loss.date)} · ${c.loss.time}`],
+          ["Place of loss", c.loss.place],
+          ["Cause", c.loss.cause],
+          ["Police", c.loss.policeReport],
+          ["Contact (masked)", `${c.contact.mobile} · ${c.contact.email}`],
+        ],
+      },
+      {
+        title: "Policy & coverage validation",
+        items: c.checks.slice(0, 4).map((k) => [k.label, `${k.ok === true ? "✓ " : k.ok === false ? "✕ " : ""}${k.note}`]),
+      },
+      {
+        title: "Registration",
+        items: [
+          ["Claim no", c.claimNo, { mono: true }],
+          ["Registered on", registered ? `${dt(registered.date)} · ${registered.time}` : "–"],
+          ["Initial reserve", inrAmt(c.reserveHistory[0]?.amount), { strong: true }],
+          ["Reserve basis", c.reserveHistory[0]?.reason],
+          ["Assigned to", "Karthik Subramanian · Chennai"],
+          ["Policy no", c.policy.policyNo, { mono: true }],
+        ],
+      },
+    ];
+  } else if (index === 1) {
+    const sv = c.survey;
+    sections = [
+      {
+        title: c.survey.surveyType === "Investigation (SIU)" ? "Investigation" : "Surveyor appointment",
+        items: [
+          ["Survey type", sv.surveyType],
+          ["Surveyor", sv.surveyor ? sv.surveyor.name : "–"],
+          ["Licence no", sv.surveyor ? sv.surveyor.licence : "–", { mono: true }],
+          ["Surveyor type", sv.surveyor ? sv.surveyor.type : "–"],
+          ["Appointed on", dt(sv.appointedOn)],
+          ["Survey done on", dt(sv.surveyDoneOn)],
+        ],
+      },
+      {
+        title: "Inspection",
+        items: [
+          ["Vehicle location", c.loss.vehicleLocation],
+          ["Garage", c.garage ? `${c.garage.name} (${c.garage.type})` : "–"],
+          ["Garage estimate", inrAmt(sv.estimate), { strong: true }],
+          ["Odometer", c.vehicle.odometer ? `${c.vehicle.odometer.toLocaleString("en-IN")} km` : "–"],
+          ["Photos", documents.find((d) => d.name === "Vehicle photos")?.status === "Received" ? "Uploaded" : "–"],
+          ["Survey report", documents.find((d) => d.name === "Survey report")?.status ?? "–"],
+          ["Red flags", c.flags.length ? c.flags.join(", ") : "None"],
+        ],
+      },
+    ];
+  } else if (index === 2) {
+    const sv = c.survey;
+    sections = [
+      {
+        title: "Assessment",
+        items: [
+          ["Garage estimate", inrAmt(sv.estimate)],
+          ["Assessed loss", inrAmt(sv.assessed), { strong: true }],
+          [sv.zeroDep ? "Depreciation (zero dep)" : "Depreciation", inrAmt(sv.depreciation)],
+          ["Salvage", inrAmt(sv.salvage)],
+          ["Deductible", inrAmt(sv.deductible)],
+          ["Net liability", inrAmt(sv.netLiability), { strong: true }],
+        ],
+      },
+      {
+        title: "Reserve & documents",
+        items: [
+          ...c.reserveHistory.map((h) => [`${h.type} · ${dt(h.date)}`, `${inrAmt(h.amount)} – ${h.reason}`]),
+          ["Documents received", `${documents.filter((d) => d.status === "Received").length} of ${documents.length}`],
+        ],
+      },
+    ];
+  } else if (index === 3) {
+    sections = [
+      {
+        title: "Decision",
+        items: [
+          ["Sent for approval", approvalSent ? `${dt(approvalSent.date)} · ${approvalSent.time}` : "–"],
+          ["Amount sent", inrAmt(c.survey.netLiability ?? c.reserve), { strong: true }],
+          ["Decision", authorised ? "Approved" : "–", { strong: true }],
+          ["Decided by", authorised ? authorised.by : "–"],
+          ["Decided on", authorised ? `${dt(authorised.date)} · ${authorised.time}` : "–"],
+          ["Liability", "Admissible under Own Damage section"],
+        ],
+      },
+    ];
+  } else {
+    sections = [
+      {
+        title: "Settlement",
+        items: [
+          ["Delivery order", authorised ? `Issued ${dt(authorised.date)}` : "–"],
+          ["Garage", c.garage ? c.garage.name : "–"],
+          ...c.payments.map((x) => [`Payment · ${dt(x.date)}`, `${inrAmt(x.amount)} to ${x.payee} · ${x.mode} · ${x.status}`]),
+        ],
+      },
+    ];
+  }
+
+  return (
+    <Card>
+      <div className="flex flex-wrap items-center justify-between gap-2 border-b border-slate-100 bg-teal-50/60 px-3 py-2">
+        <p className="flex items-center gap-2 text-[13px] text-slate-700">
+          <span className="grid h-6 w-6 place-items-center rounded-full bg-teal-600 text-white">
+            <CheckCircle2 className="h-3.5 w-3.5" aria-hidden="true" />
+          </span>
+          <span>
+            <span className="font-semibold text-[#0B1F3A]">
+              Stage {index + 1} · {label}
+            </span>{" "}
+            · Completed{completedOn ? ` on ${dt(completedOn.date)}` : ""} · <span className="text-slate-500">read only</span>
+          </span>
+        </p>
+        <button type="button" onClick={onBack} className="flex h-7 items-center gap-1.5 rounded-md bg-teal-700 px-2.5 text-[12px] font-semibold text-white hover:bg-teal-800">
+          <ArrowLeft className="h-3.5 w-3.5" aria-hidden="true" />
+          Back to current stage
+        </button>
+      </div>
+
+      <div className="grid gap-2 p-2 lg:grid-cols-[minmax(0,1fr)_minmax(0,340px)]">
+        <div className="grid content-start gap-2">
+          {sections.map((sec) => (
+            <section key={sec.title} className="rounded-lg border border-slate-200">
+              <h3 className="border-b border-slate-100 px-3 py-1.5 text-[12.5px] font-semibold text-[#0B1F3A]">{sec.title}</h3>
+              <Facts items={sec.items} />
+            </section>
+          ))}
+        </div>
+        <section className="rounded-lg border border-slate-200">
+          <h3 className="border-b border-slate-100 px-3 py-1.5 text-[12.5px] font-semibold text-[#0B1F3A]">Activity in this stage</h3>
+          {events.length === 0 ? (
+            <p className="px-3 py-4 text-[12px] text-slate-500">No recorded activity.</p>
+          ) : (
+            <ol className="divide-y divide-slate-100">
+              {events.map((e, k) => (
+                <li key={k} className="px-3 py-2">
+                  <p className="flex items-baseline justify-between gap-2 text-[12.5px] font-semibold text-slate-800">
+                    {e.event}
+                    <span className="flex-none text-[11px] font-normal text-slate-500">
+                      {dt(e.date)} {e.time}
+                    </span>
+                  </p>
+                  <p className="text-[11.5px] text-slate-600">{e.detail}</p>
+                  <p className="text-[11px] text-slate-400">by {e.by}</p>
+                </li>
+              ))}
+            </ol>
+          )}
+        </section>
+      </div>
+    </Card>
+  );
+}
+
+/* ------------------------------------------------------------------ */
 /* Page                                                                */
 /* ------------------------------------------------------------------ */
 export default function ODClaim360() {
@@ -174,6 +358,7 @@ export default function ODClaim360() {
   const editMode = params.get("mode") === "edit";
 
   const [tab, setTab] = useState("overview");
+  const [viewStage, setViewStage] = useState(null); // index of a completed lifecycle stage being viewed, or null
   const [toast, setToast] = useState("");
   const [extraEvents, setExtraEvents] = useState([]);
   const [docState, setDocState] = useState({}); // name -> status overrides
@@ -219,7 +404,15 @@ export default function ODClaim360() {
   const lifecycleSteps = LIFECYCLE.map((st, i) => {
     const cur = c.lifecycle.step;
     const state = i < cur ? "done" : i === cur ? (c.lifecycle.hold ? "hold" : "active") : "todo";
-    return { label: st.label, state, status: state === "done" ? "Completed" : state === "todo" ? "Pending" : c.lifecycle.note };
+    return {
+      label: st.label,
+      state,
+      status: state === "done" ? "Completed" : state === "todo" ? "Not started" : c.lifecycle.note,
+      // Completed stages open a read-only view; the current stage returns to the normal page; later stages are locked
+      selected: viewStage === i || (viewStage === null && i === cur),
+      onClick: state === "done" ? () => setViewStage(i) : state === "todo" ? undefined : () => setViewStage(null),
+      disabled: state === "todo",
+    };
   });
 
   function addNote(e) {
@@ -365,7 +558,17 @@ export default function ODClaim360() {
           </div>
         </Card>
 
-        {/* ---------------- Tabs + side panel ---------------- */}
+        {/* ---------------- Completed stage (read only) – or the normal tabs ---------------- */}
+        {viewStage !== null ? (
+          <StageView
+            c={c}
+            index={viewStage}
+            label={LIFECYCLE[viewStage].label}
+            documents={documents}
+            timeline={timeline}
+            onBack={() => setViewStage(null)}
+          />
+        ) : (
         <div className="grid grid-cols-[minmax(0,1fr)] items-start gap-2 lg:grid-cols-[minmax(0,1fr)_290px]">
           <Card>
             <div role="tablist" aria-label="Claim sections" className="flex flex-wrap gap-1 border-b border-slate-100 px-2 py-1.5">
@@ -788,6 +991,7 @@ export default function ODClaim360() {
             </Card>
           </div>
         </div>
+        )}
       </div>
 
       {/* ---------------- Modals ---------------- */}

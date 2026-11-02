@@ -69,9 +69,10 @@ const pick = (r, arr) => arr[Math.floor(r() * arr.length)];
 const round = (n, to = 100) => Math.round(n / to) * to;
 
 const TODAY = new Date("2026-10-22T00:00:00");
+// Date maths in UTC so the result never slips a day in IST (UTC+5:30)
 const addDays = (iso, d) => {
-  const x = new Date(iso + "T00:00:00");
-  x.setDate(x.getDate() + d);
+  const x = new Date(iso + "T00:00:00Z");
+  x.setUTCDate(x.getUTCDate() + d);
   return x.toISOString().slice(0, 10);
 };
 const daysBetween = (a, b) => Math.round((new Date(b + "T00:00:00") - new Date(a + "T00:00:00")) / 86400000);
