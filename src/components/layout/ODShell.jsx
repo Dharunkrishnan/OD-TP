@@ -164,6 +164,12 @@ export default function ODShell({ active = "dashboard", title, subtitle, childre
   const [peek, setPeek] = useState(false); // hidden nav shown temporarily on hover
   const navHidden = isQueue && queueNav === "hidden";
   const peeking = navHidden && peek;
+  // No slide animation on the first paint, so the nav never sweeps across the page as it opens
+  const [animReady, setAnimReady] = useState(false);
+  useEffect(() => {
+    const id = window.requestAnimationFrame(() => window.requestAnimationFrame(() => setAnimReady(true)));
+    return () => window.cancelAnimationFrame(id);
+  }, []);
   const peekTimer = useRef(0);
 
   function peekSoon(show, delay) {
@@ -226,19 +232,26 @@ export default function ODShell({ active = "dashboard", title, subtitle, childre
     <div className="flex h-screen overflow-hidden bg-slate-100 text-slate-800">
       {/* ---------------- Sidebar ---------------- */}
       <aside
-        className={`fixed inset-y-0 left-0 z-40 flex w-60 flex-none flex-col bg-[#0B1F3A] text-slate-300 transition-[width,transform,box-shadow] duration-200 ease-out ${
+        className={`fixed inset-y-0 left-0 z-40 flex w-60 flex-none flex-col bg-[#0B1F3A] text-slate-300 ${
+          animReady ? "transition-[width,transform,box-shadow] duration-200 ease-out" : ""
+        } ${
           mobileNav ? "translate-x-0" : "-translate-x-full"
         } ${
           navHidden
             ? // Queue, nav hidden: floats over the page; slides in on hover (peek)
-              `lg:w-[68px] ${peeking ? "lg:translate-x-0 lg:shadow-[8px_0_24px_-8px_rgba(15,23,42,0.45)]" : ""}`
+              // it opens BELOW the header row (top 48 px), so it never covers the page title
+              `lg:top-12 lg:w-[68px] lg:rounded-tr-lg ${peeking ? "lg:translate-x-0 lg:shadow-[8px_0_24px_-8px_rgba(15,23,42,0.45)]" : ""}`
             : `lg:static lg:h-full lg:translate-x-0 ${c ? "lg:w-[68px]" : ""}`
         }`}
         inert={navHidden && !mobileNav && !peeking ? true : undefined}
         onMouseEnter={navHidden ? () => peekSoon(true, 0) : undefined}
         onMouseLeave={navHidden ? () => peekSoon(false, 250) : undefined}
       >
-        <div className={`flex h-12 items-center justify-between gap-2 border-b border-white/10 ${c ? "px-4 lg:justify-center lg:px-0" : "px-4"}`}>
+        <div
+          className={`flex h-12 items-center justify-between gap-2 border-b border-white/10 ${c ? "px-4 lg:justify-center lg:px-0" : "px-4"} ${
+            navHidden ? "lg:hidden" : "" /* the header already shows the logo on My Work Queue */
+          }`}
+        >
           <div className="flex items-center gap-2.5">
             <span className="grid h-8 w-8 flex-none place-items-center rounded-lg bg-teal-500/15" title={c ? "Smart Claims · Motor Own Damage" : undefined}>
               <ShieldCheck className="h-5 w-5 text-teal-300" aria-hidden="true" />
@@ -449,7 +462,7 @@ export default function ODShell({ active = "dashboard", title, subtitle, childre
         // Invisible hot zone on the left edge: resting the cursor here slides the nav in
         <div
           aria-hidden="true"
-          className="fixed inset-y-0 left-0 z-30 hidden w-2.5 lg:block"
+          className="fixed bottom-0 left-0 top-12 z-30 hidden w-2.5 lg:block"
           onMouseEnter={() => peekSoon(true, 120)}
           onMouseLeave={() => peekSoon(false, 0)}
         />
