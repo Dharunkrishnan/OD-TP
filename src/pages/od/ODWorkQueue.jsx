@@ -975,10 +975,7 @@ export default function ODWorkQueue() {
             <div className="min-h-0 overflow-y-auto pb-1">
               {drawer === "diary" ? (
                 <>
-                  <div className="flex items-center justify-between px-3 pt-2">
-                    <span className="text-[11.5px] text-slate-500">
-                      {diaryLeft} of {diary.length} open · tick when done, then add a note
-                    </span>
+                  <div className="flex items-center justify-end px-3 pt-2">
                     <button
                       type="button"
                       onClick={() => setAdding((v) => !v)}
