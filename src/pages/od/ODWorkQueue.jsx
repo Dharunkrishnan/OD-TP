@@ -2,9 +2,13 @@
 // P05 · My Work Queue (persona: OD Claims Handler – Karthik Subramanian · OD0123)
 // Full list of open claims assigned to me – one value per column, full width.
 // Today's diary and Alerts open from buttons in the card header as a side drawer.
+// Main buckets = the 5 claim lifecycle stages (Intake · Survey / Investigation · Assessment ·
+// Decision · Settlement). Inside each bucket: filters (Show = All open / Due today / SLA breached /
+// At risk / Docs pending / NBNR, Stage, Pending with, Loss type) and the claims table.
 // Catalogue refs: Workqueue 159–164, SLA / TAT 165–170, Followup 158, Search 178–181
 //
-// URL filter: /od/worklist?tab=due | breach | risk | docs | nbnr   (used by dashboard links)
+// URL filter: /od/worklist?bucket=intake|survey|assessment|decision|settlement
+//             &tab=due|breach|risk|docs|nbnr   (dashboard links)
 
 import { useEffect, useId, useMemo, useRef, useState } from "react";
 import { useSearchParams, useNavigate } from "react-router-dom";
@@ -32,6 +36,7 @@ import {
   Car,
   ArrowUpDown,
   Check,
+  ListFilter,
 } from "lucide-react";
 import ODShell from "../../components/layout/ODShell";
 import { WORK_QUEUE, DIARY, ALERTS } from "../../data/odHandlerMock";
@@ -39,6 +44,19 @@ import { claimSlug } from "../../data/odClaimDetail";
 
 const PAGE_SIZE = 15;
 const SLA_RANK = { breach: 0, risk: 1, ok: 2 };
+
+// Main buckets: the claim lifecycle (same names as the Claim 360 stepper)
+const LIFECYCLE = [
+  { key: "intake", label: "Intake", stages: ["NBNR", "Registered"] },
+  { key: "survey", label: "Survey / Investigation", stages: ["Survey pending"] },
+  { key: "assessment", label: "Assessment", stages: ["Assessment", "Documents pending"] },
+  { key: "decision", label: "Decision", stages: ["Approval"] },
+  { key: "settlement", label: "Settlement", stages: ["Repair / DO", "Payment"] },
+];
+const BUCKET_OF_STAGE = Object.fromEntries(LIFECYCLE.flatMap((b) => b.stages.map((st) => [st, b.key])));
+// A claim with the investigator (SIU) sits in Survey / Investigation whatever its stage
+const bucketOf = (r) => (r.pendingWith === "SIU / investigator" ? "survey" : BUCKET_OF_STAGE[r.stage] || "intake");
+const QUEUE = WORK_QUEUE.map((r) => ({ ...r, bucket: bucketOf(r) }));
 
 const TABS = [
   { key: "all", label: "All open", test: () => true },
@@ -49,14 +67,6 @@ const TABS = [
   { key: "nbnr", label: "NBNR", test: (r) => r.stage === "NBNR" },
 ];
 
-// Count badge colours on the quick-filter tabs
-const TAB_TONE = {
-  due: "bg-amber-100 text-amber-900",
-  breach: "bg-red-100 text-red-700",
-  risk: "bg-amber-100 text-amber-900",
-  docs: "bg-sky-100 text-sky-800",
-  nbnr: "bg-violet-100 text-violet-800",
-};
 
 // Stage dot colours (by type of work)
 const STAGE_DOT = {
@@ -325,7 +335,17 @@ export default function ODWorkQueue() {
   const navigate = useNavigate();
   const openClaim = (claimNo) => navigate(`/od/claims/${claimSlug(claimNo)}`);
   const initialTab = TABS.some((t) => t.key === params.get("tab")) ? params.get("tab") : "all";
+  // Bucket from the URL; a dashboard link with only ?tab= opens the bucket with most of those claims
+  const initialBucket = (() => {
+    const b = params.get("bucket");
+    if (LIFECYCLE.some((x) => x.key === b)) return b;
+    if (initialTab === "all") return LIFECYCLE[0].key;
+    const test = TABS.find((t) => t.key === initialTab).test;
+    const best = LIFECYCLE.map((x) => [x.key, QUEUE.filter((r) => r.bucket === x.key && test(r)).length]).sort((a, c) => c[1] - a[1])[0];
+    return best[1] ? best[0] : LIFECYCLE[0].key;
+  })();
 
+  const [bucket, setBucketState] = useState(initialBucket);
   const [tab, setTabState] = useState(initialTab);
   const [q, setQ] = useState("");
   const [stage, setStage] = useState("");
@@ -400,13 +420,27 @@ export default function ODWorkQueue() {
   const [adding, setAdding] = useState(false);
   const [newItem, setNewItem] = useState({ time: "17:00", claimNo: "", text: "" });
 
-  function setTab(t) {
-    setTabState(t);
-    setPage(1);
+  function syncUrl(b, t) {
     const next = new URLSearchParams(params);
+    next.set("bucket", b);
     if (t === "all") next.delete("tab");
     else next.set("tab", t);
     setParams(next, { replace: true });
+  }
+  function setTab(t) {
+    setTabState(t);
+    setPage(1);
+    syncUrl(bucket, t);
+  }
+  // Main bucket. Keeps the quick-filter tab (e.g. SLA breached) unless that tab has no claims there.
+  function setBucket(b) {
+    const keep = tab === "all" || QUEUE.some((r) => r.bucket === b && TABS.find((t) => t.key === tab).test(r));
+    const t = keep ? tab : "all";
+    setBucketState(b);
+    setTabState(t);
+    setStage("");
+    setPage(1);
+    syncUrl(b, t);
   }
 
   function notBuilt(what) {
@@ -415,16 +449,28 @@ export default function ODWorkQueue() {
     notBuilt.t = window.setTimeout(() => setToast(""), 2600);
   }
 
-  // Tab counts are always on the full queue
-  const counts = useMemo(
-    () => Object.fromEntries(TABS.map((t) => [t.key, WORK_QUEUE.filter(t.test).length])),
+  // Claims in the selected bucket; tab counts are on the whole bucket
+  const bucketRows = useMemo(() => QUEUE.filter((r) => r.bucket === bucket), [bucket]);
+  const counts = useMemo(() => Object.fromEntries(TABS.map((t) => [t.key, bucketRows.filter(t.test).length])), [bucketRows]);
+  // Bucket bar: claims, breached and at-risk per lifecycle stage
+  const bucketStats = useMemo(
+    () =>
+      Object.fromEntries(
+        LIFECYCLE.map((b) => {
+          const list = QUEUE.filter((r) => r.bucket === b.key);
+          return [b.key, { n: list.length, breach: list.filter((r) => r.sla.status === "breach").length, risk: list.filter((r) => r.sla.status === "risk").length }];
+        })
+      ),
     []
   );
+  // Tabs shown in this bucket: Docs pending / NBNR only where they apply
+  const tabsHere = TABS.filter((t) => !["docs", "nbnr"].includes(t.key) || counts[t.key] > 0 || t.key === tab);
+  const stagesHere = STAGES.filter((st) => bucketRows.some((r) => r.stage === st));
 
   const filtered = useMemo(() => {
     const t = TABS.find((x) => x.key === tab);
     const term = q.trim().toLowerCase();
-    const list = WORK_QUEUE.filter(
+    const list = bucketRows.filter(
       (r) =>
         t.test(r) &&
         (!stage || r.stage === stage) &&
@@ -444,13 +490,13 @@ export default function ODWorkQueue() {
       due: (a, b) => dueInfo(a).at - dueInfo(b).at || SLA_RANK[a.sla.status] - SLA_RANK[b.sla.status],
     }[sort];
     return [...list].sort(by);
-  }, [tab, q, stage, pending, loss, sort]);
+  }, [bucketRows, tab, q, stage, pending, loss, sort]);
 
   // Claim counts shown in each filter menu: what you would get by picking that option
   const optionCounts = useMemo(() => {
     const t = TABS.find((x) => x.key === tab);
     const term = q.trim().toLowerCase();
-    const base = WORK_QUEUE.filter(
+    const base = bucketRows.filter(
       (r) =>
         t.test(r) &&
         (!term ||
@@ -470,12 +516,12 @@ export default function ODWorkQueue() {
       pending: countBy("pendingWith", (r) => (!stage || r.stage === stage) && (!loss || r.lossType === loss)),
       loss: countBy("lossType", (r) => (!stage || r.stage === stage) && (!pending || r.pendingWith === pending)),
     };
-  }, [tab, q, stage, pending, loss]);
+  }, [bucketRows, tab, q, stage, pending, loss]);
 
   const pages = Math.max(1, Math.ceil(filtered.length / PAGE_SIZE));
   const curPage = Math.min(page, pages);
   const rows = filtered.slice((curPage - 1) * PAGE_SIZE, curPage * PAGE_SIZE);
-  const anyFilter = q || stage || pending || loss;
+  const anyFilter = q || tab !== "all" || stage || pending || loss;
 
   function applySearch(text) {
     setQ(text);
@@ -484,6 +530,7 @@ export default function ODWorkQueue() {
 
   function clearFilters() {
     setQ("");
+    if (tab !== "all") setTab("all");
     setStage("");
     setPending("");
     setLoss("");
@@ -577,7 +624,7 @@ export default function ODWorkQueue() {
           action={
             <span className="flex flex-wrap items-center gap-2">
               <span className="text-[11px] text-slate-500">
-                Showing <b className="font-semibold text-slate-700">{filtered.length}</b> of {WORK_QUEUE.length}
+                Showing <b className="font-semibold text-slate-700">{filtered.length}</b> of {bucketRows.length}
                 <span className="mx-1.5 text-slate-300">·</span>
                 Reserve <b className="font-semibold text-slate-700">{lakh(filtered.reduce((t, r) => t + r.reserve, 0))}</b>
               </span>
@@ -608,27 +655,42 @@ export default function ODWorkQueue() {
             </span>
           }
         >
-          {/* Quick filter tabs */}
-          <div role="tablist" aria-label="Quick filters" className="flex flex-wrap gap-x-1 border-b border-slate-200 px-2.5">
-            {TABS.map((t) => {
-              const on = tab === t.key;
-              const tone = TAB_TONE[t.key] || "bg-slate-100 text-slate-600";
+          {/* Main buckets – claim lifecycle */}
+          <div role="tablist" aria-label="Claim lifecycle" className="grid grid-cols-5 gap-1.5 border-b border-slate-200 bg-slate-50/70 p-1.5">
+            {LIFECYCLE.map((b, i) => {
+              const on = bucket === b.key;
+              const st = bucketStats[b.key];
               return (
                 <button
-                  key={t.key}
+                  key={b.key}
                   role="tab"
                   type="button"
                   aria-selected={on}
-                  onClick={() => setTab(t.key)}
-                  className={`-mb-px flex h-9 items-center gap-1.5 border-b-2 px-2.5 text-[12.5px] font-semibold transition ${
-                    on ? "border-teal-700 text-teal-900" : "border-transparent text-slate-500 hover:border-slate-300 hover:text-slate-800"
+                  onClick={() => setBucket(b.key)}
+                  className={`relative flex min-w-0 items-center gap-2 rounded-lg border px-2.5 py-1.5 text-left transition ${
+                    on ? "border-teal-600 bg-white shadow-sm ring-1 ring-teal-600/20" : "border-transparent hover:border-slate-200 hover:bg-white"
                   }`}
                 >
-                  {t.label}
                   <span
-                    className={`min-w-5 rounded-full px-1.5 text-center text-[10.5px] font-bold leading-[18px] ${on ? "bg-teal-700 text-white" : tone}`}
+                    className={`grid h-6 w-6 flex-none place-items-center rounded-full text-[11px] font-bold ${
+                      on ? "bg-teal-700 text-white" : "bg-slate-200 text-slate-600"
+                    }`}
                   >
-                    {counts[t.key]}
+                    {i + 1}
+                  </span>
+                  <span className="min-w-0 flex-1 leading-tight">
+                    <span className={`block truncate text-[12.5px] font-semibold ${on ? "text-teal-900" : "text-slate-700"}`}>{b.label}</span>
+                    <span className="block truncate text-[10.5px] text-slate-500">
+                      {st.breach > 0 && <span className="font-semibold text-red-700">{st.breach} breached</span>}
+                      {st.breach > 0 && st.risk > 0 && <span className="text-slate-300"> · </span>}
+                      {st.risk > 0 && <span className="font-semibold text-amber-700">{st.risk} at risk</span>}
+                      {!st.breach && !st.risk && "On track"}
+                    </span>
+                  </span>
+                  <span
+                    className={`flex-none rounded-full px-2 text-[11px] font-bold leading-5 ${on ? "bg-teal-700 text-white" : "bg-white text-slate-700 ring-1 ring-inset ring-slate-200"}`}
+                  >
+                    {st.n}
                   </span>
                 </button>
               );
@@ -646,7 +708,17 @@ export default function ODWorkQueue() {
                 </button>
               </span>
             )}
-            <FilterPill label="Stage" icon={Layers} value={stage} onChange={(v) => { setStage(v); setPage(1); }} options={STAGES} allLabel="All" counts={optionCounts.stage} />
+            {/* Show – was the All open / Due today / SLA breached / At risk / Docs pending / NBNR tabs */}
+            <FilterPill
+              label="Show"
+              icon={ListFilter}
+              value={tab === "all" ? "" : tab}
+              onChange={(v) => setTab(v || "all")}
+              options={tabsHere.filter((t) => t.key !== "all").map((t) => ({ key: t.key, label: t.label }))}
+              allLabel="All open"
+              counts={{ __all: counts.all, ...counts }}
+            />
+            <FilterPill label="Stage" icon={Layers} value={stage} onChange={(v) => { setStage(v); setPage(1); }} options={stagesHere} allLabel="All" counts={optionCounts.stage} />
             <FilterPill label="Pending with" icon={UserRound} value={pending} onChange={(v) => { setPending(v); setPage(1); }} options={PENDING} allLabel="Anyone" counts={optionCounts.pending} />
             <FilterPill label="Loss type" icon={Car} value={loss} onChange={(v) => { setLoss(v); setPage(1); }} options={LOSSES} allLabel="All" counts={optionCounts.loss} />
             {anyFilter && (
@@ -944,7 +1016,13 @@ export default function ODWorkQueue() {
                     <button
                       type="button"
                       onClick={() => {
-                        setTab("all");
+                        // Open the bucket this claim is in, then show only this claim
+                        const hit = QUEUE.find((r) => r.claimNo === claim);
+                        const b = hit ? hit.bucket : bucket;
+                        setBucketState(b);
+                        setTabState("all");
+                        setStage("");
+                        syncUrl(b, "all");
                         setQ(claim);
                         setPage(1);
                         setDrawer(null);
