@@ -6,7 +6,7 @@
 // Communication 144–151, Investigation & Fraud 66–69.
 
 import { useMemo, useState } from "react";
-import { Link, useParams, useNavigate } from "react-router-dom";
+import { Link, useParams, useNavigate, useSearchParams } from "react-router-dom";
 import {
   ArrowLeft,
   AlertTriangle,
@@ -167,6 +167,9 @@ export default function ODClaim360() {
   const navigate = useNavigate();
   const claimNo = claimFromSlug(id);
   const base = useMemo(() => getClaimDetail(claimNo), [claimNo]);
+  // View (eye icon / row click) = read only. Edit (paper-and-pen icon, ?mode=edit) = work on the claim.
+  const [params] = useSearchParams();
+  const editMode = params.get("mode") === "edit";
 
   const [tab, setTab] = useState("overview");
   const [toast, setToast] = useState("");
@@ -254,7 +257,7 @@ export default function ODClaim360() {
     >
       <div className="flex flex-col gap-2">
         {/* ---------------- Back + actions ---------------- */}
-        <div className="flex flex-wrap items-center justify-between gap-2">
+        <div className={`flex flex-wrap items-center justify-between gap-2 ${editMode ? "" : "lg:hidden"}`}>
           <button
             type="button"
             onClick={() => navigate("/od/worklist")}
@@ -263,7 +266,9 @@ export default function ODClaim360() {
             <ArrowLeft className="h-4 w-4" aria-hidden="true" />
             Back to queue
           </button>
-          <div className="flex flex-wrap gap-1.5">
+          {/* Actions show only in edit mode (paper-and-pen icon in My Work Queue) */}
+          {editMode && (
+          <div className="flex flex-wrap items-center gap-1.5">
             <ActionButton icon={StickyNote} onClick={() => setModal("note")}>
               Add note
             </ActionButton>
@@ -292,6 +297,7 @@ export default function ODClaim360() {
               Refer to SIU
             </ActionButton>
           </div>
+          )}
         </div>
 
         {/* ---------------- Claim header ---------------- */}
@@ -617,7 +623,7 @@ export default function ODClaim360() {
                               View
                             </button>
                           )}
-                          {d.status === "Pending" && (
+                          {d.status === "Pending" && editMode && (
                             <button type="button" onClick={() => markReceived(d.name)} className="text-[12px] font-medium text-teal-700 hover:underline">
                               Mark received
                             </button>
