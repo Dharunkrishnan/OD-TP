@@ -240,7 +240,7 @@ export default function ODShell({ active = "dashboard", title, subtitle, childre
           navHidden
             ? // Queue, nav hidden: floats over the page; slides in on hover (peek)
               // it opens BELOW the header row (top 48 px), so it never covers the page title
-              `lg:top-12 lg:w-[68px] lg:rounded-tr-lg ${peeking ? "lg:translate-x-0 lg:shadow-[8px_0_24px_-8px_rgba(15,23,42,0.45)]" : ""}`
+              `lg:top-12 lg:w-[68px] ${peeking ? "lg:translate-x-0 lg:shadow-[8px_0_24px_-8px_rgba(15,23,42,0.45)]" : ""}`
             : `lg:static lg:h-full lg:translate-x-0 ${c ? "lg:w-[68px]" : ""}`
         }`}
         inert={navHidden && !mobileNav && !peeking ? true : undefined}
@@ -488,20 +488,32 @@ export default function ODShell({ active = "dashboard", title, subtitle, childre
             <Menu className="h-5 w-5" />
           </button>
           {navHidden && (
-            // Desktop, queue: our logo sits where the menu icon was; clicking it pins the icon bar open
-            <button
-              type="button"
-              onClick={() => {
-                window.clearTimeout(peekTimer.current);
-                setPeek(false);
-                setQueueNav("mini");
-              }}
-              aria-label="Show menu"
-              title="Smart Claims · show menu"
-              className="hidden h-9 w-9 flex-none place-items-center rounded-lg bg-[#0B1F3A] transition hover:ring-2 hover:ring-teal-400/60 lg:grid"
+            // Desktop, queue: our logo sits where the menu icon was; clicking it pins the icon bar open.
+            // The 68 px slot lines up with the nav; while the nav slides in, the slot turns navy so
+            // logo + nav read as one sidebar (the page title is never covered).
+            <span
+              className={`-my-px -ml-5 hidden w-[68px] flex-none place-items-center self-stretch transition-colors duration-200 lg:grid ${
+                peeking ? "bg-[#0B1F3A]" : ""
+              }`}
+              onMouseEnter={peeking ? () => peekSoon(true, 0) : undefined}
+              onMouseLeave={peeking ? () => peekSoon(false, 250) : undefined}
             >
-              <ShieldCheck className="h-5 w-5 text-teal-300" aria-hidden="true" />
-            </button>
+              <button
+                type="button"
+                onClick={() => {
+                  window.clearTimeout(peekTimer.current);
+                  setPeek(false);
+                  setQueueNav("mini");
+                }}
+                aria-label="Show menu"
+                title="Smart Claims · show menu"
+                className={`grid h-9 w-9 place-items-center rounded-lg transition hover:ring-2 hover:ring-teal-400/60 ${
+                  peeking ? "bg-teal-500/15" : "bg-[#0B1F3A]"
+                }`}
+              >
+                <ShieldCheck className="h-5 w-5 text-teal-300" aria-hidden="true" />
+              </button>
+            </span>
           )}
 
           <div className="min-w-0 flex-1">
