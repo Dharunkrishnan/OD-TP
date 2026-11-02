@@ -968,28 +968,32 @@ export default function ODWorkQueue() {
                   </button>
                 ))}
               </div>
-              <button type="button" onClick={() => setDrawer(null)} aria-label="Close" className="grid h-7 w-7 place-items-center rounded-md text-slate-500 hover:bg-slate-100">
-                <X className="h-4 w-4" aria-hidden="true" />
-              </button>
+              <span className="flex items-center gap-0.5">
+                {/* Small + to add a diary item (diary tab only) */}
+                {drawer === "diary" && (
+                  <button
+                    type="button"
+                    onClick={() => setAdding((v) => !v)}
+                    aria-expanded={adding}
+                    aria-label={adding ? "Cancel adding a follow-up" : "Add a follow-up"}
+                    title={adding ? "Cancel" : "Add a follow-up"}
+                    className={`grid h-7 w-7 place-items-center rounded-md transition ${adding ? "bg-teal-50 text-teal-700" : "text-slate-500 hover:bg-slate-100 hover:text-teal-700"}`}
+                  >
+                    <Plus className="h-4 w-4" aria-hidden="true" />
+                  </button>
+                )}
+                <button type="button" onClick={() => setDrawer(null)} aria-label="Close" className="grid h-7 w-7 place-items-center rounded-md text-slate-500 hover:bg-slate-100">
+                  <X className="h-4 w-4" aria-hidden="true" />
+                </button>
+              </span>
             </div>
 
             <div className="min-h-0 overflow-y-auto pb-1">
               {drawer === "diary" ? (
                 <>
-                  <div className="flex items-center justify-end px-3 pt-2">
-                    <button
-                      type="button"
-                      onClick={() => setAdding((v) => !v)}
-                      aria-expanded={adding}
-                      className="flex h-7 items-center gap-1 rounded border border-slate-300 px-2 text-[11.5px] font-medium text-slate-700 hover:bg-slate-50"
-                    >
-                      {adding ? <X className="h-3 w-3" aria-hidden="true" /> : <Plus className="h-3 w-3" aria-hidden="true" />}
-                      {adding ? "Cancel" : "Add"}
-                    </button>
-                  </div>
             {adding && (
               <form onSubmit={addDiary} className="mx-3 mt-2 flex flex-col gap-1.5 rounded-md border border-slate-200 bg-slate-50 px-3 py-2">
-                <div className="grid grid-cols-[80px_minmax(0,1fr)] gap-1.5">
+                <div className="grid grid-cols-[112px_minmax(0,1fr)] gap-1.5">
                   <label className="flex flex-col gap-0.5">
                     <span className="text-[10.5px] text-slate-500">Time</span>
                     <input
