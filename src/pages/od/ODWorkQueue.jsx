@@ -7,7 +7,7 @@
 // At risk / Docs pending / NBNR, Stage, Pending with, Loss type) and the claims table.
 // Catalogue refs: Workqueue 159–164, SLA / TAT 165–170, Followup 158, Search 178–181
 //
-// URL filter: /od/worklist?bucket=intake|survey|assessment|decision|settlement
+// URL filter: /od/worklist?bucket=all|intake|survey|assessment|decision|settlement
 //             &tab=due|breach|risk|docs|nbnr   (dashboard links)
 
 import { useEffect, useId, useMemo, useRef, useState } from "react";
@@ -57,6 +57,9 @@ const BUCKET_OF_STAGE = Object.fromEntries(LIFECYCLE.flatMap((b) => b.stages.map
 // A claim with the investigator (SIU) sits in Survey / Investigation whatever its stage
 const bucketOf = (r) => (r.pendingWith === "SIU / investigator" ? "survey" : BUCKET_OF_STAGE[r.stage] || "intake");
 const QUEUE = WORK_QUEUE.map((r) => ({ ...r, bucket: bucketOf(r) }));
+// "All" bucket = every open claim, shown first
+const inBucket = (r, b) => b === "all" || r.bucket === b;
+const BUCKETS = [{ key: "all", label: "All" }, ...LIFECYCLE];
 
 const TABS = [
   { key: "all", label: "All open", test: () => true },
@@ -336,14 +339,8 @@ export default function ODWorkQueue() {
   const openClaim = (claimNo) => navigate(`/od/claims/${claimSlug(claimNo)}`);
   const initialTab = TABS.some((t) => t.key === params.get("tab")) ? params.get("tab") : "all";
   // Bucket from the URL; a dashboard link with only ?tab= opens the bucket with most of those claims
-  const initialBucket = (() => {
-    const b = params.get("bucket");
-    if (LIFECYCLE.some((x) => x.key === b)) return b;
-    if (initialTab === "all") return LIFECYCLE[0].key;
-    const test = TABS.find((t) => t.key === initialTab).test;
-    const best = LIFECYCLE.map((x) => [x.key, QUEUE.filter((r) => r.bucket === x.key && test(r)).length]).sort((a, c) => c[1] - a[1])[0];
-    return best[1] ? best[0] : LIFECYCLE[0].key;
-  })();
+  // Opens on "All"; ?bucket= picks a lifecycle bucket (dashboard links with ?tab= open All with that filter)
+  const initialBucket = BUCKETS.some((x) => x.key === params.get("bucket")) ? params.get("bucket") : "all";
 
   const [bucket, setBucketState] = useState(initialBucket);
   const [tab, setTabState] = useState(initialTab);
@@ -434,7 +431,7 @@ export default function ODWorkQueue() {
   }
   // Main bucket. Keeps the quick-filter tab (e.g. SLA breached) unless that tab has no claims there.
   function setBucket(b) {
-    const keep = tab === "all" || QUEUE.some((r) => r.bucket === b && TABS.find((t) => t.key === tab).test(r));
+    const keep = tab === "all" || QUEUE.some((r) => inBucket(r, b) && TABS.find((t) => t.key === tab).test(r));
     const t = keep ? tab : "all";
     setBucketState(b);
     setTabState(t);
@@ -452,14 +449,14 @@ export default function ODWorkQueue() {
   }
 
   // Claims in the selected bucket; tab counts are on the whole bucket
-  const bucketRows = useMemo(() => QUEUE.filter((r) => r.bucket === bucket), [bucket]);
+  const bucketRows = useMemo(() => QUEUE.filter((r) => inBucket(r, bucket)), [bucket]);
   const counts = useMemo(() => Object.fromEntries(TABS.map((t) => [t.key, bucketRows.filter(t.test).length])), [bucketRows]);
   // Bucket bar: claims, breached and at-risk per lifecycle stage
   const bucketStats = useMemo(
     () =>
       Object.fromEntries(
-        LIFECYCLE.map((b) => {
-          const list = QUEUE.filter((r) => r.bucket === b.key);
+        BUCKETS.map((b) => {
+          const list = QUEUE.filter((r) => inBucket(r, b.key));
           return [b.key, { n: list.length, breach: list.filter((r) => r.sla.status === "breach").length, risk: list.filter((r) => r.sla.status === "risk").length }];
         })
       ),
@@ -661,8 +658,8 @@ export default function ODWorkQueue() {
           }
         >
           {/* Main buckets – claim lifecycle */}
-          <div role="tablist" aria-label="Claim lifecycle" className="grid grid-cols-5 gap-1.5 border-b border-slate-200 bg-slate-50/70 p-1.5">
-            {LIFECYCLE.map((b, i) => {
+          <div role="tablist" aria-label="Claim lifecycle" className="grid grid-cols-[minmax(150px,0.75fr)_repeat(5,minmax(0,1fr))] gap-1.5 border-b border-slate-200 bg-slate-50/70 p-1.5 max-lg:grid-cols-3">
+            {BUCKETS.map((b, i) => {
               const on = bucket === b.key;
               const st = bucketStats[b.key];
               return (
@@ -681,7 +678,7 @@ export default function ODWorkQueue() {
                       on ? "bg-teal-700 text-white" : "bg-slate-200 text-slate-600"
                     }`}
                   >
-                    {i + 1}
+                    {b.key === "all" ? <Layers className="h-3.5 w-3.5" aria-hidden="true" /> : i}
                   </span>
                   <span className="min-w-0 flex-1 leading-tight">
                     <span className={`block truncate text-[12.5px] font-semibold ${on ? "text-teal-900" : "text-slate-700"}`}>{b.label}</span>
@@ -1021,9 +1018,8 @@ export default function ODWorkQueue() {
                     <button
                       type="button"
                       onClick={() => {
-                        // Open the bucket this claim is in, then show only this claim
-                        const hit = QUEUE.find((r) => r.claimNo === claim);
-                        const b = hit ? hit.bucket : bucket;
+                        // Open the All bucket and show only this claim
+                        const b = "all";
                         setBucketState(b);
                         setTabState("all");
                         setStage("");
