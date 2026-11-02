@@ -36,6 +36,8 @@ import {
   Car,
   ArrowUpDown,
   Check,
+  Eye,
+  FilePen,
   ListFilter,
 } from "lucide-react";
 import ODShell from "../../components/layout/ODShell";
@@ -120,7 +122,7 @@ const COLUMNS = [
   { key: "claimNo", label: "Claim no", w: 164, min: 150, fixed: true },
   { key: "regNo", label: "Vehicle no", w: 110, min: 106 },
   { key: "insured", label: "Insured", w: 118, min: 116 },
-  { key: "stage", label: "Stage", w: 140, min: 136 },
+  { key: "stage", label: "Stage", w: 148, min: 146 },
   { key: "pendingWith", label: "Pending with", w: 122, min: 114 },
   { key: "sla", label: "SLA", w: 118, min: 114 },
   { key: "due", label: "Due", w: 82, min: 80 },
@@ -209,6 +211,9 @@ function FlagDot({ text }) {
 
 // Pill-style filter: "Label: value ▾". Teal when set, with its own × to clear.
 // Opens a styled menu (✓ on the current choice, claim count per option, ↑ ↓ Enter Esc).
+// Width of the Actions column (view + edit icons) – always shown, never moved out
+const ACTIONS_W = 64;
+
 function FilterPill({ label, icon: Icon, value, onChange, options, allLabel, showClear = true, counts, align = "left" }) {
   const opts = [
     ...(allLabel ? [{ key: "", label: allLabel }] : []),
@@ -336,7 +341,9 @@ function FilterPill({ label, icon: Icon, value, onChange, options, allLabel, sho
 export default function ODWorkQueue() {
   const [params, setParams] = useSearchParams();
   const navigate = useNavigate();
+  // Eye icon / row click → Claim 360 read only; paper-and-pen icon → Claim 360 ready to work on
   const openClaim = (claimNo) => navigate(`/od/claims/${claimSlug(claimNo)}`);
+  const editClaim = (claimNo) => navigate(`/od/claims/${claimSlug(claimNo)}?mode=edit`);
   const initialTab = TABS.some((t) => t.key === params.get("tab")) ? params.get("tab") : "all";
   // Bucket from the URL; a dashboard link with only ?tab= opens the bucket with most of those claims
   // Opens on "All"; ?bucket= picks a lifecycle bucket (dashboard links with ?tab= open All with that filter)
@@ -390,14 +397,15 @@ export default function ODWorkQueue() {
   const cols = [];
   const noRoom = [];
   let usedMin = 0;
+  const room = boxW - ACTIONS_W; // the Actions column always keeps its space
   for (const c of wanted) {
-    if (noRoom.length === 0 && (c.fixed || usedMin + c.min <= boxW)) {
+    if (noRoom.length === 0 && (c.fixed || usedMin + c.min <= room)) {
       cols.push(c);
       usedMin += c.min;
     } else noRoom.push(c.key);
   }
   // Every column gets its minimum; spare width → half to Next action, rest shared by size
-  const spare = Math.max(0, boxW - usedMin);
+  const spare = Math.max(0, room - usedMin);
   const hasNext = cols.some((c) => c.key === "nextAction");
   const otherMin = cols.reduce((t, c) => t + (c.key === "nextAction" ? 0 : c.min), 0) || 1;
   const colWidth = (c) =>
@@ -658,7 +666,7 @@ export default function ODWorkQueue() {
           }
         >
           {/* Main buckets – claim lifecycle */}
-          <div role="tablist" aria-label="Claim lifecycle" className="grid grid-cols-[minmax(150px,0.75fr)_repeat(5,minmax(0,1fr))] gap-1.5 border-b border-slate-200 bg-slate-50/70 p-1.5 max-lg:grid-cols-3">
+          <div role="tablist" aria-label="Claim lifecycle" className="flex gap-1.5 overflow-x-auto border-b border-slate-200 bg-slate-50/70 p-1.5 [scrollbar-width:none] lg:grid lg:grid-cols-[auto_minmax(0,1fr)_minmax(0,1.2fr)_minmax(0,1fr)_minmax(0,1fr)_minmax(0,1fr)]">
             {BUCKETS.map((b, i) => {
               const on = bucket === b.key;
               const st = bucketStats[b.key];
@@ -669,7 +677,7 @@ export default function ODWorkQueue() {
                   type="button"
                   aria-selected={on}
                   onClick={() => setBucket(b.key)}
-                  className={`relative flex min-w-0 items-center gap-2 rounded-lg border px-2.5 py-1.5 text-left transition ${
+                  className={`relative flex min-w-0 flex-none items-center gap-1.5 rounded-lg border px-2 py-1.5 text-left transition lg:flex-auto ${
                     on ? "border-teal-600 bg-white shadow-sm ring-1 ring-teal-600/20" : "border-transparent hover:border-slate-200 hover:bg-white"
                   }`}
                 >
@@ -787,8 +795,9 @@ export default function ODWorkQueue() {
             <table className="w-full table-fixed text-left text-[12px]">
               <colgroup>
                 {cols.map((c) => (
-                  <col key={c.key} style={{ width: `${((colWidth(c) / Math.max(boxW, usedMin)) * 100).toFixed(3)}%` }} />
+                  <col key={c.key} style={{ width: `${((colWidth(c) / Math.max(boxW, usedMin + ACTIONS_W)) * 100).toFixed(3)}%` }} />
                 ))}
+                <col style={{ width: `${((ACTIONS_W / Math.max(boxW, usedMin + ACTIONS_W)) * 100).toFixed(3)}%` }} />
               </colgroup>
               <thead>
                 <tr className="whitespace-nowrap bg-slate-50 text-[10.5px] uppercase tracking-normal text-slate-500">
@@ -804,6 +813,9 @@ export default function ODWorkQueue() {
                       {Array.isArray(c.label) ? c.label.map((l) => <span key={l} className="block">{l}</span>) : c.label}
                     </th>
                   ))}
+                  <th scope="col" className="px-1.5 py-2 text-center align-bottom font-semibold leading-tight">
+                    Actions
+                  </th>
                 </tr>
               </thead>
               <tbody>
@@ -824,6 +836,29 @@ export default function ODWorkQueue() {
                         {cell(c.key, r)}
                       </td>
                     ))}
+                    {/* Actions: view (eye) · edit (paper and pen) */}
+                    <td className="px-1 py-1.5" onClick={(e) => e.stopPropagation()}>
+                      <span className="flex items-center justify-center gap-1">
+                        <button
+                          type="button"
+                          onClick={() => openClaim(r.claimNo)}
+                          aria-label={`View claim ${r.claimNo}`}
+                          title="View claim (read only)"
+                          className="grid h-7 w-7 place-items-center rounded-md text-slate-500 transition hover:bg-sky-50 hover:text-sky-700 focus:outline-none focus-visible:ring-2 focus-visible:ring-sky-500/40"
+                        >
+                          <Eye className="h-4 w-4" aria-hidden="true" />
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => editClaim(r.claimNo)}
+                          aria-label={`Edit claim ${r.claimNo}`}
+                          title="Edit claim – open and work on it"
+                          className="grid h-7 w-7 place-items-center rounded-md text-slate-500 transition hover:bg-teal-50 hover:text-teal-700 focus:outline-none focus-visible:ring-2 focus-visible:ring-teal-600/40"
+                        >
+                          <FilePen className="h-4 w-4" aria-hidden="true" />
+                        </button>
+                      </span>
+                    </td>
                   </tr>
                 ))}
               </tbody>
