@@ -31,12 +31,16 @@ export const LOB_LABEL = {
 };
 
 /* ------------------------------------------------------------------ */
-/* Demo users – 5 logins                                               */
+/* Demo users – 6 logins (OD0150 = OD-only Claims Manager)            */
 /* Password for all: Demo@123                                          */
 /* User ID prefix = naming convention only. Access is decided by       */
 /* the `access` map, never by the prefix.                              */
 /* ------------------------------------------------------------------ */
 export const DEMO_PASSWORD = "Demo@123";
+
+// DEMO ONLY: shows "Switch profile" in the profile menu so one person can walk through
+// every persona without signing out. Set to false (or remove) before UAT / production.
+export const DEMO_MODE = true;
 
 export const DEMO_USERS = [
   {
@@ -46,6 +50,15 @@ export const DEMO_USERS = [
     branch: "Chennai",
     access: {
       OD: { role: "CLAIMS_HANDLER", roleLabel: "Claims Handler", authorityLimit: null },
+    },
+  },
+  {
+    userId: "OD0150",
+    name: "Priya Raghavan",
+    email: "priya.raghavan@abcgeneral.co.in",
+    branch: "Chennai",
+    access: {
+      OD: { role: "CLAIMS_MANAGER", roleLabel: "Claims Manager", authorityLimit: 500000 },
     },
   },
   {
@@ -270,6 +283,34 @@ export function AuthProvider({ children }) {
     [user]
   );
 
+  /**
+   * DEMO ONLY – switch to another demo profile without signing out.
+   * Keeps the current workspace (OD / TP) when the new profile has it.
+   * Returns the new home path, or null if the profile is unknown.
+   */
+  const switchProfile = useCallback(
+    (userId) => {
+      if (!DEMO_MODE || !user) return null;
+      const found = DEMO_USERS.find((u) => u.userId === userId);
+      if (!found || found.userId === user.userId) return null;
+      const keepLob = user.lastWorkspace;
+      const next = buildSessionUser(found, Object.keys(found.access).includes(keepLob) ? keepLob : readLastWorkspace(found.userId));
+      const remember = (() => {
+        try {
+          return !!localStorage.getItem(STORAGE_KEY);
+        } catch {
+          return false;
+        }
+      })();
+      storeUser(next, remember);
+      writeLastWorkspace(next.userId, next.lastWorkspace);
+      setUser(next);
+      auditLog("DEMO_PROFILE_SWITCH", { from: user.userId, to: next.userId });
+      return resolveDashboardPath(next);
+    },
+    [user]
+  );
+
   const value = useMemo(
     () => ({
       user,
@@ -278,9 +319,10 @@ export function AuthProvider({ children }) {
       login,
       logout,
       switchWorkspace,
+      switchProfile,
       hasAccess: (lob) => hasAccess(user, lob),
     }),
-    [user, login, logout, switchWorkspace]
+    [user, login, logout, switchWorkspace, switchProfile]
   );
 
   return createElement(AuthContext.Provider, { value }, children);

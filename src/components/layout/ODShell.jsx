@@ -45,8 +45,23 @@ import {
   ArrowLeft,
   Check,
   FileText,
+  UsersRound,
+  ClipboardCheck,
+  Shuffle,
+  AlertOctagon,
+  BarChart3,
+  Repeat,
 } from "lucide-react";
-import { useAuth, getRole, isDualAccess } from "../../auth";
+import { useAuth, getRole, isDualAccess, DEMO_MODE, DEMO_USERS } from "../../auth";
+
+// Switch profile list: "Claims Manager" when both LOBs share the role,
+// otherwise "Claims Approver (OD) · Claims Handler (TP)"
+function profileRoles(u) {
+  const entries = Object.entries(u.access).map(([lob, a]) => [lob, a.roleLabel.replace(/^TP /, "")]);
+  const labels = [...new Set(entries.map(([, l]) => l))];
+  if (labels.length === 1) return labels[0];
+  return entries.map(([lob, l]) => `${l} (${lob})`).join(" · ");
+}
 
 // Menu for OD Claims Handler. Other roles get their own menu later.
 const HANDLER_MENU = [
@@ -56,6 +71,16 @@ const HANDLER_MENU = [
   { key: "nbnr", label: "NBNR Bucket", icon: Inbox, to: "/od/nbnr", badge: HANDLER_KPIS.nbnr },
   { key: "diary", label: "Diary & Follow-ups", icon: CalendarClock, to: "/od/diary", badge: DIARY.filter((d) => !d.done).length },
   { key: "docs", label: "Docs Pending", icon: FileStack, to: "/od/documents", badge: HANDLER_KPIS.docsPending },
+];
+
+// Menu for OD Claims Manager (team supervision). Screens are added one by one.
+const MANAGER_MENU = [
+  { key: "dashboard", label: "Team Dashboard", icon: LayoutDashboard, to: "/od/dashboard" },
+  { key: "approvals", label: "Approvals", icon: ClipboardCheck, to: "/od/approvals" },
+  { key: "teamqueue", label: "Team Work Queue", icon: UsersRound, to: "/od/team-queue" },
+  { key: "reallocate", label: "Reallocation", icon: Shuffle, to: "/od/reallocation" },
+  { key: "escalations", label: "Escalations", icon: AlertOctagon, to: "/od/escalations" },
+  { key: "reports", label: "Reports", icon: BarChart3, to: "/od/reports" },
 ];
 
 // Pages that exist so far. Add each new route here as it is built.
@@ -139,8 +164,31 @@ export default function ODShell({ active = "dashboard", title, subtitle, childre
     },
     [navigate]
   );
-  const { user, logout } = useAuth();
+  const { user, logout, switchProfile } = useAuth();
   const [menuOpen, setMenuOpen] = useState(false);
+  const profileRef = useRef(null);
+  // Profile menu closes on a click outside it or on Esc
+  useEffect(() => {
+    if (!menuOpen) return undefined;
+    const onDown = (e) => {
+      if (profileRef.current && !profileRef.current.contains(e.target)) setMenuOpen(false);
+    };
+    const onKey = (e) => {
+      if (e.key === "Escape") setMenuOpen(false);
+    };
+    document.addEventListener("mousedown", onDown);
+    document.addEventListener("keydown", onKey);
+    return () => {
+      document.removeEventListener("mousedown", onDown);
+      document.removeEventListener("keydown", onKey);
+    };
+  }, [menuOpen]);
+
+  function handleSwitchProfile(userId) {
+    const path = switchProfile(userId);
+    setMenuOpen(false);
+    if (path) navigate(path, { replace: true });
+  }
   const [mobileNav, setMobileNav] = useState(false);
   const [menuCollapsed, setMenuCollapsed] = useState(readCollapsed);
   const [claimCollapsed, setClaimCollapsed] = useState(() => {
@@ -385,7 +433,7 @@ export default function ODShell({ active = "dashboard", title, subtitle, childre
         ) : (
         <nav className="min-h-0 flex-1 px-2 py-3" aria-label="OD menu">
           <ul className="flex flex-col gap-0.5">
-            {HANDLER_MENU.map((item) => {
+            {(role?.role === "CLAIMS_MANAGER" ? MANAGER_MENU : HANDLER_MENU).map((item) => {
               const Icon = item.icon;
               const isActive = item.key === active;
               return (
@@ -550,7 +598,7 @@ export default function ODShell({ active = "dashboard", title, subtitle, childre
               }}
             />
 
-            <div className="relative">
+            <div className="relative" ref={profileRef}>
               <button
                 type="button"
                 onClick={() => setMenuOpen((v) => !v)}
@@ -569,7 +617,7 @@ export default function ODShell({ active = "dashboard", title, subtitle, childre
                 <ChevronDown className="h-4 w-4 text-slate-400" aria-hidden="true" />
               </button>
               {menuOpen && (
-                <div className="absolute right-0 top-full z-30 mt-2 w-64 rounded-xl border border-slate-200 bg-white p-2 text-sm shadow-[0_16px_40px_rgba(11,31,58,0.16)]">
+                <div className="absolute right-0 top-full z-30 mt-2 w-72 rounded-xl border border-slate-200 bg-white p-2 text-sm shadow-[0_16px_40px_rgba(11,31,58,0.16)]">
                   <div className="px-2 py-2">
                     <p className="font-semibold text-slate-800">{user?.name}</p>
                     <p className="text-xs text-slate-500">
@@ -584,6 +632,48 @@ export default function ODShell({ active = "dashboard", title, subtitle, childre
                     <dt className="text-slate-500">Branch</dt>
                     <dd className="text-slate-800">{user?.branch}</dd>
                   </dl>
+                  {DEMO_MODE && (
+                    <div className="border-t border-slate-100 pt-2">
+                      <p className="flex items-center gap-1.5 px-2 pb-1 text-[10.5px] font-semibold uppercase tracking-wider text-slate-400">
+                        <Repeat className="h-3.5 w-3.5" aria-hidden="true" />
+                        Switch profile
+                        <span className="rounded bg-amber-100 px-1 py-px text-[9.5px] font-semibold normal-case tracking-normal text-amber-800">Demo</span>
+                      </p>
+                      <ul className="max-h-[232px] overflow-y-auto">
+                        {DEMO_USERS.filter((u) => u.userId !== user?.userId).map((u) => (
+                          <li key={u.userId}>
+                            <button
+                              type="button"
+                              onClick={() => handleSwitchProfile(u.userId)}
+                              className="flex w-full items-center gap-2 rounded-lg px-2 py-1.5 text-left hover:bg-slate-100"
+                            >
+                              <span className="grid h-7 w-7 flex-none place-items-center rounded-full bg-slate-200 text-[10.5px] font-semibold text-slate-700">
+                                {initials(u.name)}
+                              </span>
+                              <span className="min-w-0 flex-1 leading-tight">
+                                <span className="block truncate text-[12.5px] font-medium text-slate-800">
+                                  {u.name} <span className="font-mono text-[10.5px] font-normal text-slate-400">{u.userId}</span>
+                                </span>
+                                <span className="block truncate text-[11px] text-slate-500" title={profileRoles(u)}>{profileRoles(u)}</span>
+                              </span>
+                              <span className="flex flex-none gap-0.5">
+                                {Object.keys(u.access).map((lob) => (
+                                  <span
+                                    key={lob}
+                                    className={`rounded px-1 py-px text-[9.5px] font-semibold ${
+                                      lob === "OD" ? "bg-teal-50 text-teal-800" : "bg-indigo-50 text-indigo-800"
+                                    }`}
+                                  >
+                                    {lob}
+                                  </span>
+                                ))}
+                              </span>
+                            </button>
+                          </li>
+                        ))}
+                      </ul>
+                    </div>
+                  )}
                   <button
                     type="button"
                     onClick={handleLogout}
