@@ -843,8 +843,8 @@ export default function ODWorkQueue() {
                 {rows.map((r) => (
                   <tr
                     key={r.claimNo}
-                    onClick={() => openClaim(r.claimNo)}
-                    className="group cursor-pointer whitespace-nowrap border-t border-slate-100 hover:bg-teal-50/60"
+                    // Only the claim number and the view / edit icons open the claim – not the whole row
+                    className="group whitespace-nowrap border-t border-slate-100 hover:bg-teal-50/60"
                   >
                     {cols.map((c) => (
                       <td
@@ -858,7 +858,7 @@ export default function ODWorkQueue() {
                       </td>
                     ))}
                     {/* Actions: view (eye) · edit (paper and pen) */}
-                    <td className="px-1 py-1.5" onClick={(e) => e.stopPropagation()}>
+                    <td className="px-1 py-1.5">
                       <span className="flex items-center justify-center gap-1">
                         <button
                           type="button"

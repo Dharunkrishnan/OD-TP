@@ -6,6 +6,7 @@
 
 import { useAuth, getRole } from "../../auth";
 import ODHandlerDashboard from "./ODHandlerDashboard";
+import ODManagerDashboard from "./ODManagerDashboard";
 import ODDashboard from "../ODDashboard"; // existing generic dashboard (fallback)
 
 export default function ODHome() {
@@ -16,7 +17,8 @@ export default function ODHome() {
     case "CLAIMS_HANDLER":
       return <ODHandlerDashboard />;
     // case "CLAIMS_APPROVER": return <ODApproverDashboard />;   // later
-    // case "CLAIMS_MANAGER":  return <ODManagerDashboard />;    // later
+    case "CLAIMS_MANAGER":
+      return <ODManagerDashboard />;
     // case "ADMIN":           return <ODAdminHome />;           // later
     default:
       return <ODDashboard />;
