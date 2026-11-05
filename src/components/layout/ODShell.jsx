@@ -35,7 +35,6 @@ import {
   Inbox,
   CalendarClock,
   FileStack,
-  ChevronDown,
   LogOut,
   HelpCircle,
   Menu,
@@ -50,18 +49,9 @@ import {
   Shuffle,
   AlertOctagon,
   BarChart3,
-  Repeat,
 } from "lucide-react";
-import { useAuth, getRole, isDualAccess, DEMO_MODE, DEMO_USERS } from "../../auth";
-
-// Switch profile list: "Claims Manager" when both LOBs share the role,
-// otherwise "Claims Approver (OD) · Claims Handler (TP)"
-function profileRoles(u) {
-  const entries = Object.entries(u.access).map(([lob, a]) => [lob, a.roleLabel.replace(/^TP /, "")]);
-  const labels = [...new Set(entries.map(([, l]) => l))];
-  if (labels.length === 1) return labels[0];
-  return entries.map(([lob, l]) => `${l} (${lob})`).join(" · ");
-}
+import { useAuth, getRole, isDualAccess } from "../../auth";
+import ProfileMenu from "./ProfileMenu";
 
 // Menu for OD Claims Handler. Other roles get their own menu later.
 const HANDLER_MENU = [
@@ -112,16 +102,6 @@ function Tip({ show, children }) {
   );
 }
 
-function initials(name = "") {
-  return name
-    .split(" ")
-    .filter(Boolean)
-    .slice(0, 2)
-    .map((p) => p[0])
-    .join("")
-    .toUpperCase();
-}
-
 export default function ODShell({ active = "dashboard", title, subtitle, children, onNavigateMissing, claimNav }) {
   const navigate = useNavigate();
 
@@ -164,31 +144,7 @@ export default function ODShell({ active = "dashboard", title, subtitle, childre
     },
     [navigate]
   );
-  const { user, logout, switchProfile } = useAuth();
-  const [menuOpen, setMenuOpen] = useState(false);
-  const profileRef = useRef(null);
-  // Profile menu closes on a click outside it or on Esc
-  useEffect(() => {
-    if (!menuOpen) return undefined;
-    const onDown = (e) => {
-      if (profileRef.current && !profileRef.current.contains(e.target)) setMenuOpen(false);
-    };
-    const onKey = (e) => {
-      if (e.key === "Escape") setMenuOpen(false);
-    };
-    document.addEventListener("mousedown", onDown);
-    document.addEventListener("keydown", onKey);
-    return () => {
-      document.removeEventListener("mousedown", onDown);
-      document.removeEventListener("keydown", onKey);
-    };
-  }, [menuOpen]);
-
-  function handleSwitchProfile(userId) {
-    const path = switchProfile(userId);
-    setMenuOpen(false);
-    if (path) navigate(path, { replace: true });
-  }
+  const { user, logout } = useAuth();
   const [mobileNav, setMobileNav] = useState(false);
   const [menuCollapsed, setMenuCollapsed] = useState(readCollapsed);
   const [claimCollapsed, setClaimCollapsed] = useState(() => {
@@ -598,93 +554,7 @@ export default function ODShell({ active = "dashboard", title, subtitle, childre
               }}
             />
 
-            <div className="relative" ref={profileRef}>
-              <button
-                type="button"
-                onClick={() => setMenuOpen((v) => !v)}
-                aria-expanded={menuOpen}
-                className="flex h-10 items-center gap-2 rounded-lg px-1.5 hover:bg-slate-100"
-              >
-                <span className="grid h-8 w-8 place-items-center rounded-full bg-[#0B1F3A] text-xs font-semibold text-white">
-                  {initials(user?.name)}
-                </span>
-                <span className="hidden whitespace-nowrap text-left leading-tight sm:block">
-                  <span className="block text-[13px] font-semibold text-slate-800">{user?.name}</span>
-                  <span className="block text-[11px] text-slate-500">
-                    {role?.roleLabel} · {user?.branch}
-                  </span>
-                </span>
-                <ChevronDown className="h-4 w-4 text-slate-400" aria-hidden="true" />
-              </button>
-              {menuOpen && (
-                <div className="absolute right-0 top-full z-30 mt-2 w-72 rounded-xl border border-slate-200 bg-white p-2 text-sm shadow-[0_16px_40px_rgba(11,31,58,0.16)]">
-                  <div className="px-2 py-2">
-                    <p className="font-semibold text-slate-800">{user?.name}</p>
-                    <p className="text-xs text-slate-500">
-                      {user?.userId} · {user?.email}
-                    </p>
-                  </div>
-                  <dl className="grid grid-cols-2 gap-x-2 gap-y-1 border-t border-slate-100 px-2 py-2 text-xs">
-                    <dt className="text-slate-500">LOB</dt>
-                    <dd className="text-slate-800">Motor OD</dd>
-                    <dt className="text-slate-500">Role</dt>
-                    <dd className="text-slate-800">{role?.roleLabel}</dd>
-                    <dt className="text-slate-500">Branch</dt>
-                    <dd className="text-slate-800">{user?.branch}</dd>
-                  </dl>
-                  {DEMO_MODE && (
-                    <div className="border-t border-slate-100 pt-2">
-                      <p className="flex items-center gap-1.5 px-2 pb-1 text-[10.5px] font-semibold uppercase tracking-wider text-slate-400">
-                        <Repeat className="h-3.5 w-3.5" aria-hidden="true" />
-                        Switch profile
-                        <span className="rounded bg-amber-100 px-1 py-px text-[9.5px] font-semibold normal-case tracking-normal text-amber-800">Demo</span>
-                      </p>
-                      <ul className="max-h-[232px] overflow-y-auto">
-                        {DEMO_USERS.filter((u) => u.userId !== user?.userId).map((u) => (
-                          <li key={u.userId}>
-                            <button
-                              type="button"
-                              onClick={() => handleSwitchProfile(u.userId)}
-                              className="flex w-full items-center gap-2 rounded-lg px-2 py-1.5 text-left hover:bg-slate-100"
-                            >
-                              <span className="grid h-7 w-7 flex-none place-items-center rounded-full bg-slate-200 text-[10.5px] font-semibold text-slate-700">
-                                {initials(u.name)}
-                              </span>
-                              <span className="min-w-0 flex-1 leading-tight">
-                                <span className="block truncate text-[12.5px] font-medium text-slate-800">
-                                  {u.name} <span className="font-mono text-[10.5px] font-normal text-slate-400">{u.userId}</span>
-                                </span>
-                                <span className="block truncate text-[11px] text-slate-500" title={profileRoles(u)}>{profileRoles(u)}</span>
-                              </span>
-                              <span className="flex flex-none gap-0.5">
-                                {Object.keys(u.access).map((lob) => (
-                                  <span
-                                    key={lob}
-                                    className={`rounded px-1 py-px text-[9.5px] font-semibold ${
-                                      lob === "OD" ? "bg-teal-50 text-teal-800" : "bg-indigo-50 text-indigo-800"
-                                    }`}
-                                  >
-                                    {lob}
-                                  </span>
-                                ))}
-                              </span>
-                            </button>
-                          </li>
-                        ))}
-                      </ul>
-                    </div>
-                  )}
-                  <button
-                    type="button"
-                    onClick={handleLogout}
-                    className="mt-1 flex h-9 w-full items-center gap-2 rounded-lg px-2 text-left text-red-700 hover:bg-red-50"
-                  >
-                    <LogOut className="h-4 w-4" aria-hidden="true" />
-                    Sign out
-                  </button>
-                </div>
-              )}
-            </div>
+            <ProfileMenu lob="OD" onLogout={handleLogout} />
           </div>
         </header>
 
