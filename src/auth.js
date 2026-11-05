@@ -42,6 +42,47 @@ export const DEMO_PASSWORD = "Demo@123";
 // every persona without signing out. Set to false (or remove) before UAT / production.
 export const DEMO_MODE = true;
 
+/* ------------------------------------------------------------------ */
+/* Roles a user can work under (Select role in the profile menu)       */
+/* A user keeps one identity and changes only the ACTIVE role.         */
+/* Production: only the roles assigned to the user (user.roles[lob]).  */
+/* Demo (DEMO_MODE): every role of the LOB, so each view can be shown. */
+/* ------------------------------------------------------------------ */
+export const ROLE_CATALOG = {
+  OD: [
+    { role: "CLAIMS_HANDLER", roleLabel: "Claims Handler", authorityLimit: null },
+    { role: "CLAIMS_APPROVER", roleLabel: "Claims Approver", authorityLimit: 200000 },
+    { role: "CLAIMS_MANAGER", roleLabel: "Claims Manager", authorityLimit: 500000 },
+    { role: "ADMIN", roleLabel: "Admin User", authorityLimit: null },
+  ],
+  TP: [
+    { role: "TP_CLAIMS_HANDLER", roleLabel: "TP Claims Handler", authorityLimit: null },
+    { role: "CLAIMS_MANAGER", roleLabel: "Claims Manager", authorityLimit: 500000 },
+    { role: "ADMIN", roleLabel: "Admin User", authorityLimit: null },
+  ],
+};
+
+/** Roles this user may select in a LOB. */
+export function assignedRoles(user, lob) {
+  const all = ROLE_CATALOG[lob] || [];
+  const own = user?.roles?.[lob];
+  if (Array.isArray(own) && own.length) return all.filter((r) => own.includes(r.role));
+  if (DEMO_MODE) return all;
+  const current = user?.access?.[lob];
+  return current ? all.filter((r) => r.role === current.role) : [];
+}
+
+const roleKey = (userId, lob) => `smartclaims-role-${userId}-${lob}`;
+
+/* Availability – decides whether the user gets new claims from auto-allocation */
+export const AVAILABILITY = [
+  { key: "ONLINE", label: "Online", dot: "bg-green-500", note: "Available · new claims are assigned to you" },
+  { key: "AWAY", label: "Away", dot: "bg-amber-400", note: "Short break · no new claims for now" },
+  { key: "MEETING", label: "In a meeting", dot: "bg-red-500", note: "Busy · no new claims for now" },
+  { key: "OFFLINE", label: "Offline", dot: "bg-slate-400", note: "Not working · no new claims" },
+];
+const availKey = (userId) => `smartclaims-availability-${userId}`;
+
 export const DEMO_USERS = [
   {
     userId: "OD0123",
@@ -191,6 +232,23 @@ export function auditLog(event, details = {}) {
   if (import.meta.env?.DEV) console.info("[audit]", entry);
 }
 
+function readAvailability(userId) {
+  try {
+    const v = localStorage.getItem(availKey(userId));
+    return AVAILABILITY.some((a) => a.key === v) ? v : "ONLINE";
+  } catch {
+    return "ONLINE";
+  }
+}
+
+function isRemembered() {
+  try {
+    return !!localStorage.getItem(STORAGE_KEY);
+  } catch {
+    return false;
+  }
+}
+
 function readStoredUser() {
   try {
     const raw = localStorage.getItem(STORAGE_KEY) || sessionStorage.getItem(STORAGE_KEY);
@@ -230,6 +288,18 @@ export function AuthProvider({ children }) {
       if (!getLobs(sessionUser).includes(sessionUser.lastWorkspace)) {
         sessionUser.lastWorkspace = getLobs(sessionUser)[0] ?? null;
       }
+      // the role last selected in each LOB (Select role) carries over to the next login
+      sessionUser.access = { ...sessionUser.access };
+      for (const lob of getLobs(sessionUser)) {
+        try {
+          const saved = localStorage.getItem(roleKey(sessionUser.userId, lob));
+          const pick = saved && assignedRoles(sessionUser, lob).find((r) => r.role === saved);
+          if (pick) sessionUser.access[lob] = { ...pick };
+        } catch {
+          /* ignore */
+        }
+      }
+      sessionUser.availability = readAvailability(sessionUser.userId);
       remember = !!arg2;
     } else {
       const perms = Array.isArray(arg2) ? arg2 : [];
@@ -288,6 +358,45 @@ export function AuthProvider({ children }) {
    * Keeps the current workspace (OD / TP) when the new profile has it.
    * Returns the new home path, or null if the profile is unknown.
    */
+  /** Change the active role in a LOB (same user). Returns the LOB home path, or null. */
+  const switchRole = useCallback(
+    (lob, role) => {
+      if (!user || !hasAccess(user, lob)) return null;
+      const pick = assignedRoles(user, lob).find((r) => r.role === role);
+      const from = user.access?.[lob]?.role;
+      if (!pick || from === role) return null;
+      const next = { ...user, access: { ...user.access, [lob]: { ...pick } }, lastWorkspace: lob };
+      storeUser(next, isRemembered());
+      try {
+        localStorage.setItem(roleKey(user.userId, lob), role);
+      } catch {
+        /* ignore */
+      }
+      writeLastWorkspace(user.userId, lob);
+      setUser(next);
+      auditLog("ROLE_SWITCH", { userId: user.userId, lob, from, to: role });
+      return LOB_HOME[lob];
+    },
+    [user]
+  );
+
+  /** Online / Away / In a meeting / Offline */
+  const setAvailability = useCallback(
+    (key) => {
+      if (!user || !AVAILABILITY.some((a) => a.key === key) || user.availability === key) return;
+      const next = { ...user, availability: key };
+      storeUser(next, isRemembered());
+      try {
+        localStorage.setItem(availKey(user.userId), key);
+      } catch {
+        /* ignore */
+      }
+      setUser(next);
+      auditLog("AVAILABILITY_CHANGE", { userId: user.userId, from: user.availability, to: key });
+    },
+    [user]
+  );
+
   const switchProfile = useCallback(
     (userId) => {
       if (!DEMO_MODE || !user) return null;
@@ -320,9 +429,11 @@ export function AuthProvider({ children }) {
       logout,
       switchWorkspace,
       switchProfile,
+      switchRole,
+      setAvailability,
       hasAccess: (lob) => hasAccess(user, lob),
     }),
-    [user, login, logout, switchWorkspace, switchProfile]
+    [user, login, logout, switchWorkspace, switchProfile, switchRole, setAvailability]
   );
 
   return createElement(AuthContext.Provider, { value }, children);
