@@ -72,7 +72,7 @@ const MANAGER_MENU = [
 ];
 
 // Pages that exist so far. Add each new route here as it is built.
-const BUILT_ROUTES = ["/od/dashboard", "/od/worklist", "/od/intimation", "/od/approvals", "/od/team-queue"];
+const BUILT_ROUTES = ["/od/dashboard", "/od/worklist", "/od/intimation", "/od/approvals", "/od/team-queue", "/od/escalations"];
 
 const COLLAPSE_KEY = "smartclaims-sidebar-collapsed";
 const CLAIM_COLLAPSE_KEY = "smartclaims-claimnav-collapsed-v2"; // claim / intimation view opens minimised (icons only) by default
