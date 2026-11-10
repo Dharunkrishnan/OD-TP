@@ -3,6 +3,7 @@
 // Dashboard = SLA / TAT performance and portfolio summary only.
 // Claim list, Today's diary and Alerts live on the My Work Queue page (P05).
 // Catalogue refs: SLA / TAT Management 165–170, Search / Dashboard 178–181
+// Shows only what a handler acts on: SLA position, ageing, stage, who claims are waiting on, stage TAT.
 // Page scrolls normally; sidebar and header stay fixed.
 
 import { useEffect, useId, useRef, useState } from "react";
@@ -17,9 +18,7 @@ import {
   Percent,
   Hourglass,
   Layers,
-  ListChecks,
   Users,
-  CalendarCheck,
   LayoutList,
   BarChart3,
   BarChartHorizontal,
@@ -41,9 +40,7 @@ import {
   TAT_TREND,
   AGEING_BUCKETS,
   STAGE_COUNTS,
-  LOSS_TYPES,
   PENDING_WITH,
-  CLOSED_TREND,
 } from "../../data/odHandlerMock";
 
 // Stages the system does automatically (intimation submit runs the registration jobs and
@@ -82,15 +79,8 @@ const SLA_VIEW_KEY = "smartclaims-od-sla-view";
 const PORT_VIEWS = [
   { key: "ageing", label: "Ageing", icon: Hourglass, hint: "Open claims by days since registration" },
   { key: "stage", label: "By stage", icon: Layers, hint: "Where your open claims are in the lifecycle" },
-  { key: "loss", label: "By loss type", icon: ListChecks, hint: "Accident, flood, theft, fire…" },
 ];
 
-// Third card – workload & productivity
-const WORK_VIEWS = [
-  { key: "pending", label: "Pending with", icon: Users, hint: "Who your open claims are waiting on" },
-  { key: "closed", label: "Closed by month", icon: CalendarCheck, hint: "Claims you closed each month" },
-];
-const WORK_VIEW_KEY = "smartclaims-od-work-view";
 const PORT_VIEW_KEY = "smartclaims-od-portfolio-view";
 
 function readView(key, views) {
@@ -113,8 +103,9 @@ function saveView(key, v) {
 // trends (by month) → Bar / Line;  shares of a whole → Bar / Pie / Donut.
 const CHART_LABEL = { summary: "Summary", bar: "Bar", pie: "Pie", donut: "Donut", line: "Line" };
 const SLA_CHARTS = { status: ["summary", "bar", "pie", "donut"], compliance: ["bar", "line"], tat: ["bar", "line"] };
-const PORT_CHARTS = { ageing: ["bar", "pie", "donut"], stage: ["bar", "pie", "donut"], loss: ["bar", "pie", "donut"] };
-const WORK_CHARTS = { pending: ["bar", "pie", "donut"], closed: ["bar", "line"] };
+const PORT_CHARTS = { ageing: ["bar", "pie", "donut"], stage: ["bar", "pie", "donut"] };
+// Pending with: shares of my open claims
+const WORK_CHARTS = ["bar", "pie", "donut"];
 const WORK_CHART_KEY = "smartclaims-od-work-chart";
 const SLA_CHART_KEY = "smartclaims-od-sla-chart";
 const PORT_CHART_KEY = "smartclaims-od-portfolio-chart";
@@ -131,7 +122,13 @@ const chartOptions = (types) => types.map((t) => ({ key: t, label: CHART_LABEL[t
 // Slice colours. Status = reserved SLA colours; ageing = one-hue ramp (ordered);
 // stage / loss type = fixed categorical order (colour follows the category).
 const STATUS_HEX = { ok: "#059669", risk: "#f59e0b", breach: "#dc2626" };
-const AGE_HEX = ["#99f6e4", "#5eead4", "#14b8a6", "#0f766e", "#134e4a"];
+// calm teal ramp (light → dark = newer → older); the same colours are used for bars and slices
+const AGE_HEX = ["#a3d9d0", "#64bdb0", "#2b9a8b", "#167468", "#0c4e47"];
+const AGE_BG = ["bg-[#a3d9d0]", "bg-[#64bdb0]", "bg-[#2b9a8b]", "bg-[#167468]", "bg-[#0c4e47]"];
+// current month (to date) bar in month trends – lighter version of the main teal
+const MTD_BG = "bg-[#9fd3cb]";
+// subtle card depth used across the page
+const CARD_SHADOW = "shadow-[0_1px_2px_rgba(15,23,42,0.04),0_4px_12px_-4px_rgba(15,23,42,0.08)]";
 const CAT_HEX = ["#2a78d6", "#eb6834", "#1baf7a", "#eda100", "#e87ba4", "#6250d6"];
 
 /** Pie charts read best with ≤ 6 slices: keep the 5 largest, fold the rest into "Other". */
@@ -516,7 +513,7 @@ function StageColumns({ items }) {
                   </span>
                   {/* bar */}
                   <span
-                    className={`relative z-10 w-[clamp(14px,40%,30px)] rounded-t ${over ? "bg-red-600" : "bg-teal-600"} ${hover && !on ? "opacity-50" : ""}`}
+                    className={`relative z-10 w-[clamp(14px,40%,30px)] rounded-t-md ${over ? "bg-red-600" : "bg-teal-600"} ${hover && !on ? "opacity-50" : ""}`}
                     style={{ height: y(s.actual) }}
                   />
                   {/* target line */}
@@ -541,11 +538,18 @@ function StageColumns({ items }) {
   );
 }
 
-function Card({ title, note, action, children, className = "" }) {
+function Card({ title, icon: Icon, note, action, children, className = "" }) {
   return (
-    <section className={`flex flex-col rounded-lg border border-slate-200 bg-white ${className}`}>
-      <div className="flex min-h-9 flex-none flex-wrap items-center justify-between gap-2 border-b border-slate-100 px-3 py-0.5">
-        <h2 className="truncate text-[13px] font-semibold text-[#0B1F3A]">{title}</h2>
+    <section className={`flex flex-col rounded-xl border border-slate-200/80 bg-white ${CARD_SHADOW} ${className}`}>
+      <div className="flex min-h-10 flex-none flex-wrap items-center justify-between gap-2 border-b border-slate-100 px-3 py-1 [@media(max-height:660px)]:min-h-9 [@media(max-height:660px)]:py-0.5">
+        <h2 className="flex min-w-0 items-center gap-2 text-[13.5px] font-semibold text-[#0B1F3A]">
+          {Icon && (
+            <span className="grid h-6 w-6 flex-none place-items-center rounded-md bg-teal-50 text-teal-700 ring-1 ring-inset ring-teal-100">
+              <Icon className="h-3.5 w-3.5" aria-hidden="true" />
+            </span>
+          )}
+          <span className="truncate">{title}</span>
+        </h2>
         {action}
         {!action && note && (
           <span className="flex-none truncate text-xs text-slate-500" aria-live="polite">
@@ -583,9 +587,9 @@ function BarList({ items, labelKey, total, hover, setHover, stacked = false }) {
       {items.map((it) => {
         const active = hover?.[labelKey] === it[labelKey];
         const bar = (
-          <span className={`block rounded-r bg-slate-100 ${stacked ? "mt-1 h-1.5" : "h-2 flex-1"}`}>
+          <span className={`block rounded-full bg-slate-100 ${stacked ? "mt-1 h-1.5" : "h-2 flex-1"}`}>
             <span
-              className={`block rounded-r ${stacked ? "h-1.5" : "h-2"} ${active ? "bg-teal-800" : "bg-teal-600"}`}
+              className={`block rounded-full ${stacked ? "h-1.5" : "h-2"} ${active ? "bg-[#0B1F3A]" : "bg-teal-600"}`}
               style={{ width: `${(it.count / max) * 100}%` }}
             />
           </span>
@@ -652,7 +656,7 @@ function Columns({ items, labelKey, valueKey = "count", hover, setHover, colorFo
             >
               {!inside && <span className="text-xs font-semibold tabular-nums text-slate-700">{format(it[valueKey])}</span>}
               <span
-                className={`flex w-full max-w-[48px] items-end justify-center rounded-t pb-1 ${active ? "bg-[#0B1F3A]" : colorFor(it, i)}`}
+                className={`flex w-full max-w-[48px] items-end justify-center rounded-t-md pb-1 transition-colors ${active ? "bg-[#0B1F3A]" : colorFor(it, i)}`}
                 style={{ height: h }}
               >
                 {inside && (
@@ -679,7 +683,7 @@ function Columns({ items, labelKey, valueKey = "count", hover, setHover, colorFo
             {targetLabel ?? `Target ${format(target)}`}
           </span>
           <span className="flex items-center gap-1.5">
-            <span className="inline-block h-2.5 w-2.5 rounded-sm bg-teal-300" aria-hidden="true" />
+            <span className={`inline-block h-2.5 w-2.5 rounded-sm ${MTD_BG}`} aria-hidden="true" />
             Current month to date
           </span>
         </p>
@@ -859,7 +863,6 @@ export default function ODHandlerDashboard() {
   const [toast, setToast] = useState("");
   const [hAge, setHAge] = useState(null);
   const [hStage, setHStage] = useState(null);
-  const [hLoss, setHLoss] = useState(null);
   const [hSla, setHSla] = useState(null);
   const [hTat, setHTat] = useState(null);
   const [slaView, setSlaView] = useState(() => readView(SLA_VIEW_KEY, SLA_VIEWS));
@@ -867,18 +870,9 @@ export default function ODHandlerDashboard() {
   const [stageChart, setStageChart] = useState(() => readView(STAGE_CHART_KEY, STAGE_CHARTS));
   const [slaChartPick, setSlaChartPick] = useState(() => readChart(SLA_CHART_KEY));
   const [portChartPick, setPortChartPick] = useState(() => readChart(PORT_CHART_KEY));
-  const [workView, setWorkView] = useState(() => readView(WORK_VIEW_KEY, WORK_VIEWS));
   const [workChartPick, setWorkChartPick] = useState(() => readChart(WORK_CHART_KEY));
   const [hPend, setHPend] = useState(null);
-  const [hClosed, setHClosed] = useState(null);
-  const workChart = WORK_CHARTS[workView].includes(workChartPick) ? workChartPick : WORK_CHARTS[workView][0];
-
-  function changeWorkView(v) {
-    setWorkView(v);
-    setHPend(null);
-    setHClosed(null);
-    saveView(WORK_VIEW_KEY, v);
-  }
+  const workChart = WORK_CHARTS.includes(workChartPick) ? workChartPick : WORK_CHARTS[0];
   function changeWorkChart(t) {
     setWorkChartPick(t);
     saveView(WORK_CHART_KEY, t);
@@ -912,7 +906,6 @@ export default function ODHandlerDashboard() {
     setPortView(v);
     setHAge(null);
     setHStage(null);
-    setHLoss(null);
     saveView(PORT_VIEW_KEY, v);
   }
 
@@ -935,7 +928,8 @@ export default function ODHandlerDashboard() {
       value: total,
       sub: "Assigned to me",
       icon: FolderOpen,
-      tone: "bg-slate-100 text-slate-700",
+      tone: "bg-slate-100 text-[#0B1F3A]",
+      accent: "bg-[#0B1F3A]",
     },
     {
       label: "SLA met",
@@ -943,8 +937,9 @@ export default function ODHandlerDashboard() {
       sub: `Target ${SLA_KPIS.slaTarget}%`,
       icon: Gauge,
       tone: slaOk ? "bg-emerald-50 text-emerald-700" : "bg-red-50 text-red-700",
+      accent: slaOk ? "bg-emerald-500" : "bg-red-500",
       status: slaOk ? "ok" : "breach",
-      statusText: slaOk ? "Met" : "Below",
+      statusText: slaOk ? "On target" : "Below target",
     },
     {
       label: "Avg TAT",
@@ -952,8 +947,9 @@ export default function ODHandlerDashboard() {
       sub: `Target ${SLA_KPIS.settlementTarget} d`,
       icon: Timer,
       tone: tatOk ? "bg-emerald-50 text-emerald-700" : "bg-red-50 text-red-700",
+      accent: tatOk ? "bg-emerald-500" : "bg-red-500",
       status: tatOk ? "ok" : "breach",
-      statusText: tatOk ? "Within" : "Over",
+      statusText: tatOk ? "On target" : "Over target",
     },
     {
       label: "SLA breached",
@@ -962,6 +958,7 @@ export default function ODHandlerDashboard() {
       sub: "Open claims",
       icon: AlertTriangle,
       tone: "bg-red-50 text-red-700",
+      accent: "bg-red-500",
     },
     {
       label: "At risk",
@@ -970,13 +967,7 @@ export default function ODHandlerDashboard() {
       sub: "Due ≤ 24 h",
       icon: Clock,
       tone: "bg-amber-50 text-amber-800",
-    },
-    {
-      label: "Closed (MTD)",
-      value: HANDLER_KPIS.closedMtd,
-      sub: "This month",
-      icon: CheckCircle2,
-      tone: "bg-emerald-50 text-emerald-700",
+      accent: "bg-amber-400",
     },
   ];
 
@@ -990,7 +981,7 @@ export default function ODHandlerDashboard() {
     >
       <div className="flex flex-col gap-2">
         {/* ---------------- KPI row ---------------- */}
-        <div className="grid grid-cols-2 gap-2 sm:grid-cols-3 lg:grid-cols-6">
+        <div className="grid grid-cols-2 gap-2 sm:grid-cols-3 lg:grid-cols-5">
           {KPIS.map((k) => {
             const Tag = k.tab ? "button" : "div";
             return (
@@ -1003,28 +994,31 @@ export default function ODHandlerDashboard() {
                     title: "Open in My Work Queue",
                   }
                 : {})}
-              className={`flex items-center gap-2 rounded-lg border border-slate-200 bg-white px-2 py-0.5 text-left ${
-                k.tab ? "transition hover:border-teal-600" : ""
+              className={`relative flex min-w-0 items-center gap-2.5 overflow-hidden rounded-xl border border-slate-200/80 bg-white py-1.5 pl-3.5 pr-2 text-left [@media(max-height:660px)]:py-1 ${CARD_SHADOW} ${
+                k.tab ? "transition hover:-translate-y-px hover:border-teal-600/60 hover:shadow-md" : ""
               }`}
             >
-              <span className={`grid h-6 w-6 flex-none place-items-center rounded ${k.tone}`}>
-                <k.icon className="h-3.5 w-3.5" aria-hidden="true" />
+              {/* colour accent on the left edge */}
+              <span className={`absolute inset-y-0 left-0 w-1 ${k.accent}`} aria-hidden="true" />
+              <span className={`grid h-8 w-8 flex-none place-items-center rounded-lg [@media(max-height:660px)]:h-7 [@media(max-height:660px)]:w-7 ${k.tone}`}>
+                <k.icon className="h-4 w-4" aria-hidden="true" />
               </span>
-              <span className="min-w-0">
-                <span className="block truncate text-[11px] font-medium leading-tight text-slate-500" title={k.label}>{k.label}</span>
-                <span className="block text-base font-semibold leading-tight text-slate-900 tabular-nums">{k.value}</span>
-                <span className="flex items-center gap-1 truncate text-[10.5px] leading-tight text-slate-500">
-                  {k.sub}
+              <span className="min-w-0 flex-1">
+                <span className="block truncate text-[10.5px] font-semibold uppercase leading-tight tracking-wide text-slate-500" title={k.label}>
+                  {k.label}
+                </span>
+                <span className="block text-[19px] [@media(max-height:660px)]:text-[17px] font-bold leading-tight tracking-tight text-slate-900 tabular-nums">{k.value}</span>
+                <span className="flex min-w-0 items-center gap-1.5 text-[10.5px] leading-tight text-slate-500">
+                  <span className="truncate">{k.sub}</span>
                   {k.status && (
                     <span
-                      className={`inline-flex items-center gap-0.5 font-semibold ${k.status === "ok" ? "text-emerald-700" : "text-red-700"}`}
+                      className={`inline-flex flex-none items-center gap-0.5 rounded-full px-1.5 font-semibold leading-4 ${
+                        k.status === "ok" ? "bg-emerald-50 text-emerald-700" : "bg-red-50 text-red-700"
+                      }`}
                     >
-                      {k.status === "ok" ? (
-                        <CheckCircle2 className="h-3 w-3" aria-hidden="true" />
-                      ) : (
-                        <AlertTriangle className="h-3 w-3" aria-hidden="true" />
-                      )}
-                      <span className="sr-only">{k.statusText}</span>
+                      {k.status === "ok" ? <CheckCircle2 className="h-3 w-3" aria-hidden="true" /> : <AlertTriangle className="h-3 w-3" aria-hidden="true" />}
+                      <span className="hidden 2xl:inline">{k.statusText}</span>
+                      <span className="sr-only 2xl:hidden">{k.statusText}</span>
                     </span>
                   )}
                 </span>
@@ -1038,6 +1032,7 @@ export default function ODHandlerDashboard() {
         <div className="grid grid-cols-[minmax(0,1fr)] gap-2 md:grid-cols-2 lg:grid-cols-3">
           <Card
             title="SLA"
+            icon={Gauge}
             action={
               <div className="flex flex-wrap items-center gap-1.5">
                 <ViewSelect value={slaView} onChange={changeSlaView} views={SLA_VIEWS} label="Choose SLA view" />
@@ -1065,7 +1060,7 @@ export default function ODHandlerDashboard() {
             {slaView === "status" && slaChart === "summary" && (
               <div className="flex flex-col gap-2 px-3 py-1.5">
                 <div
-                  className="flex h-2.5 gap-[2px] overflow-hidden rounded"
+                  className="flex h-3 gap-[2px] overflow-hidden rounded-full"
                   role="img"
                   aria-label={SLA_SUMMARY.map((x) => `${x.label} ${x.count}`).join(", ")}
                 >
@@ -1077,14 +1072,14 @@ export default function ODHandlerDashboard() {
                   {SLA_SUMMARY.map((x) => {
                     const st = STATUS[x.key];
                     return (
-                      <li key={x.key} className="flex min-w-0 items-center gap-1.5 rounded border border-slate-100 px-1.5 py-0.5" title={x.label}>
-                        <span className={`grid h-5 w-5 flex-none place-items-center rounded ${st.chip}`}>
-                          <st.Icon className="h-3 w-3" aria-hidden="true" />
+                      <li key={x.key} className="flex min-w-0 items-center gap-2 rounded-lg border border-slate-100 bg-slate-50/70 px-2 py-1" title={x.label}>
+                        <span className={`grid h-6 w-6 flex-none place-items-center rounded-md ${st.chip}`}>
+                          <st.Icon className="h-3.5 w-3.5" aria-hidden="true" />
                         </span>
                         <span className="min-w-0">
                           <span className="block truncate text-[11px] leading-tight text-slate-500">{x.label.split(" (")[0]}</span>
                           <span className="flex items-baseline gap-1.5">
-                            <span className="text-sm font-semibold tabular-nums text-slate-900">{x.count}</span>
+                            <span className="text-base font-bold leading-tight tabular-nums text-slate-900">{x.count}</span>
                             <span className="text-xs tabular-nums text-slate-500">{pct(x.count, total)}%</span>
                           </span>
                         </span>
@@ -1131,7 +1126,7 @@ export default function ODHandlerDashboard() {
                 target={SLA_KPIS.slaTarget}
                 targetLabel={`Target ${SLA_KPIS.slaTarget}% (higher is better)`}
                 format={(v) => `${v}%`}
-                colorFor={(m) => (m.mtd ? "bg-teal-300" : "bg-teal-700")}
+                colorFor={(m) => (m.mtd ? MTD_BG : "bg-teal-700")}
                 inkFor={(m) => (m.mtd ? "text-slate-900" : "text-white")}
               />
             )}
@@ -1160,7 +1155,7 @@ export default function ODHandlerDashboard() {
                 target={SLA_KPIS.settlementTarget}
                 targetLabel={`Target ${SLA_KPIS.settlementTarget} days (lower is better)`}
                 format={(v) => `${Number(v).toFixed(1)}`}
-                colorFor={(m) => (m.mtd ? "bg-teal-300" : "bg-teal-700")}
+                colorFor={(m) => (m.mtd ? MTD_BG : "bg-teal-700")}
                 inkFor={(m) => (m.mtd ? "text-slate-900" : "text-white")}
               />
             )}
@@ -1180,6 +1175,7 @@ export default function ODHandlerDashboard() {
 
           <Card
             title="Portfolio"
+            icon={Layers}
             action={
               <div className="flex flex-wrap items-center gap-1.5">
                 <ViewSelect value={portView} onChange={changePortView} views={PORT_VIEWS} label="Choose portfolio view" />
@@ -1196,10 +1192,6 @@ export default function ODHandlerDashboard() {
                 (hStage
                   ? `${hStage.stage}: ${hStage.count} claims (${pct(hStage.count, total)}%)`
                   : `${total} open claims by current lifecycle stage`)}
-              {portView === "loss" &&
-                (hLoss
-                  ? `${hLoss.type}: ${hLoss.count} claims (${pct(hLoss.count, total)}%)`
-                  : `${total} open claims by loss type`)}
             </p>
 
             {/* --- Ageing --- */}
@@ -1210,7 +1202,7 @@ export default function ODHandlerDashboard() {
                 hover={hAge}
                 setHover={setHAge}
                 height={70}
-                colorFor={(_, i) => ["bg-teal-300", "bg-teal-400", "bg-teal-600", "bg-teal-700", "bg-teal-900"][i]}
+                colorFor={(_, i) => AGE_BG[i]}
               />
             )}
             {portView === "ageing" && portChart !== "bar" && (
@@ -1242,47 +1234,22 @@ export default function ODHandlerDashboard() {
             )}
 
             {/* --- Loss type --- */}
-            {portView === "loss" && portChart === "bar" && (
-              <BarList items={LOSS_TYPES} labelKey="type" total={total} hover={hLoss} setHover={setHLoss} />
-            )}
-            {portView === "loss" && portChart !== "bar" && (
-              <PieChart
-                items={LOSS_TYPES}
-                labelKey="type"
-                total={total}
-                donut={portChart === "donut"}
-                hover={hLoss}
-                setHover={setHLoss}
-                colorFor={(_, i) => CAT_HEX[i]}
-              />
-            )}
           </Card>
 
           <Card
             className="md:col-span-2 lg:col-span-1"
-            title="Workload"
-            action={
-              <div className="flex flex-wrap items-center gap-1.5">
-                <ViewSelect value={workView} onChange={changeWorkView} views={WORK_VIEWS} label="Choose workload view" />
-                <ViewSelect value={workChart} onChange={changeWorkChart} views={chartOptions(WORK_CHARTS[workView])} label="Chart type" />
-              </div>
-            }
+            title="Pending with"
+            icon={Users}
+            action={<ViewSelect value={workChart} onChange={changeWorkChart} views={chartOptions(WORK_CHARTS)} label="Chart type" />}
           >
             <p className="px-3 pt-1 text-[11px] text-slate-500" aria-live="polite">
-              {workView === "pending" &&
-                (hPend
-                  ? `${hPend.party}: ${hPend.count} claims (${pct(hPend.count, total)}%)`
-                  : `Who my ${total} open claims are waiting on`)}
-              {workView === "closed" &&
-                (hClosed
-                  ? `${hClosed.month}${hClosed.mtd ? " (to date)" : ""}: ${hClosed.count} claims closed`
-                  : "Claims I closed each month · hover for detail")}
+              {hPend ? `${hPend.party}: ${hPend.count} claims (${pct(hPend.count, total)}%)` : `Who my ${total} open claims are waiting on`}
             </p>
 
-            {workView === "pending" && workChart === "bar" && (
+            {workChart === "bar" && (
               <BarList items={PENDING_WITH} labelKey="party" total={total} hover={hPend} setHover={setHPend} />
             )}
-            {workView === "pending" && workChart !== "bar" && (
+            {workChart !== "bar" && (
               <PieChart
                 items={foldToSix(PENDING_WITH, "party")}
                 labelKey="party"
@@ -1294,25 +1261,13 @@ export default function ODHandlerDashboard() {
               />
             )}
 
-            {workView === "closed" && workChart === "bar" && (
-              <Columns
-                items={CLOSED_TREND}
-                labelKey="month"
-                hover={hClosed}
-                setHover={setHClosed}
-                height={70}
-                colorFor={(m) => (m.mtd ? "bg-teal-300" : "bg-teal-700")}
-              />
-            )}
-            {workView === "closed" && workChart === "line" && (
-              <LineChart items={CLOSED_TREND} labelKey="month" valueKey="count" hover={hClosed} setHover={setHClosed} />
-            )}
           </Card>
         </div>
 
         {/* ---------------- Row 3: Stage-wise TAT vs target (only what a handler needs) ---------------- */}
         <Card
           title="Stage-wise TAT vs target"
+          icon={Timer}
           action={
             <div className="flex items-center gap-2">
               <span className="hidden text-xs text-slate-500 sm:inline">Average days · last 90 days</span>

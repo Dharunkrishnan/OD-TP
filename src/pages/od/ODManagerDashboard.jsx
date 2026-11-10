@@ -6,10 +6,11 @@
 //
 //   KPI row       – team open, SLA breached, at risk, waiting for my approval, SLA met, avg TAT
 //   Team SLA      – SLA status (open) · SLA met by handler · Avg TAT by handler
-//   Team workload – Open vs capacity · Breached & at risk · Due today · Closed (30 days)
+//   Team workload – Open vs capacity · Breached & at risk · Due today
 //   Approvals     – waiting for my approval: oldest first · over SLA · above my limit · highest amount
 //   Stage-wise TAT vs target (team) – Column / Bar / Line / Variance + table
-//   Watch list    – all · high value · red flags · late intimation
+//   Watch list    – all · high value · red flags (incl. late intimation)
+// Shows only what a manager acts on: team SLA, load balance, approvals, risk.
 // Data: src/data/odTeamMock.js (Karthik's figures come from his real queue).
 
 import { useEffect, useId, useRef, useState } from "react";
@@ -29,7 +30,6 @@ import {
   Plane,
   Shuffle,
   Users,
-  CalendarCheck,
   ArrowDownWideNarrow,
   ArrowUpRight,
   ListFilter,
@@ -511,15 +511,6 @@ function Card({ title, note, action, children, className = "" }) {
   );
 }
 
-function StatusChip({ kind, children }) {
-  const s = STATUS[kind];
-  return (
-    <span className={`inline-flex items-center gap-1 whitespace-nowrap rounded px-1.5 py-0 text-[10.5px] font-semibold leading-[18px] ${s.chip}`}>
-      <s.Icon className="h-3.5 w-3.5" aria-hidden="true" />
-      {children}
-    </span>
-  );
-}
 
 /** Horizontal bar list – one hue. stacked = label above bar (narrow cards). */
 function BarList({ items, labelKey, total, hover, setHover, stacked = false }) {
@@ -758,9 +749,8 @@ const WORK_VIEWS = [
   { key: "capacity", label: "Open vs capacity", icon: Users, hint: `Open claims per handler · capacity ${HANDLER_CAPACITY}` },
   { key: "risk", label: "Breached & at risk", icon: AlertTriangle, hint: "Who needs help with SLA right now" },
   { key: "due", label: "Due today", icon: CalendarClock, hint: "Claims due today, by handler" },
-  { key: "closed", label: "Closed (30 days)", icon: CalendarCheck, hint: "Claims closed in the last 30 days" },
 ];
-const WORK_CHARTS = { capacity: ["hbar", "bar", "pie", "donut"], risk: ["hbar", "pie", "donut"], due: ["hbar", "bar", "pie", "donut"], closed: ["hbar", "bar", "pie", "donut"] };
+const WORK_CHARTS = { capacity: ["hbar", "bar", "pie", "donut"], risk: ["hbar", "pie", "donut"], due: ["hbar", "bar", "pie", "donut"] };
 
 const APPROVAL_VIEWS = [
   { key: "oldest", label: "Oldest first", icon: Hourglass, hint: "Longest waiting at the top" },
@@ -772,8 +762,7 @@ const APPROVAL_VIEWS = [
 const WATCH_VIEWS = [
   { key: "all", label: "All", icon: ListFilter, hint: "High value and red-flag claims" },
   { key: "value", label: "High value", icon: IndianRupee, hint: "Total loss / reserve above ₹5 L" },
-  { key: "fraud", label: "Red flags", icon: ShieldAlert, hint: "Fraud indicators, SIU, repeat claims" },
-  { key: "late", label: "Late intimation", icon: Clock, hint: "Reported well after the loss" },
+  { key: "fraud", label: "Red flags", icon: ShieldAlert, hint: "Fraud indicators, SIU, repeat claims, late intimation" },
 ];
 
 const KEY = {
@@ -978,7 +967,7 @@ export default function ODManagerDashboard() {
   const byHandler = (k) => TEAM.map((h) => ({ ...h, label: first(h.name), value: h[k], count: h[k] }));
   const onLeave = TEAM.filter((h) => h.status === "leave");
   // workload numbers per handler for the chosen view (risk = breached + at risk, i.e. needing attention)
-  const WORK_FIELD = { capacity: "open", due: "dueToday", closed: "closed30" };
+  const WORK_FIELD = { capacity: "open", due: "dueToday" };
   const workItems = TEAM.map((h) => {
     const v = workView === "risk" ? h.breached + h.atRisk : h[WORK_FIELD[workView]];
     return { ...h, label: first(h.name), count: v, value: v };
@@ -992,7 +981,8 @@ export default function ODManagerDashboard() {
     if (apprView === "amount") return list.sort((a, b) => b.amount - a.amount);
     return list; // already oldest first
   })();
-  const watch = watchView === "all" ? WATCHLIST : WATCHLIST.filter((w) => w.kind === watchView);
+  // late intimation is a red flag too
+  const watch = watchView === "all" ? WATCHLIST : WATCHLIST.filter((w) => (watchView === "fraud" ? w.kind === "fraud" || w.kind === "late" : w.kind === watchView));
 
   const handlerReadout = (h) =>
     `${h.name}${h.status === "leave" ? " (on leave)" : ""}: ${h.open} open · ${h.breached} breached · ${h.atRisk} at risk · ${h.dueToday} due today · SLA ${h.slaMet}% · TAT ${h.avgTat} d`;
@@ -1145,15 +1135,13 @@ export default function ODManagerDashboard() {
                     : `${K.open} open claims across ${TEAM.length} handlers`
                   : workView === "risk"
                     ? `${K.breached} breached · ${K.atRisk} at risk across the team${workChart === "hbar" ? "" : " · share by handler"}`
-                    : workView === "due"
-                      ? `${K.dueToday} claims due today · hover a handler`
-                      : `${K.closed30} claims closed in the last 30 days`}
+                    : `${K.dueToday} claims due today · hover a handler`}
             </p>
 
             {/* custom horizontal views */}
             {workView === "capacity" && workChart === "hbar" && <CapacityBars hover={hWork} setHover={setHWork} onReallocate={() => notBuilt("Reallocation")} />}
             {workView === "risk" && workChart === "hbar" && <RiskBars hover={hWork} setHover={setHWork} />}
-            {(workView === "due" || workView === "closed") && workChart === "hbar" && (
+            {workView === "due" && workChart === "hbar" && (
               <BarList items={workItems.map((h) => ({ ...h, label: h.name }))} labelKey="label" total={workTotal} hover={hWork} setHover={setHWork} />
             )}
             {/* columns */}
@@ -1171,12 +1159,12 @@ export default function ODManagerDashboard() {
                 colorFor={(h) => (h.open > HANDLER_CAPACITY ? "bg-red-600" : h.open > HANDLER_CAPACITY * 0.85 ? "bg-amber-500" : h.status === "leave" ? "bg-teal-700/50" : "bg-teal-700")}
               />
             )}
-            {(workView === "due" || workView === "closed") && workChart === "bar" && (
+            {workView === "due" && workChart === "bar" && (
               <Columns items={workItems} labelKey="label" hover={hWork} setHover={setHWork} height={86} colorFor={() => "bg-teal-700"} />
             )}
             {/* shares of the team total */}
             {(workChart === "pie" || workChart === "donut") && (
-              <PieChart items={workItems} labelKey="label" total={workTotal} donut={workChart === "donut"} hover={hWork} setHover={setHWork} colorFor={(_, i) => CAT_HEX[i]} centerLabel={{ capacity: "open", risk: "need action", due: "due today", closed: "closed" }[workView]} />
+              <PieChart items={workItems} labelKey="label" total={workTotal} donut={workChart === "donut"} hover={hWork} setHover={setHWork} colorFor={(_, i) => CAT_HEX[i]} centerLabel={{ capacity: "open", risk: "need action", due: "due today" }[workView]} />
             )}
           </Card>
 
@@ -1254,7 +1242,6 @@ export default function ODManagerDashboard() {
                   <tr className="bg-slate-50 text-[10.5px] uppercase tracking-wide text-slate-500">
                     <th scope="col" className="px-3 py-1 font-semibold">Stage</th>
                     <th scope="col" className="whitespace-nowrap px-2 py-1 text-right font-semibold">Avg / target</th>
-                    <th scope="col" className="hidden px-2 py-1 font-semibold min-[1340px]:table-cell">Status</th>
                     <th scope="col" className="px-3 py-1 text-right font-semibold" title="Team open claims now over the stage SLA">Breached</th>
                   </tr>
                 </thead>
@@ -1267,9 +1254,6 @@ export default function ODManagerDashboard() {
                         <td className="whitespace-nowrap px-2 py-1 [@media(max-height:660px)]:py-0.5 text-right tabular-nums">
                           <span className={`font-semibold ${over ? "text-red-700" : "text-slate-800"}`}>{fmtDays(s.actual)}</span>
                           <span className="text-slate-400"> / {fmtDays(s.target)}</span>
-                        </td>
-                        <td className="hidden px-2 py-1 [@media(max-height:660px)]:py-0.5 min-[1340px]:table-cell">
-                          {over ? <StatusChip kind="breach">Over {(s.actual - s.target).toFixed(1)} d</StatusChip> : <StatusChip kind="ok">On track</StatusChip>}
                         </td>
                         <td className="px-3 py-1 [@media(max-height:660px)]:py-0.5 text-right tabular-nums">
                           {s.breachedOpen > 0 ? (
@@ -1287,7 +1271,6 @@ export default function ODManagerDashboard() {
                 <tfoot>
                   <tr className="border-t border-slate-200 bg-slate-50 font-semibold text-slate-800">
                     <td className="px-3 py-1 [@media(max-height:660px)]:py-0.5" colSpan={2}>Team total breached</td>
-                    <td className="hidden min-[1340px]:table-cell" />
                     <td className="px-3 py-1 text-right tabular-nums text-red-700 [@media(max-height:660px)]:py-0.5">{STAGES.reduce((t, s) => t + s.breachedOpen, 0)}</td>
                   </tr>
                 </tfoot>
