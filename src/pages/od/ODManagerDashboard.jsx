@@ -821,6 +821,7 @@ function CapacityBars({ hover, setHover, onReallocate }) {
                       type="button"
                       onClick={onReallocate}
                       title={`${h.leaveNote} · ${h.dueToday} due today – reallocate`}
+                      aria-label={`Reallocate ${first(h.name)}'s claims – ${h.dueToday} due today`}
                       className="inline-flex items-center gap-0.5 rounded bg-amber-50 px-1 text-[10.5px] font-semibold text-amber-900 ring-1 ring-inset ring-amber-200 hover:bg-amber-100"
                     >
                       <Shuffle className="h-3 w-3" aria-hidden="true" />
@@ -950,12 +951,12 @@ export default function ODManagerDashboard() {
   const slaOk = K.slaMet >= K.slaTarget;
   const tatOk = K.avgTat <= K.tatTarget;
   const KPIS = [
-    { label: "Team open claims", value: K.open, sub: `${TEAM.length} handlers`, icon: FolderOpen, tone: "bg-slate-100 text-slate-700", go: "Team Work Queue" },
+    { label: "Team open claims", value: K.open, sub: `${TEAM.length} handlers`, icon: FolderOpen, tone: "bg-slate-100 text-slate-700", go: "Team Work Queue", to: "/od/team-queue" },
     { label: "SLA met (30 days)", value: `${K.slaMet}%`, sub: `Target ${K.slaTarget}%`, icon: Gauge, tone: slaOk ? "bg-emerald-50 text-emerald-700" : "bg-red-50 text-red-700", ok: slaOk },
     { label: "Avg TAT (30 days)", value: fmtDays(K.avgTat), sub: `Target ${K.tatTarget} d`, icon: Timer, tone: tatOk ? "bg-emerald-50 text-emerald-700" : "bg-red-50 text-red-700", ok: tatOk },
-    { label: "SLA breached", value: K.breached, sub: "Open claims", icon: AlertTriangle, tone: "bg-red-50 text-red-700", go: "Team Work Queue" },
-    { label: "At risk", value: K.atRisk, sub: "Due ≤ 24 h", icon: Clock, tone: "bg-amber-50 text-amber-800", go: "Team Work Queue" },
-    { label: "Waiting for my approval", value: K.approvals, sub: `${lakh(K.approvalsValue)} · ${K.approvalsOverSla} over SLA`, icon: ClipboardCheck, tone: "bg-teal-50 text-teal-800", go: "Approvals" },
+    { label: "SLA breached", value: K.breached, sub: "Open claims", icon: AlertTriangle, tone: "bg-red-50 text-red-700", go: "Team Work Queue", to: "/od/team-queue?show=breach" },
+    { label: "At risk", value: K.atRisk, sub: "Due ≤ 24 h", icon: Clock, tone: "bg-amber-50 text-amber-800", go: "Team Work Queue", to: "/od/team-queue?show=risk" },
+    { label: "Waiting for my approval", value: K.approvals, sub: `${lakh(K.approvalsValue)} · ${K.approvalsOverSla} over SLA`, icon: ClipboardCheck, tone: "bg-teal-50 text-teal-800", go: "Approvals", to: "/od/approvals" },
   ];
 
   /* data for the cards */
@@ -997,7 +998,7 @@ export default function ODManagerDashboard() {
             return (
               <Tag
                 key={k.label}
-                {...(k.go ? { type: "button", onClick: () => (k.go === "Approvals" ? navigate("/od/approvals") : notBuilt(k.go)), title: `Open ${k.go}` } : {})}
+                {...(k.go ? { type: "button", onClick: () => navigate(k.to), title: `Open ${k.go}` } : {})}
                 className={`flex min-w-0 items-center gap-2 rounded-lg border border-slate-200 bg-white px-2 py-0.5 text-left ${k.go ? "transition hover:border-teal-600" : ""}`}
               >
                 <span className={`grid h-6 w-6 flex-none place-items-center rounded ${k.tone}`}>
@@ -1139,7 +1140,7 @@ export default function ODManagerDashboard() {
             </p>
 
             {/* custom horizontal views */}
-            {workView === "capacity" && workChart === "hbar" && <CapacityBars hover={hWork} setHover={setHWork} onReallocate={() => notBuilt("Reallocation")} />}
+            {workView === "capacity" && workChart === "hbar" && <CapacityBars hover={hWork} setHover={setHWork} onReallocate={() => navigate(`/od/team-queue?handler=${onLeave[0]?.userId || ""}`)} />}
             {workView === "risk" && workChart === "hbar" && <RiskBars hover={hWork} setHover={setHWork} />}
             {workView === "due" && workChart === "hbar" && (
               <BarList items={workItems.map((h) => ({ ...h, label: h.name }))} labelKey="label" total={workTotal} hover={hWork} setHover={setHWork} />
@@ -1257,7 +1258,7 @@ export default function ODManagerDashboard() {
                         </td>
                         <td className="px-3 py-1 [@media(max-height:660px)]:py-0.5 text-right tabular-nums">
                           {s.breachedOpen > 0 ? (
-                            <button type="button" onClick={() => notBuilt("Team Work Queue")} title="Open these claims in the Team Work Queue" className="font-semibold text-red-700 hover:underline">
+                            <button type="button" onClick={() => navigate("/od/team-queue?show=breach")} title="Open breached claims in the Team Work Queue" className="font-semibold text-red-700 hover:underline">
                               {s.breachedOpen}
                             </button>
                           ) : (

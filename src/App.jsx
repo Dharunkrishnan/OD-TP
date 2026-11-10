@@ -5,6 +5,8 @@
 // /od/dashboard   – OD home (role-based: ODHome picks the dashboard per OD role)
 // /od/worklist    – OD My Work Queue (?tab=due|breach|risk|docs|nbnr)
 // /od/intimation  – OD Claim Intimation (FNOL) – intimation + registration
+// /od/approvals   – OD Claims Manager approvals (?claim=OD-CHN-26-004498)
+// /od/team-queue  – OD Claims Manager team work queue + reallocation (?handler=OD0145&show=breach)
 // /od/claims/:id  – OD Claim 360 (id = claim no with "/" → "-", e.g. OD-CHN-26-004512)
 // /tp/dashboard   – TP home
 // /no-access      – logged-in user with no OD/TP access assigned
@@ -18,6 +20,8 @@ import ODHome from "./pages/od/ODHome";
 import ODWorkQueue from "./pages/od/ODWorkQueue";
 import ODClaim360 from "./pages/od/ODClaim360";
 import ODIntimation from "./pages/od/ODIntimation";
+import ODApprovals from "./pages/od/ODApprovals";
+import ODTeamQueue from "./pages/od/ODTeamQueue";
 import TPDashboard from "./pages/TPDashboard";
 
 /* ---------------- Route guards ---------------- */
@@ -153,6 +157,28 @@ export default function App() {
               <RequireAuth>
                 <RequirePermission permission="OD">
                   <IntimationRoute />
+                </RequirePermission>
+              </RequireAuth>
+            }
+          />
+
+          <Route
+            path="/od/approvals"
+            element={
+              <RequireAuth>
+                <RequirePermission permission="OD">
+                  <ODApprovals />
+                </RequirePermission>
+              </RequireAuth>
+            }
+          />
+
+          <Route
+            path="/od/team-queue"
+            element={
+              <RequireAuth>
+                <RequirePermission permission="OD">
+                  <ODTeamQueue />
                 </RequirePermission>
               </RequireAuth>
             }

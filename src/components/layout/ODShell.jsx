@@ -46,7 +46,6 @@ import {
   FileText,
   UsersRound,
   ClipboardCheck,
-  Shuffle,
   AlertOctagon,
   BarChart3,
 } from "lucide-react";
@@ -68,13 +67,12 @@ const MANAGER_MENU = [
   { key: "dashboard", label: "Team Dashboard", icon: LayoutDashboard, to: "/od/dashboard" },
   { key: "approvals", label: "Approvals", icon: ClipboardCheck, to: "/od/approvals" },
   { key: "teamqueue", label: "Team Work Queue", icon: UsersRound, to: "/od/team-queue" },
-  { key: "reallocate", label: "Reallocation", icon: Shuffle, to: "/od/reallocation" },
   { key: "escalations", label: "Escalations", icon: AlertOctagon, to: "/od/escalations" },
   { key: "reports", label: "Reports", icon: BarChart3, to: "/od/reports" },
 ];
 
 // Pages that exist so far. Add each new route here as it is built.
-const BUILT_ROUTES = ["/od/dashboard", "/od/worklist", "/od/intimation"];
+const BUILT_ROUTES = ["/od/dashboard", "/od/worklist", "/od/intimation", "/od/approvals", "/od/team-queue"];
 
 const COLLAPSE_KEY = "smartclaims-sidebar-collapsed";
 const CLAIM_COLLAPSE_KEY = "smartclaims-claimnav-collapsed-v2"; // claim / intimation view opens minimised (icons only) by default
