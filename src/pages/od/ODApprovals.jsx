@@ -48,8 +48,8 @@ import {
   REPUDIATION_REASONS,
   REFER_RECOMMENDATIONS,
 } from "../../data/odApprovalsMock";
+import { KEYS, readStore, saveStore } from "../../data/odManagerData";
 
-const STORE_KEY = "smartclaims-approval-decisions";
 
 /* ---------------- helpers ---------------- */
 const inr = (n) => "₹" + Number(n).toLocaleString("en-IN");
@@ -59,20 +59,8 @@ const fmtDate = (iso) => new Date(iso + "T00:00:00").toLocaleDateString("en-IN",
 const fmtTime = (iso) => new Date(iso).toLocaleString("en-IN", { day: "2-digit", month: "short", hour: "2-digit", minute: "2-digit" });
 const firstName = (n) => n.split(" ")[0];
 
-function readDecisions() {
-  try {
-    return JSON.parse(sessionStorage.getItem(STORE_KEY) || "{}");
-  } catch {
-    return {};
-  }
-}
-function saveDecisions(d) {
-  try {
-    sessionStorage.setItem(STORE_KEY, JSON.stringify(d));
-  } catch {
-    /* ignore */
-  }
-}
+const readDecisions = () => readStore(KEYS.decisions);
+const saveDecisions = (d) => saveStore(KEYS.decisions, d);
 
 const OUTCOME = {
   approved: { label: "Approved", tone: "bg-emerald-50 text-emerald-800 ring-emerald-200", Icon: CheckCircle2 },

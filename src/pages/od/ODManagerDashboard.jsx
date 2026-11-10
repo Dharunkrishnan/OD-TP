@@ -11,7 +11,8 @@
 //   Stage-wise TAT vs target (team) – Column / Bar / Line / Variance + table
 //   Watch list    – all · high value · red flags (incl. late intimation)
 // Shows only what a manager acts on: team SLA, load balance, approvals, risk.
-// Data: src/data/odTeamMock.js (Karthik's figures come from his real queue).
+// Data: src/data/odTeamMock.js + live counts from src/data/odManagerData.js (approvals decided,
+// claims reallocated in this session are reflected here).
 
 import { useEffect, useId, useRef, useState } from "react";
 import { useNavigate } from "react-router-dom";
@@ -46,7 +47,8 @@ import {
 } from "lucide-react";
 import ODShell from "../../components/layout/ODShell";
 import { useAuth } from "../../auth";
-import { TEAM, TEAM_KPIS, APPROVALS, WATCHLIST, TEAM_TAT, MANAGER_AUTHORITY, APPROVAL_SLA_HOURS, HANDLER_CAPACITY } from "../../data/odTeamMock";
+import { TEAM_KPIS, WATCHLIST, TEAM_TAT, MANAGER_AUTHORITY, APPROVAL_SLA_HOURS, HANDLER_CAPACITY } from "../../data/odTeamMock";
+import { liveClaims, liveTeam, liveApprovals, liveKpis } from "../../data/odManagerData";
 
 /* ================================================================== */
 /* Chart building blocks (same as the Claims Handler dashboard)        */
@@ -800,12 +802,12 @@ function HandlerRow({ h, on, setHover, children, right }) {
   );
 }
 
-function CapacityBars({ hover, setHover, onReallocate }) {
-  const max = Math.max(...TEAM.map((h) => h.open), HANDLER_CAPACITY) * 1.08;
+function CapacityBars({ team, hover, setHover, onReallocate }) {
+  const max = Math.max(...team.map((h) => h.open), HANDLER_CAPACITY) * 1.08;
   return (
     <div className="px-3 py-1.5">
       <ul className="flex flex-col gap-1">
-        {TEAM.map((h) => {
+        {team.map((h) => {
           const load = h.open / HANDLER_CAPACITY;
           const tone = load > 1 ? "bg-red-600" : load > 0.85 ? "bg-amber-500" : "bg-teal-600";
           return (
@@ -850,12 +852,12 @@ function CapacityBars({ hover, setHover, onReallocate }) {
   );
 }
 
-function RiskBars({ hover, setHover }) {
-  const max = Math.max(...TEAM.map((h) => h.breached + h.atRisk)) * 1.08;
+function RiskBars({ team, hover, setHover }) {
+  const max = Math.max(...team.map((h) => h.breached + h.atRisk)) * 1.08;
   return (
     <div className="px-3 py-1.5">
       <ul className="flex flex-col gap-1">
-        {TEAM.map((h) => (
+        {team.map((h) => (
           <HandlerRow
             key={h.userId}
             h={h}
@@ -885,12 +887,12 @@ function RiskBars({ hover, setHover }) {
 }
 
 // Horizontal bars per handler with a dashed target line (SLA met %, average TAT)
-function TargetBars({ hover, setHover, valueOf, target, bad, format, targetLabel, badLabel }) {
-  const max = Math.max(...TEAM.map(valueOf), target) * 1.08;
+function TargetBars({ team, hover, setHover, valueOf, target, bad, format, targetLabel, badLabel }) {
+  const max = Math.max(...team.map(valueOf), target) * 1.08;
   return (
     <div className="px-3 py-1.5">
       <ul className="flex flex-col gap-1">
-        {TEAM.map((h) => {
+        {team.map((h) => {
           const v = valueOf(h);
           return (
             <HandlerRow
@@ -947,7 +949,14 @@ export default function ODManagerDashboard() {
     notBuilt.t = window.setTimeout(() => setToast(""), 2600);
   }
 
-  const K = TEAM_KPIS;
+  // live: reflects this session's approval decisions and reallocations
+  const [live] = useState(() => {
+    const team = liveTeam(liveClaims());
+    const approvals = liveApprovals();
+    return { team, approvals, kpis: liveKpis(team, approvals) };
+  });
+  const TEAM = live.team;
+  const K = { ...TEAM_KPIS, ...live.kpis };
   const slaOk = K.slaMet >= K.slaTarget;
   const tatOk = K.avgTat <= K.tatTarget;
   const KPIS = [
@@ -976,7 +985,7 @@ export default function ODManagerDashboard() {
   const workTotal = workItems.reduce((t, h) => t + h.count, 0);
 
   const approvals = (() => {
-    const list = [...APPROVALS];
+    const list = [...live.approvals];
     if (apprView === "sla") return list.filter((a) => a.waitingHours > APPROVAL_SLA_HOURS);
     if (apprView === "above") return list.filter((a) => a.amount > MANAGER_AUTHORITY);
     if (apprView === "amount") return list.sort((a, b) => b.amount - a.amount);
@@ -1110,10 +1119,10 @@ export default function ODManagerDashboard() {
               />
             )}
             {slaView === "met" && slaChart === "hbar" && (
-              <TargetBars hover={hSla} setHover={setHSla} valueOf={(h) => h.slaMet} target={K.slaTarget} bad={(v) => v < K.slaTarget} format={(v) => `${v}%`} targetLabel={`Target ${K.slaTarget}% (higher is better)`} badLabel="Below target" />
+              <TargetBars team={TEAM} hover={hSla} setHover={setHSla} valueOf={(h) => h.slaMet} target={K.slaTarget} bad={(v) => v < K.slaTarget} format={(v) => `${v}%`} targetLabel={`Target ${K.slaTarget}% (higher is better)`} badLabel="Below target" />
             )}
             {slaView === "tat" && slaChart === "hbar" && (
-              <TargetBars hover={hSla} setHover={setHSla} valueOf={(h) => h.avgTat} target={K.tatTarget} bad={(v) => v > K.tatTarget} format={(v) => `${Number(v).toFixed(1)} d`} targetLabel={`Target ${K.tatTarget} days (lower is better)`} badLabel="Over target" />
+              <TargetBars team={TEAM} hover={hSla} setHover={setHSla} valueOf={(h) => h.avgTat} target={K.tatTarget} bad={(v) => v > K.tatTarget} format={(v) => `${Number(v).toFixed(1)} d`} targetLabel={`Target ${K.tatTarget} days (lower is better)`} badLabel="Over target" />
             )}
           </Card>
 
@@ -1140,8 +1149,8 @@ export default function ODManagerDashboard() {
             </p>
 
             {/* custom horizontal views */}
-            {workView === "capacity" && workChart === "hbar" && <CapacityBars hover={hWork} setHover={setHWork} onReallocate={() => navigate(`/od/team-queue?handler=${onLeave[0]?.userId || ""}`)} />}
-            {workView === "risk" && workChart === "hbar" && <RiskBars hover={hWork} setHover={setHWork} />}
+            {workView === "capacity" && workChart === "hbar" && <CapacityBars team={TEAM} hover={hWork} setHover={setHWork} onReallocate={() => navigate(`/od/team-queue?handler=${onLeave[0]?.userId || ""}`)} />}
+            {workView === "risk" && workChart === "hbar" && <RiskBars team={TEAM} hover={hWork} setHover={setHWork} />}
             {workView === "due" && workChart === "hbar" && (
               <BarList items={workItems.map((h) => ({ ...h, label: h.name }))} labelKey="label" total={workTotal} hover={hWork} setHover={setHWork} />
             )}

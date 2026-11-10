@@ -11,9 +11,7 @@
 //   - quick read-only preview of a claim
 // Deep links: ?handler=OD0145  ?show=breach|risk|due
 //
-// Demo data: Karthik's 51 claims are his real queue; the other handlers' claims are generated to
-// match their figures in odTeamMock.js (open, breached, at risk, due today). Claims already shown
-// on the dashboard (approvals, watch list) keep their handler and amount.
+// Demo data: the team's claims come from src/data/odManagerData.js (shared with the dashboard).
 // Reallocations are kept for this browser session only (sessionStorage).
 // Replace with: GET /od/manager/team-queue · POST /od/manager/reallocate { claimNos, toUserId, reason, remarks }
 
@@ -41,119 +39,9 @@ import {
 } from "lucide-react";
 import ODShell from "../../components/layout/ODShell";
 import { auditLog, useAuth, getRole } from "../../auth";
-import { WORK_QUEUE } from "../../data/odHandlerMock";
 import { claimSlug } from "../../data/odClaimDetail";
-import { TEAM, HANDLER_CAPACITY, APPROVALS, WATCHLIST } from "../../data/odTeamMock";
-
-/* ================================================================== */
-/* Demo data – the team's open claims                                  */
-/* ================================================================== */
-const STAGE_ORDER = ["NBNR", "Registered", "Survey pending", "Assessment", "Documents pending", "Approval", "Repair / DO", "Payment"];
-const STAGE_WEIGHT = [2, 5, 7, 7, 10, 5, 5, 4];
-const PENDING_BY_STAGE = {
-  NBNR: ["Handler", "PAS / underwriting"],
-  Registered: ["Handler"],
-  "Survey pending": ["Surveyor", "Surveyor", "Surveyor", "SIU / investigator"],
-  Assessment: ["Surveyor", "Handler"],
-  "Documents pending": ["Insured", "Insured", "Garage / dealer"],
-  Approval: ["Claims approver"],
-  "Repair / DO": ["Garage / dealer"],
-  Payment: ["Finance"],
-};
-const NEXT_BY_STAGE = {
-  NBNR: "Verify premium realisation with PAS",
-  Registered: "Appoint surveyor",
-  "Survey pending": "Chase survey report",
-  Assessment: "Review assessment report",
-  "Documents pending": "Follow up pending documents",
-  Approval: "Await approval decision",
-  "Repair / DO": "Issue delivery order",
-  Payment: "Check NEFT status",
-};
-const NAMES = ["A. Senthil", "B. Kavya", "C. Murali", "D. Nandhini", "E. Ramesh", "F. Shabana", "G. Hari", "H. Deepa", "I. Prakash", "J. Swathi", "K. Arun", "L. Malathi", "M. Gokul", "N. Anitha", "P. Suresh", "R. Janani", "S. Vinoth", "T. Keerthana", "U. Dinesh", "V. Sangeetha", "K. Rajesh", "M. Divya", "S. Karthika", "R. Mohan", "P. Lavanya", "G. Sathish", "N. Revathi", "A. Imran", "J. Priya", "V. Ashwin"];
-const VEHICLES = ["Maruti Swift VXi", "Hyundai i20 Asta", "Tata Nexon XZ+", "Honda City ZX", "Maruti Baleno Zeta", "Kia Seltos HTX", "Hyundai Creta SX", "Mahindra XUV300 W8", "Toyota Glanza G", "Maruti Brezza ZXi", "Renault Kiger RXZ", "Tata Punch Creative", "Hyundai Venue SX", "Maruti Dzire ZXi", "Toyota Innova Crysta"];
-const LOSS = ["Accident – partial", "Accident – partial", "Accident – partial", "Accident – partial", "Accident – partial", "Flood – CAT", "Theft", "Fire", "Total loss / CTL"];
-const RESERVE_RANGE = { "Accident – partial": [12000, 140000], "Flood – CAT": [60000, 320000], Theft: [300000, 900000], Fire: [80000, 300000], "Total loss / CTL": [420000, 950000] };
-
-// small seeded random so the demo team is the same every time
-function seeded(seed) {
-  let s = [...seed].reduce((a, c) => a * 31 + c.charCodeAt(0), 7) >>> 0;
-  return () => {
-    s = (s * 1664525 + 1013904223) >>> 0;
-    return s / 4294967296;
-  };
-}
-const pickW = (rand, items, weights) => {
-  const total = weights.reduce((a, b) => a + b, 0);
-  let r = rand() * total;
-  for (let i = 0; i < items.length; i++) {
-    r -= weights[i];
-    if (r < 0) return items[i];
-  }
-  return items[items.length - 1];
-};
-
-// claims already shown on the dashboard keep their handler, loss and amount
-const FIXED = {
-  OD0134: [
-    { claimNo: "OD/CHN/26/004077", insured: "V. Narayanan", lossType: "Total loss / CTL", stage: "Assessment", reserve: 910000, flags: ["Major loss"] },
-    { claimNo: "OD/CHN/26/003981", insured: "S. Prabhu", lossType: "Accident – partial", stage: "Approval", reserve: 118500, flags: [] },
-  ],
-  OD0137: [{ claimNo: "OD/CHN/26/004102", insured: "R. Lalitha", lossType: "Flood – CAT", stage: "Approval", reserve: 346000, flags: ["CAT event"] }],
-  OD0131: [{ claimNo: "OD/CHN/26/004215", insured: "K. Mohan", lossType: "Fire", stage: "Approval", reserve: 264000, flags: [] }],
-  OD0142: [{ claimNo: "OD/CHN/26/003955", insured: "J. Kavitha", lossType: "Accident – partial", stage: "Documents pending", reserve: 221000, flags: ["Repeat claim"] }],
-};
-
-function generateFor(h, index) {
-  const rand = seeded(h.userId);
-  const fixed = FIXED[h.userId] || [];
-  const rows = [];
-  for (let i = 0; i < h.open; i++) {
-    const f = fixed[i];
-    const lossType = f?.lossType || LOSS[Math.floor(rand() * LOSS.length)];
-    const stage = f?.stage || pickW(rand, STAGE_ORDER, STAGE_WEIGHT);
-    const pend = PENDING_BY_STAGE[stage];
-    const [lo, hi] = RESERVE_RANGE[lossType];
-    const status = i < h.breached ? "breach" : i < h.breached + h.atRisk ? "risk" : "ok";
-    const ageDays = status === "breach" ? 18 + Math.floor(rand() * 50) : status === "risk" ? 6 + Math.floor(rand() * 40) : 1 + Math.floor(rand() * 35);
-    const n = 1 + Math.floor(rand() * 4);
-    const regNo = `TN ${String(1 + Math.floor(rand() * 22)).padStart(2, "0")} ${String.fromCharCode(65 + Math.floor(rand() * 26))}${String.fromCharCode(65 + Math.floor(rand() * 26))} ${1000 + Math.floor(rand() * 9000)}`;
-    rows.push({
-      claimNo: f?.claimNo || `${stage === "NBNR" ? "NB" : "OD"}/CHN/26/${stage === "NBNR" ? "000" : "00"}${stage === "NBNR" ? 300 + index * 40 + i : 3000 + index * 200 + i}`,
-      regNo,
-      vehicle: VEHICLES[Math.floor(rand() * VEHICLES.length)],
-      insured: f?.insured || NAMES[Math.floor(rand() * NAMES.length)],
-      lossType,
-      stage,
-      pendingWith: pend[Math.floor(rand() * pend.length)],
-      ageDays,
-      sla: { status, label: status === "breach" ? `Breached ${n} d` : status === "risk" ? `${4 + Math.floor(rand() * 18)} h left` : `${n + 1} d left` },
-      nextAction: NEXT_BY_STAGE[stage],
-      dueToday: false,
-      flags: f?.flags || (lossType === "Theft" && rand() < 0.4 ? ["Fraud flag"] : []),
-      reserve: f?.reserve || Math.round((lo + rand() * (hi - lo)) / 100) * 100,
-      handlerId: h.userId,
-    });
-  }
-  // due today: breached first, then at risk, then on track – as many as the handler's figure
-  rows.slice(0, h.dueToday).forEach((r) => (r.dueToday = true));
-  return rows;
-}
-
-const KARTHIK = TEAM.find((h) => h.userId === "OD0123");
-const BASE_CLAIMS = [
-  ...WORK_QUEUE.map((r) => ({ ...r, pendingWith: r.pendingWith === "Me (handler)" ? "Handler" : r.pendingWith, handlerId: KARTHIK.userId, real: true })),
-  ...TEAM.filter((h) => h.userId !== KARTHIK.userId).flatMap((h, i) => generateFor(h, i)),
-];
-// approvals keep their recommended amount as the reserve
-APPROVALS.forEach((a) => {
-  const c = BASE_CLAIMS.find((x) => x.claimNo === a.claimNo);
-  if (c) c.reserve = Math.max(c.reserve, a.amount);
-});
-WATCHLIST.forEach((w) => {
-  const c = BASE_CLAIMS.find((x) => x.claimNo === w.claimNo);
-  if (c) c.reserve = w.reserve;
-});
+import { TEAM, HANDLER_CAPACITY } from "../../data/odTeamMock";
+import { TEAM_CLAIMS, STAGE_ORDER, KEYS, readStore, saveStore } from "../../data/odManagerData";
 
 /* ================================================================== */
 /* Helpers                                                             */
@@ -170,7 +58,6 @@ const initials = (n) =>
     .join("");
 const lakh = (n) => (n >= 100000 ? `₹${(n / 100000).toFixed(2)} L` : "₹" + Number(n).toLocaleString("en-IN"));
 const inr = (n) => "₹" + Number(n).toLocaleString("en-IN");
-const MOVES_KEY = "smartclaims-team-moves";
 
 const SHOW = [
   { key: "all", label: "All open" },
@@ -197,20 +84,8 @@ const STAGE_DOT = {
 };
 const SLA_STRIPE = { breach: "shadow-[inset_3px_0_0_#dc2626]", risk: "shadow-[inset_3px_0_0_#f59e0b]", ok: "shadow-[inset_3px_0_0_#10b981]" };
 
-function readMoves() {
-  try {
-    return JSON.parse(sessionStorage.getItem(MOVES_KEY) || "{}");
-  } catch {
-    return {};
-  }
-}
-function saveMoves(m) {
-  try {
-    sessionStorage.setItem(MOVES_KEY, JSON.stringify(m));
-  } catch {
-    /* ignore */
-  }
-}
+const readMoves = () => readStore(KEYS.moves);
+const saveMoves = (m) => saveStore(KEYS.moves, m);
 
 function SlaChip({ sla }) {
   const map = {
@@ -626,7 +501,7 @@ function TeamQueuePage() {
   };
 
   // claims with their current handler (after this session's reallocations)
-  const claims = useMemo(() => BASE_CLAIMS.map((c) => ({ ...c, effHandler: moves[c.claimNo]?.to || c.handlerId })), [moves]);
+  const claims = useMemo(() => TEAM_CLAIMS.map((c) => ({ ...c, effHandler: moves[c.claimNo]?.to || c.handlerId })), [moves]);
   const loads = useMemo(() => Object.fromEntries(TEAM.map((h) => [h.userId, claims.filter((c) => c.effHandler === h.userId).length])), [claims]);
   const statsFor = (list) => ({ n: list.length, breach: list.filter((c) => c.sla.status === "breach").length, risk: list.filter((c) => c.sla.status === "risk").length, due: list.filter((c) => c.dueToday).length });
 

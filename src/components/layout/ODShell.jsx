@@ -24,6 +24,7 @@ import { useNavigate } from "react-router-dom";
 import SearchPopover from "../SearchPopover";
 import NotificationsPopover from "../NotificationsPopover";
 import { NOTIFICATIONS } from "../../data/notifications";
+import { managerBadges, managerNotifications } from "../../data/odManagerData";
 import { HANDLER_KPIS, DIARY } from "../../data/odHandlerMock";
 import { claimSlug } from "../../data/odClaimDetail";
 import { searchClaims, dueTodayClaims, searchPolicies, slaTone } from "../../data/searchIndex";
@@ -183,6 +184,17 @@ export default function ODShell({ active = "dashboard", title, subtitle, childre
   // Main menu and claim view remember their own collapsed / expanded choice
   const collapsed = claimNav ? claimCollapsed : isQueue ? queueNav !== "full" : menuCollapsed;
   const role = getRole(user, "OD");
+  const isManager = role?.role === "CLAIMS_MANAGER";
+  // manager badges and bell are live: recount when a manager action is saved on this page
+  const [, setMgrTick] = useState(0);
+  useEffect(() => {
+    if (!isManager) return undefined;
+    const bump = () => setMgrTick((t) => t + 1);
+    window.addEventListener("smartclaims:manager-data", bump);
+    return () => window.removeEventListener("smartclaims:manager-data", bump);
+  }, [isManager]);
+  const mgrBadges = isManager ? managerBadges() : null;
+  const menu = isManager ? MANAGER_MENU.map((m) => ({ ...m, badge: mgrBadges[m.key] || undefined })) : HANDLER_MENU;
 
   // Esc closes the slide-in menu
   useEffect(() => {
@@ -387,7 +399,7 @@ export default function ODShell({ active = "dashboard", title, subtitle, childre
         ) : (
         <nav className="min-h-0 flex-1 px-2 py-3" aria-label="OD menu">
           <ul className="flex flex-col gap-0.5">
-            {(role?.role === "CLAIMS_MANAGER" ? MANAGER_MENU : HANDLER_MENU).map((item) => {
+            {menu.map((item) => {
               const Icon = item.icon;
               const isActive = item.key === active;
               return (
@@ -543,14 +555,23 @@ export default function ODShell({ active = "dashboard", title, subtitle, childre
                 OD workspace
               </span>
             )}
-            <NotificationsPopover
-              items={NOTIFICATIONS}
-              onOpenClaim={(no) => navigate(`/od/claims/${claimSlug(no)}`)}
-              onViewAll={() => {
-                if (window.location.pathname === "/od/worklist") window.dispatchEvent(new Event("smartclaims:open-alerts"));
-                else navigate("/od/worklist?alerts=1");
-              }}
-            />
+            {isManager ? (
+              <NotificationsPopover
+                items={managerNotifications()}
+                onNavigate={(to) => navigate(to)}
+                viewAllLabel="Open Escalations"
+                onViewAll={() => navigate("/od/escalations")}
+              />
+            ) : (
+              <NotificationsPopover
+                items={NOTIFICATIONS}
+                onOpenClaim={(no) => navigate(`/od/claims/${claimSlug(no)}`)}
+                onViewAll={() => {
+                  if (window.location.pathname === "/od/worklist") window.dispatchEvent(new Event("smartclaims:open-alerts"));
+                  else navigate("/od/worklist?alerts=1");
+                }}
+              />
+            )}
 
             <ProfileMenu lob="OD" onLogout={handleLogout} />
           </div>

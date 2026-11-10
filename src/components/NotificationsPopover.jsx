@@ -2,7 +2,7 @@
 // Bell icon in the header → notifications panel. Like the search panel, it opens ON the
 // bell in the header row itself (not dropped below it); the bell sits in the panel's first line.
 // Unread count badge · Unread / Earlier groups · click a notification → Claim 360 ·
-// "Mark all as read" (remembered in this browser) · link to the alerts in My Work Queue.
+// "Mark all as read" (remembered in this browser) · footer link (My Work Queue alerts, or Escalations for the manager).
 
 import { useEffect, useRef, useState } from "react";
 import { Bell, ShieldAlert, FileCheck2, AlertTriangle, FileUp, TrendingUp, Clock, IndianRupee, CheckCheck, ChevronRight, X } from "lucide-react";
@@ -27,7 +27,10 @@ function readIds() {
   }
 }
 
-export default function NotificationsPopover({ items, onOpenClaim, onViewAll }) {
+// items: { id, kind, title, text, claimNo | ref, time, unread, to?, Icon? }
+//   to   → onNavigate(to) instead of opening Claim 360 (manager notifications point to screens)
+//   Icon → overrides the kind's icon
+export default function NotificationsPopover({ items, onOpenClaim, onNavigate, onViewAll, viewAllLabel = "View alerts in My Work Queue" }) {
   const [open, setOpen] = useState(false);
   const [read, setRead] = useState(readIds);
   const wrap = useRef(null);
@@ -135,12 +138,16 @@ export default function NotificationsPopover({ items, onOpenClaim, onViewAll }) 
                           onClick={() => {
                             markRead(n.id);
                             setOpen(false);
-                            onOpenClaim?.(n.claimNo);
+                            if (n.to) onNavigate?.(n.to);
+                            else onOpenClaim?.(n.claimNo);
                           }}
                           className={`group flex w-full items-start gap-3 rounded-xl px-2 py-2 text-left transition-colors hover:bg-slate-50 ${un ? "bg-teal-50/40" : ""}`}
                         >
                           <span className={`mt-0.5 grid h-9 w-9 flex-none place-items-center rounded-lg ring-1 ring-inset ${k.tile}`}>
-                            <k.Icon className="h-4 w-4" aria-hidden="true" />
+                            {(() => {
+                              const I = n.Icon || k.Icon;
+                              return <I className="h-4 w-4" aria-hidden="true" />;
+                            })()}
                           </span>
                           <span className="min-w-0 flex-1">
                             <span className="flex items-baseline justify-between gap-2">
@@ -148,7 +155,7 @@ export default function NotificationsPopover({ items, onOpenClaim, onViewAll }) 
                               <span className="flex-none text-[10.5px] text-slate-400">{n.time}</span>
                             </span>
                             <span className="mt-0.5 block text-[11.5px] leading-snug text-slate-500">{n.text}</span>
-                            <span className="mt-0.5 block font-mono text-[11px] font-semibold text-teal-700">{n.claimNo}</span>
+                            <span className="mt-0.5 block font-mono text-[11px] font-semibold text-teal-700">{n.claimNo || n.ref}</span>
                           </span>
                           <span className="mt-1 flex w-2 flex-none justify-center">
                             {un && <span className="h-2 w-2 rounded-full bg-teal-600" aria-label="Unread" />}
@@ -171,7 +178,7 @@ export default function NotificationsPopover({ items, onOpenClaim, onViewAll }) 
             }}
             className="flex w-full items-center justify-center gap-1 border-t border-slate-100 bg-slate-50/80 px-4 py-2.5 text-[12px] font-semibold text-teal-700 hover:bg-slate-100"
           >
-            View alerts in My Work Queue
+            {viewAllLabel}
             <ChevronRight className="h-3.5 w-3.5" aria-hidden="true" />
           </button>
         </div>

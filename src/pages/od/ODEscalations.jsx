@@ -27,159 +27,29 @@ import {
   Clock,
   Eye,
   FileText,
-  Gavel,
-  Landmark,
   ListTodo,
   Mail,
-  MessageSquareWarning,
-  Scale,
   Search,
-  Timer,
   X,
   XCircle,
 } from "lucide-react";
 import ODShell from "../../components/layout/ODShell";
 import { auditLog, useAuth, getRole } from "../../auth";
 import { claimSlug } from "../../data/odClaimDetail";
-import { WORK_QUEUE } from "../../data/odHandlerMock";
 import { TEAM } from "../../data/odTeamMock";
-
-/* ================================================================== */
-/* Rules                                                               */
-/* ================================================================== */
-const RESPONSE_RULES = {
-  IGMS: { label: "IGMS / Bima Bharosa", days: 14, basis: "IRDAI: resolve with a final letter within 14 days", Icon: Landmark, tone: "bg-indigo-50 text-indigo-800 ring-indigo-200", external: true },
-  CUSTOMER: { label: "Customer complaint", days: 14, basis: "IRDAI: every complaint is a grievance – 14 days", Icon: MessageSquareWarning, tone: "bg-sky-50 text-sky-800 ring-sky-200", external: true },
-  OMBUDSMAN: { label: "Ombudsman award", days: 30, basis: "Comply with the award within 30 days of receipt", Icon: Scale, tone: "bg-purple-50 text-purple-800 ring-purple-200", external: true },
-  LEGAL: { label: "Legal notice", days: 15, basis: "Internal: reply through the Legal team within 15 days", Icon: Gavel, tone: "bg-slate-100 text-slate-800 ring-slate-300", external: true },
-  SLA: { label: "SLA escalation", days: 2, basis: "Internal: claim breached > 3 days – manager action within 2 days", Icon: Timer, tone: "bg-red-50 text-red-700 ring-red-200", external: false },
-};
-
-const CLOSE_OUTCOMES = {
-  external: ["Accepted – claim settled / will be settled", "Partly accepted – reasons given", "Not accepted – reasons given in final letter", "Withdrawn by complainant", "Duplicate of another complaint"],
-  internal: ["Action taken – claim moved forward", "Claim reallocated", "Waiting on external party – documented", "Claim closed"],
-};
-
-const STATUS = {
-  NEW: { label: "New", tone: "bg-red-50 text-red-700 ring-red-200" },
-  ACK: { label: "Acknowledged", tone: "bg-amber-50 text-amber-900 ring-amber-200" },
-  FOLLOWUP: { label: "With handler", tone: "bg-sky-50 text-sky-800 ring-sky-200" },
-  CLOSED: { label: "Closed", tone: "bg-emerald-50 text-emerald-800 ring-emerald-200" },
-};
-
-/* ================================================================== */
-/* Demo escalations (raisedDaysAgo is relative to today)               */
-/* ================================================================== */
-const Q = Object.fromEntries(WORK_QUEUE.map((r) => [r.claimNo, r]));
-const fromQueue = (no) => {
-  const r = Q[no];
-  return r ? { insured: r.insured, vehicle: r.vehicle, regNo: r.regNo, stage: r.stage, pendingWith: r.pendingWith === "Me (handler)" ? "Handler" : r.pendingWith, sla: r.sla, reserve: r.reserve, ageDays: r.ageDays, real: true } : {};
-};
-
-const SAMPLE = [
-  {
-    id: "ESC-26-0412", source: "IGMS", raisedDaysAgo: 13, status: "ACK", handler: "Karthik Subramanian",
-    claimNo: "OD/CHN/26/004529", ...fromQueue("OD/CHN/26/004529"),
-    ref: "IGMS token 2026-TN-118734", raisedBy: "T. Bhuvana (insured) via Bima Bharosa", channel: "Bima Bharosa portal",
-    complaint: "Claim pending for over 50 days. Garage has finished the repair but says the insurer has not cleared it. I have already given all documents.",
-    history: [{ d: 13, text: "Grievance received from IGMS / Bima Bharosa" }, { d: 13, text: "Acknowledged to complainant" }],
-  },
-  {
-    id: "ESC-26-0398", source: "IGMS", raisedDaysAgo: 15, status: "FOLLOWUP", handler: "Arvind Kumar",
-    claimNo: "OD/CHN/26/003290", insured: "S. Karthika", vehicle: "Maruti Brezza ZXi", regNo: "TN 09 BK 4410", stage: "Survey pending", pendingWith: "Surveyor", sla: { status: "breach", label: "Breached 6 d" }, reserve: 48500, ageDays: 66,
-    ref: "IGMS token 2026-TN-117902", raisedBy: "S. Karthika (insured) via IGMS", channel: "IGMS portal",
-    complaint: "Surveyor has not inspected my car for 3 weeks. Car is lying at the garage and I am paying for a taxi daily.",
-    history: [{ d: 15, text: "Grievance received from IGMS" }, { d: 15, text: "Acknowledged to complainant" }, { d: 12, text: "Follow-up assigned to Arvind: get survey done, update customer" }],
-  },
-  {
-    id: "ESC-26-0421", source: "CUSTOMER", raisedDaysAgo: 0, status: "NEW", handler: "Karthik Subramanian",
-    claimNo: "OD/CHN/26/004498", ...fromQueue("OD/CHN/26/004498"),
-    ref: "Email · CRM case 55821", raisedBy: "M. Ashok Kumar (insured)", channel: "Email to claims@",
-    complaint: "Why is my claim stuck in approval? The garage says they cannot start work without approval. Please escalate.",
-    history: [{ d: 0, text: "Complaint received by email – CRM case created" }],
-  },
-  {
-    id: "ESC-26-0417", source: "CUSTOMER", raisedDaysAgo: 4, status: "ACK", handler: "Meena Sundaram",
-    claimNo: "OD/CHN/26/003490", insured: "P. Lavanya", vehicle: "Hyundai Venue SX", regNo: "TN 14 DR 7720", stage: "Payment", pendingWith: "Finance", sla: { status: "ok", label: "2 d left" }, reserve: 76400, ageDays: 29,
-    ref: "Call centre ticket CC-889120", raisedBy: "P. Lavanya (insured)", channel: "Call centre",
-    complaint: "Depreciation deducted on plastic parts is too high. I want a breakup of the settlement before I accept.",
-    history: [{ d: 4, text: "Complaint logged by call centre" }, { d: 4, text: "Acknowledged to complainant (SMS + email)" }],
-  },
-  {
-    id: "ESC-26-0377", source: "OMBUDSMAN", raisedDaysAgo: 21, status: "FOLLOWUP", handler: "Rahul Menon",
-    claimNo: "OD/CHN/26/003955", insured: "J. Kavitha", vehicle: "Tata Punch Creative", regNo: "TN 05 CP 3381", stage: "Documents pending", pendingWith: "Insured", sla: { status: "risk", label: "10 h left" }, reserve: 221000, ageDays: 58,
-    ref: "Ombudsman Chennai · Award CHN-G-044-2627-0193", raisedBy: "Insurance Ombudsman, Chennai", channel: "Award letter",
-    complaint: "Award in favour of the insured: pay ₹1,86,000 towards repair cost with interest as per Rule 17 of the Insurance Ombudsman Rules, 2017.",
-    history: [{ d: 21, text: "Award received from the Ombudsman" }, { d: 20, text: "Legal reviewed – no appeal" }, { d: 18, text: "Follow-up assigned to Rahul: process payment as per award" }],
-  },
-  {
-    id: "ESC-26-0405", source: "LEGAL", raisedDaysAgo: 6, status: "ACK", handler: "Karthik Subramanian",
-    claimNo: "OD/CHN/26/004445", ...fromQueue("OD/CHN/26/004445"),
-    ref: "Advocate notice · Regd. post RN 7741 2290", raisedBy: "Adv. R. Selvam for B. Karthikeyan", channel: "Registered post",
-    complaint: "Legal notice demanding settlement of the theft claim for the full IDV within 15 days, failing which a consumer complaint will be filed.",
-    history: [{ d: 6, text: "Legal notice received" }, { d: 6, text: "Forwarded to Legal team" }],
-  },
-  {
-    id: "ESC-26-0419", source: "SLA", raisedDaysAgo: 1, status: "NEW", handler: "Arvind Kumar",
-    claimNo: "OD/CHN/26/003291", insured: "N. Revathi", vehicle: "Kia Seltos HTX", regNo: "TN 12 KM 5512", stage: "Documents pending", pendingWith: "Insured", sla: { status: "breach", label: "Breached 4 d" }, reserve: 314300, ageDays: 65,
-    ref: "Auto-escalated by system", raisedBy: "SLA rule – breached > 3 days", channel: "System",
-    complaint: "Claim breached the settlement SLA by 4 days. Documents pending with the insured for 19 days; 2 reminders sent.",
-    history: [{ d: 1, text: "Auto-escalated: SLA breached by more than 3 days" }],
-  },
-  {
-    id: "ESC-26-0420", source: "SLA", raisedDaysAgo: 0, status: "NEW", handler: "Fathima Begum",
-    claimNo: "OD/CHN/26/003890", insured: "V. Ashwin", vehicle: "Toyota Glanza G", regNo: "TN 19 AF 2205", stage: "Survey pending", pendingWith: "Surveyor", sla: { status: "breach", label: "Breached 4 d" }, reserve: 64200, ageDays: 41,
-    ref: "Auto-escalated by system", raisedBy: "SLA rule – breached > 3 days", channel: "System",
-    complaint: "Claim breached the survey SLA by 4 days. Handler is on leave.",
-    history: [{ d: 0, text: "Auto-escalated: SLA breached by more than 3 days" }],
-  },
-  {
-    id: "ESC-26-0363", source: "CUSTOMER", raisedDaysAgo: 9, status: "CLOSED", handler: "Divya Ramesh",
-    claimNo: "OD/CHN/26/003090", insured: "G. Sathish", vehicle: "Maruti Swift VXi", regNo: "TN 07 CJ 1180", stage: "Repair / DO", pendingWith: "Garage / dealer", sla: { status: "ok", label: "3 d left" }, reserve: 41800, ageDays: 22,
-    ref: "Branch letter BR-CHN-2210", raisedBy: "G. Sathish (insured)", channel: "Branch",
-    complaint: "Delivery order not issued even after the final invoice was submitted.",
-    history: [{ d: 9, text: "Complaint received at branch" }, { d: 9, text: "Acknowledged to complainant" }, { d: 7, text: "Follow-up assigned to Divya: issue DO today" }, { d: 6, text: "Closed – Accepted – claim settled / will be settled: DO issued, customer informed" }],
-    outcome: "Accepted – claim settled / will be settled",
-  },
-];
+import { RESPONSE_RULES, CLOSE_OUTCOMES, ESC_STATUS as STATUS, ESCALATIONS as SAMPLE, DAY, startOfToday, dueInfo, KEYS, readStore, saveStore } from "../../data/odManagerData";
 
 /* ================================================================== */
 /* Helpers                                                             */
 /* ================================================================== */
-const STORE_KEY = "smartclaims-escalation-updates";
-const DAY = 86400000;
-const startOfToday = () => {
-  const d = new Date();
-  d.setHours(0, 0, 0, 0);
-  return d.getTime();
-};
 const fmtDate = (t) => new Date(t).toLocaleDateString("en-IN", { day: "2-digit", month: "short", year: "numeric" });
 const fmtShort = (t) => new Date(t).toLocaleDateString("en-IN", { day: "2-digit", month: "short" });
 const inr = (n) => "₹" + Number(n).toLocaleString("en-IN");
 const first = (n) => n.split(" ")[0];
 
-function readUpdates() {
-  try {
-    return JSON.parse(sessionStorage.getItem(STORE_KEY) || "{}");
-  } catch {
-    return {};
-  }
-}
-function saveUpdates(u) {
-  try {
-    sessionStorage.setItem(STORE_KEY, JSON.stringify(u));
-  } catch {
-    /* ignore */
-  }
-}
+const readUpdates = () => readStore(KEYS.escalations);
+const saveUpdates = (u) => saveStore(KEYS.escalations, u);
 
-// due position: days left (negative = overdue)
-function dueInfo(e, today) {
-  const raised = today - e.raisedDaysAgo * DAY;
-  const due = raised + RESPONSE_RULES[e.source].days * DAY;
-  const left = Math.round((due - today) / DAY);
-  return { raised, due, left };
-}
 
 function Chip({ tone, children, title }) {
   return (
