@@ -68,7 +68,11 @@ function rng(seed) {
 const pick = (r, arr) => arr[Math.floor(r() * arr.length)];
 const round = (n, to = 100) => Math.round(n / to) * to;
 
-const TODAY = new Date("2026-10-22T00:00:00");
+// Real "today" (local date) – demo claim dates are already moved to match it (see odHandlerMock.js)
+const TODAY_LOCAL = (() => {
+  const d = new Date();
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
+})();
 // Date maths in UTC so the result never slips a day in IST (UTC+5:30)
 const addDays = (iso, d) => {
   const x = new Date(iso + "T00:00:00Z");
@@ -290,7 +294,7 @@ export function getClaimDetail(claimNo) {
   }
   const payments =
     row.stage === "Payment"
-      ? [{ date: addDays(TODAY.toISOString().slice(0, 10), -1), payee: garage?.name || row.insured, mode: "NEFT", amount: netLiability ?? row.reserve, status: "Sent to Finance" }]
+      ? [{ date: addDays(TODAY_LOCAL, -1), payee: garage?.name || row.insured, mode: "NEFT", amount: netLiability ?? row.reserve, status: "Sent to Finance" }]
       : [];
 
   /* ---- timeline / audit ---- */

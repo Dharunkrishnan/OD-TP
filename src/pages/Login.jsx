@@ -2,7 +2,7 @@
 // Smart Claims – P00 Login (common login for OD, TP and dual-access users)
 // Uses src/auth.js: authenticate(), useAuth().login(user, remember), resolveDashboardPath(user)
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import {
   useAuth,
@@ -29,6 +29,31 @@ import {
 } from "lucide-react";
 
 const MAX_ATTEMPTS = 3;
+const LOCK_MINUTES = 15;
+const LOCK_KEY = "smartclaims-login-lock";
+
+// Failed attempts are counted per user ID (kept in this browser, so a refresh does not unlock).
+// Demo only: in production the server counts attempts and locks the account.
+function readLocks() {
+  try {
+    return JSON.parse(localStorage.getItem(LOCK_KEY) || "{}");
+  } catch {
+    return {};
+  }
+}
+function writeLocks(all) {
+  try {
+    localStorage.setItem(LOCK_KEY, JSON.stringify(all));
+  } catch {
+    /* ignore */
+  }
+}
+const lockKeyOf = (id) => id.trim().toLowerCase();
+function lockStateFor(id, now) {
+  const e = readLocks()[lockKeyOf(id)] || { fails: 0, until: 0 };
+  if (e.until && e.until <= now) return { fails: 0, until: 0 }; // lock period over
+  return e;
+}
 
 const FEATURES = [
   {
@@ -61,8 +86,15 @@ export default function Login() {
   const [submitted, setSubmitted] = useState(false);
   const [loading, setLoading] = useState(false);
   const [formError, setFormError] = useState("");
-  const [attemptsLeft, setAttemptsLeft] = useState(MAX_ATTEMPTS);
-  const [locked, setLocked] = useState(false);
+  const [now, setNow] = useState(() => Date.now()); // refreshed while a lock counts down
+  const lockState = userId.trim() ? lockStateFor(userId, now) : { fails: 0, until: 0 };
+  const locked = lockState.until > now;
+  const lockMinutesLeft = locked ? Math.max(1, Math.ceil((lockState.until - now) / 60000)) : 0;
+  useEffect(() => {
+    if (!locked) return undefined;
+    const id = window.setInterval(() => setNow(Date.now()), 30000);
+    return () => window.clearInterval(id);
+  }, [locked]);
   const [demoOpen, setDemoOpen] = useState(false);
   const [noAccess, setNoAccess] = useState(false);
 
@@ -90,13 +122,22 @@ export default function Login() {
         setNoAccess(true);
         return;
       }
+      const all = readLocks();
+      delete all[lockKeyOf(userId)]; // successful login clears the failed-attempt count
+      writeLocks(all);
       const sessionUser = login(user, remember);
       navigate(resolveDashboardPath(sessionUser), { replace: true });
     } catch {
-      const left = attemptsLeft - 1;
-      setAttemptsLeft(left);
+      const all = readLocks();
+      const key = lockKeyOf(userId);
+      const t = Date.now();
+      const fails = (lockStateFor(userId, t).fails || 0) + 1;
+      const left = MAX_ATTEMPTS - fails;
+      all[key] = { fails, until: left <= 0 ? t + LOCK_MINUTES * 60000 : 0 };
+      writeLocks(all);
+      setNow(t);
+      setPassword("");
       if (left <= 0) {
-        setLocked(true);
         setFormError("");
       } else {
         setFormError(
@@ -272,7 +313,8 @@ export default function Login() {
                 <div>
                   <p className="font-semibold">Account temporarily locked</p>
                   <p>
-                    Too many failed attempts. Try again after 15 minutes, or reset your password.
+                    Too many failed attempts for <b>{userId.trim()}</b>. Try again in {lockMinutesLeft} minute
+                    {lockMinutesLeft === 1 ? "" : "s"}, or reset your password.
                   </p>
                 </div>
               </div>
@@ -315,7 +357,6 @@ export default function Login() {
                 autoFocus
                 placeholder="e.g. OD0123 or name@abcgeneral.co.in"
                 value={userId}
-                disabled={locked}
                 onChange={(e) => {
                   setUserId(e.target.value);
                   setFormError("");

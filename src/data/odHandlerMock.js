@@ -25,7 +25,26 @@
 //   sla.status : "breach" | "risk" | "ok"
 //   ageDays    : days since registration (intimation for NBNR)
 //   reserve    : current outstanding reserve in ₹
-export const WORK_QUEUE = [
+/* ------------------------------------------------------------------ */
+/* Demo dates follow the real calendar.                                */
+/* The demo claims were written as of DEMO_BASE (22 Oct 2026). Every   */
+/* claim's loss and registration dates are moved forward by the days   */
+/* passed since then, so Age, Registered date, Due and "last 7 days"   */
+/* always agree with today's date.                                     */
+/* ------------------------------------------------------------------ */
+const DEMO_BASE = "2026-10-22";
+const localToday = () => {
+  const d = new Date();
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
+};
+const shiftISO = (iso, n) => {
+  const x = new Date(iso + "T00:00:00Z");
+  x.setUTCDate(x.getUTCDate() + n);
+  return x.toISOString().slice(0, 10);
+};
+export const DEMO_SHIFT_DAYS = Math.round((new Date(localToday() + "T00:00:00Z") - new Date(DEMO_BASE + "T00:00:00Z")) / 86400000);
+
+const RAW_QUEUE = [
   {claimNo: "OD/CHN/26/004512", regNo: "TN 09 BK 4471", vehicle: "Maruti Swift VXi", insured: "S. Revathi", lossType: "Accident – partial", lossDate: "2026-09-17", regDate: "2026-09-18", stage: "Documents pending", pendingWith: "Insured", ageDays: 34, sla: {status: "breach", label: "Breached 2 d"}, nextAction: "Follow up DL copy & claim form", dueToday: true, flags: [], reserve: 18500},
   {claimNo: "OD/CHN/26/004498", regNo: "TN 22 CX 9083", vehicle: "Hyundai Creta SX", insured: "M. Ashok Kumar", lossType: "Accident – partial", lossDate: "2026-09-30", regDate: "2026-10-01", stage: "Approval", pendingWith: "Claims approver", ageDays: 21, sla: {status: "breach", label: "Breached 1 d"}, nextAction: "Escalate approval – ₹1.42 L", dueToday: true, flags: ["Major loss"], reserve: 142000},
   {claimNo: "OD/CHN/26/004533", regNo: "TN 10 AZ 2218", vehicle: "Honda City ZX", insured: "P. Gayathri", lossType: "Theft", lossDate: "2026-10-09", regDate: "2026-10-10", stage: "Survey pending", pendingWith: "SIU / investigator", ageDays: 12, sla: {status: "risk", label: "6 h left"}, nextAction: "Chase investigator prelim report", dueToday: true, flags: ["Fraud flag"], reserve: 845000},
@@ -80,6 +99,12 @@ export const WORK_QUEUE = [
   {claimNo: "OD/CHN/26/004676", regNo: "TN 10 TD 9902", vehicle: "Toyota Glanza V", insured: "K. Ramesh", lossType: "Accident – partial", lossDate: "2026-09-27", regDate: "2026-09-28", stage: "Payment", pendingWith: "Me (handler)", ageDays: 24, sla: {status: "risk", label: "5 h left"}, nextAction: "Raise payment request to Finance", dueToday: true, flags: [], reserve: 61400},
 ];
 
+export const WORK_QUEUE = RAW_QUEUE.map((r) => ({
+  ...r,
+  lossDate: shiftISO(r.lossDate, DEMO_SHIFT_DAYS),
+  regDate: shiftISO(r.regDate, DEMO_SHIFT_DAYS),
+}));
+
 // Today's follow-ups (diary)
 export const DIARY = [
   { time: "10:00", claimNo: "OD/CHN/26/004512", text: "Call insured – DL copy pending", done: true },
@@ -126,14 +151,25 @@ export const ALERTS = [
 
 
 // Claims I closed per month (Oct = month to date)
-export const CLOSED_TREND = [
+// Month labels for the trend charts: the last 6 months ending with the current month (to date)
+const MONTHS = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
+const lastSixMonths = () => {
+  const m = new Date().getMonth();
+  return Array.from({ length: 6 }, (_, i) => MONTHS[(m - 5 + i + 12) % 12]);
+};
+const withMonths = (rows) => {
+  const labels = lastSixMonths();
+  return rows.map((r, i) => ({ ...r, month: labels[i] }));
+};
+
+export const CLOSED_TREND = withMonths([
   { month: "May", count: 22 },
   { month: "Jun", count: 25 },
   { month: "Jul", count: 31 },
   { month: "Aug", count: 27 },
   { month: "Sep", count: 30 },
   { month: "Oct", count: 28, mtd: true },
-];
+]);
 
 /* ------------------------------------------------------------------ */
 /* SLA / TAT performance (dashboard)                                   */
@@ -161,24 +197,24 @@ const TAT_BASE = [
 ];
 
 // % of claims closed within SLA, per month (Oct = month to date)
-export const SLA_TREND = [
+export const SLA_TREND = withMonths([
   { month: "May", value: 84 },
   { month: "Jun", value: 86 },
   { month: "Jul", value: 88 },
   { month: "Aug", value: 87 },
   { month: "Sep", value: 90 },
   { month: "Oct", value: 91, mtd: true },
-];
+]);
 
 // Average intimation → settlement TAT in days, per month
-export const TAT_TREND = [
+export const TAT_TREND = withMonths([
   { month: "May", value: 22.1 },
   { month: "Jun", value: 20.6 },
   { month: "Jul", value: 19.8 },
   { month: "Aug", value: 19.2 },
   { month: "Sep", value: 18.9 },
   { month: "Oct", value: 18.4, mtd: true },
-];
+]);
 
 /* ------------------------------------------------------------------ */
 /* Dashboard counts – calculated from WORK_QUEUE so they always match  */
