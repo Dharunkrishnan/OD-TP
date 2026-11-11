@@ -31,6 +31,8 @@ import {
 import ODShell from "../../components/layout/ODShell";
 import { TAT_STAGES } from "../../data/odHandlerMock";
 import { getClaimDetail, claimFromSlug, LIFECYCLE } from "../../data/odClaimDetail";
+import { ClaimStatusBanner, ClaimActionsMenu, ClaimStatusDialog } from "../../components/ClaimStatusActions";
+import { useClaimStatus, effectiveState } from "../../data/claimStatus";
 
 const inr = (n) => (n == null ? "–" : "₹" + Number(n).toLocaleString("en-IN"));
 const dt = (iso) =>
@@ -365,6 +367,9 @@ export default function ODClaim360() {
   const [modal, setModal] = useState(null); // "note" | "docs"
   const [note, setNote] = useState("");
   const [docPick, setDocPick] = useState([]);
+  // Phase 2A – claim status (NBNR resolve, withdraw, close without payment, reopen, hold): catalogue 16, 21, 131, 134, 162
+  const [statusRec, setStatusRec] = useClaimStatus(claimNo);
+  const [statusAction, setStatusAction] = useState(null);
 
   function flash(msg) {
     setToast(msg);
@@ -388,7 +393,24 @@ export default function ODClaim360() {
     );
   }
 
-  const c = base;
+  const st = effectiveState(base.stage, statusRec);
+  // the claim as it stands now (an NBNR converted in this session shows as Registered)
+  // NBNR converted → premium realised, so the policy is now confirmed in force
+  const converted = base.stage === "NBNR" && st.stage === "Registered";
+  const c =
+    st.stage === base.stage
+      ? base
+      : {
+          ...base,
+          stage: st.stage,
+          ...(converted && {
+            policy: { ...base.policy, status: "In force" },
+            checks: base.checks.map((k) =>
+              k.label === "Policy in force on loss date" ? { ...k, ok: true, note: "Yes · confirmed with PAS" } : k
+            ),
+          }),
+        };
+  const active = !st.closed && !st.waiting; // closed / waiting for approval → only notes allowed
   const now = new Date();
   const stamp = () => ({
     date: now.toISOString().slice(0, 10),
@@ -397,7 +419,7 @@ export default function ODClaim360() {
   const documents = c.documents.map((d) => ({ ...d, status: docState[d.name] ?? d.status }));
   const pendingDocs = documents.filter((d) => d.status === "Pending");
   const requestable = documents.filter((d) => d.status !== "Received" && d.status !== "Pending");
-  const timeline = [...extraEvents, ...c.timeline];
+  const timeline = [...(statusRec?.events || []), ...extraEvents, ...c.timeline];
   const tat = TAT_STAGES.find((s) => s.stage === STAGE_TAT[c.stage]);
 
   // 5-stage lifecycle shown in the left sidebar while this claim is open
@@ -486,6 +508,8 @@ export default function ODClaim360() {
                 <ActionButton icon={StickyNote} onClick={() => setModal("note")} compact>
                   Add note
                 </ActionButton>
+                {active && (
+                  <>
                 <ActionButton icon={FilePlus2} onClick={() => setModal("docs")} compact>
                   Request documents
                 </ActionButton>
@@ -498,7 +522,7 @@ export default function ODClaim360() {
                   </ActionButton>
                 )}
                 {c.stage === "NBNR" && (
-                  <ActionButton icon={CheckCircle2} onClick={() => notBuilt("Convert NBNR to claim")} primary>
+                  <ActionButton icon={CheckCircle2} onClick={() => setStatusAction("nbnr")} primary>
                     Resolve NBNR
                   </ActionButton>
                 )}
@@ -510,6 +534,9 @@ export default function ODClaim360() {
                 <ActionButton icon={ShieldAlert} onClick={() => notBuilt("Refer to SIU")} danger>
                   Refer to SIU
                 </ActionButton>
+                  </>
+                )}
+                <ClaimActionsMenu stage={c.stage} rec={statusRec} onPick={setStatusAction} />
                   <span className="mx-0.5 h-5 w-px bg-slate-200" aria-hidden="true" />
                 </>
               )}
@@ -548,14 +575,19 @@ export default function ODClaim360() {
             ))}
           </dl>
 
+          {/* Status after a claim action (hold, withdrawn, closed, waiting for approval, NBNR resolved) */}
+          <ClaimStatusBanner rec={statusRec} />
+
           {/* Row 3: next action */}
+          {active && (
           <div className="flex items-center gap-2 border-t border-slate-100 bg-amber-50/60 px-4 py-2 text-[12.5px] leading-5">
             <CircleDot className="h-4 w-4 flex-none text-amber-700" aria-hidden="true" />
             <span className="font-semibold text-slate-800">Next action:</span>
             <span className="truncate text-slate-700" title={c.nextAction}>
-              {c.nextAction}
+              {statusRec?.state === "NBNR_CONVERTED" ? "Appoint surveyor" : st.hold ? `Review on ${statusRec.reviewDate} – then release the hold` : c.nextAction}
             </span>
           </div>
+          )}
         </Card>
 
         {/* ---------------- Completed stage (read only) – or the normal tabs ---------------- */}
@@ -995,6 +1027,20 @@ export default function ODClaim360() {
       </div>
 
       {/* ---------------- Modals ---------------- */}
+      {statusAction && (
+        <ClaimStatusDialog
+          action={statusAction}
+          claim={base}
+          rec={statusRec}
+          onCancel={() => setStatusAction(null)}
+          onDone={(next, msg) => {
+            setStatusRec(next);
+            setStatusAction(null);
+            flash(msg);
+          }}
+        />
+      )}
+
       {modal === "note" && (
         <Modal title="Add note" onClose={() => setModal(null)}>
           <form onSubmit={addNote} className="flex flex-col gap-3 p-4">
