@@ -359,13 +359,21 @@ export default function ODShell({ active = "dashboard", title, subtitle, childre
                             "aria-label": c ? `${st.label}: ${st.status}` : undefined,
                           }
                         : {})}
-                      className={`flex w-full gap-3 rounded-md px-3 text-left ${c ? "lg:justify-center lg:px-0" : ""} ${
-                        st.selected ? "bg-white/10" : clickable ? "cursor-pointer hover:bg-white/5" : "cursor-default"
-                      } ${st.selected && clickable ? "cursor-pointer" : ""} ${st.disabled ? "cursor-not-allowed" : ""}`}
+                      // No box behind the row: the box also covered the connector line and looked shifted below the step.
+                      // The step being viewed is marked on the circle itself (white ring) and on its label (expanded rail).
+                      className={`group/step flex w-full gap-3 px-3 text-left focus-visible:outline-none ${c ? "lg:justify-center lg:px-0" : ""} ${
+                        clickable ? "cursor-pointer" : "cursor-default"
+                      } ${st.disabled ? "cursor-not-allowed" : ""}`}
                     >
                     <span className="relative flex flex-col items-center">
                       <span
-                        className={`relative z-10 grid h-7 w-7 flex-none place-items-center rounded-full text-[12px] font-bold ${circle}`}
+                        className={`relative z-10 grid h-7 w-7 flex-none place-items-center rounded-full text-[12px] font-bold transition ${circle} ${
+                          st.selected
+                            ? "outline outline-2 outline-offset-[3px] outline-white"
+                            : clickable
+                            ? "group-hover/step:outline group-hover/step:outline-2 group-hover/step:outline-offset-[3px] group-hover/step:outline-white/40 group-focus-visible/step:outline group-focus-visible/step:outline-2 group-focus-visible/step:outline-offset-[3px] group-focus-visible/step:outline-white/70"
+                            : ""
+                        }`}
                         aria-label={c ? `${st.label}: ${st.status}` : undefined}
                       >
                         {st.state === "done" ? <Check className="h-3.5 w-3.5" aria-hidden="true" /> : i + 1}
@@ -377,7 +385,11 @@ export default function ODShell({ active = "dashboard", title, subtitle, childre
                         />
                       )}
                     </span>
-                    <span className={`min-w-0 pb-3 pt-0.5 leading-tight ${hideWhenCollapsed}`}>
+                    <span
+                      className={`-mt-0.5 mb-2.5 min-w-0 flex-1 self-start rounded-md px-2 py-0.5 leading-tight ${hideWhenCollapsed} ${
+                        st.selected ? "bg-white/10" : clickable ? "group-hover/step:bg-white/5" : ""
+                      }`}
+                    >
                       <span
                         className={`block text-[13px] font-semibold ${
                           st.state === "todo" ? "text-slate-400" : "text-white"
