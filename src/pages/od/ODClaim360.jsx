@@ -30,7 +30,7 @@ import {
 } from "lucide-react";
 import ODShell from "../../components/layout/ODShell";
 import { TAT_STAGES } from "../../data/odHandlerMock";
-import { getClaimDetail, claimFromSlug, LIFECYCLE } from "../../data/odClaimDetail";
+import { getClaimDetail, claimFromSlug, LIFECYCLE, STAGE_TO_STEP } from "../../data/odClaimDetail";
 import { ClaimStatusBanner, ClaimActionsMenu, ClaimStatusDialog } from "../../components/ClaimStatusActions";
 import { useClaimStatus, effectiveState } from "../../data/claimStatus";
 
@@ -350,6 +350,9 @@ function StageView({ c, index, label, documents, timeline, onBack }) {
 /* ------------------------------------------------------------------ */
 /* Page                                                                */
 /* ------------------------------------------------------------------ */
+// Header chip for a closed claim (replaces the stage name)
+const CLOSED_CHIP = { WITHDRAWN: "Withdrawn", CLOSED: "Closed – no payment", NBNR_CLOSED: "NBNR closed" };
+
 export default function ODClaim360() {
   const { id } = useParams();
   const navigate = useNavigate();
@@ -397,12 +400,33 @@ export default function ODClaim360() {
   // the claim as it stands now (an NBNR converted in this session shows as Registered)
   // NBNR converted → premium realised, so the policy is now confirmed in force
   const converted = base.stage === "NBNR" && st.stage === "Registered";
+  // Left step rail follows the claim status: converted → Survey step; hold / closed / waiting → shown on the current step
+  const STATUS_NOTE = {
+    HOLD: "On hold",
+    WITHDRAWN: "Closed · withdrawn",
+    CLOSED: "Closed without payment",
+    NBNR_CLOSED: "Closed · NBNR",
+    REPUDIATION_PENDING: "Awaiting manager approval",
+    REOPEN_PENDING: "Awaiting manager approval",
+  };
+  const baseLife = converted ? STAGE_TO_STEP.Registered : base.lifecycle;
+  const lifecycle = STATUS_NOTE[st.state] ? { ...baseLife, hold: true, note: STATUS_NOTE[st.state] } : baseLife;
+  // Closed (withdrawn / without payment / NBNR closed) → reserve released to ₹0
+  const released = st.closed && base.reserve > 0;
   const c =
-    st.stage === base.stage
+    st.stage === base.stage && lifecycle === base.lifecycle && !released
       ? base
       : {
           ...base,
           stage: st.stage,
+          lifecycle,
+          ...(released && {
+            reserve: 0,
+            reserveHistory: [
+              ...base.reserveHistory,
+              { date: statusRec.at, type: "Released", amount: 0, by: "Claims handler", reason: statusRec.reason || "Claim closed" },
+            ],
+          }),
           ...(converted && {
             policy: { ...base.policy, status: "In force" },
             checks: base.checks.map((k) =>
@@ -491,9 +515,13 @@ export default function ODClaim360() {
           <div className="flex flex-wrap items-center justify-between gap-2 border-b border-slate-100 px-4 py-2">
             <div className="flex flex-wrap items-center gap-2">
               <span className="text-[15px] font-semibold leading-6 tracking-wide text-[#0B1F3A] tabular-nums">{c.claimNo}</span>
-              <span className={`${CHIP} bg-[#0B1F3A] text-white`}>{c.stage}</span>
-              <SlaChip sla={c.sla} />
-              {c.dueToday && <span className={`${CHIP} bg-teal-50 text-teal-800`}>Due today</span>}
+              {/* Closed claims show the closure type instead of the stage; SLA stops once closed or on hold */}
+              <span className={`${CHIP} ${st.closed ? "bg-slate-200 text-slate-800" : "bg-[#0B1F3A] text-white"}`}>
+                {CLOSED_CHIP[st.state] || c.stage}
+              </span>
+              {st.hold && <span className={`${CHIP} bg-amber-100 text-amber-900`}>On hold</span>}
+              {!st.closed && !st.hold && <SlaChip sla={c.sla} />}
+              {!st.closed && !st.hold && c.dueToday && <span className={`${CHIP} bg-teal-50 text-teal-800`}>Due today</span>}
               {c.flags.map((f) => (
                 <span key={f} className={`${CHIP} ${f === "Fraud flag" ? "bg-red-600 text-white" : "bg-slate-100 text-slate-700"}`}>
                   {f}
@@ -584,7 +612,7 @@ export default function ODClaim360() {
             <CircleDot className="h-4 w-4 flex-none text-amber-700" aria-hidden="true" />
             <span className="font-semibold text-slate-800">Next action:</span>
             <span className="truncate text-slate-700" title={c.nextAction}>
-              {statusRec?.state === "NBNR_CONVERTED" ? "Appoint surveyor" : st.hold ? `Review on ${statusRec.reviewDate} – then release the hold` : c.nextAction}
+              {statusRec?.state === "NBNR_CONVERTED" ? "Appoint surveyor" : st.hold ? `Review on ${dt(statusRec.reviewDate)} – then release the hold` : c.nextAction}
             </span>
           </div>
           )}
@@ -949,7 +977,19 @@ export default function ODClaim360() {
 
           {/* ---------------- Side panel ---------------- */}
           <div className="flex flex-col gap-2">
-            {tat && (
+            {tat && st.closed && (
+              <Card title="Current stage TAT">
+                <p className="px-3 py-2 text-[12.5px] text-slate-600">Claim closed – SLA clock stopped.</p>
+              </Card>
+            )}
+            {tat && st.hold && (
+              <Card title="Current stage TAT">
+                <p className="px-3 py-2 text-[12.5px] text-slate-600">
+                  SLA clock paused while the claim is on hold (review on {dt(statusRec.reviewDate)}).
+                </p>
+              </Card>
+            )}
+            {tat && !st.closed && !st.hold && (
               <Card title="Current stage TAT">
                 <div className="px-3 py-2 text-[12.5px]">
                   <div className="text-slate-600">{tat.stage}</div>
