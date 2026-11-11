@@ -740,12 +740,24 @@ const approvalSlug = (no) => no.replaceAll("/", "-");
 /* ---------------- card views (choice remembered per browser) ---------------- */
 const SLA_VIEWS = [
   { key: "status", label: "SLA status (open)", icon: Gauge, hint: "Team open claims: on track · at risk · breached" },
+  { key: "ageing", label: "Ageing (open)", icon: Hourglass, hint: "Team open claims by days since registration" },
   { key: "met", label: "SLA met by handler", icon: CheckCircle2, hint: "Claims closed within SLA, last 30 days" },
   { key: "tat", label: "Avg TAT by handler", icon: Timer, hint: "Average days to settle, last 30 days" },
 ];
 // "bar" = vertical columns (same as the handler dashboard) · "hbar" = horizontal bars
 // Pie / donut only where the numbers are shares of a whole (not for % or days per handler)
-const SLA_CHARTS = { status: ["summary", "bar", "pie", "donut"], met: ["bar", "hbar"], tat: ["bar", "hbar"] };
+const SLA_CHARTS = { status: ["summary", "bar", "pie", "donut"], ageing: ["bar", "pie", "donut"], met: ["bar", "hbar"], tat: ["bar", "hbar"] };
+// calm teal ramp, light = new → dark = old (same as the handler dashboard)
+const AGE_HEX = ["#a3d9d0", "#64bdb0", "#2b9a8b", "#167468", "#0c4e47"];
+const AGE_BG = ["bg-[#a3d9d0]", "bg-[#64bdb0]", "bg-[#2b9a8b]", "bg-[#167468]", "bg-[#0c4e47]"];
+const AGE_RANGES = [
+  ["0–7 d", 0, 7],
+  ["8–15 d", 8, 15],
+  ["16–30 d", 16, 30],
+  ["31–60 d", 31, 60],
+  ["60+ d", 61, Infinity],
+];
+const lakhShort = (n) => (n >= 10000000 ? `₹${(n / 10000000).toFixed(2)} Cr` : `₹${(n / 100000).toFixed(1)} L`);
 
 const WORK_VIEWS = [
   { key: "capacity", label: "Open vs capacity", icon: Users, hint: `Open claims per handler · capacity ${HANDLER_CAPACITY}` },
@@ -951,16 +963,20 @@ export default function ODManagerDashboard() {
 
   // live: reflects this session's approval decisions and reallocations
   const [live] = useState(() => {
-    const team = liveTeam(liveClaims());
+    const claims = liveClaims();
+    const team = liveTeam(claims);
     const approvals = liveApprovals();
-    return { team, approvals, kpis: liveKpis(team, approvals) };
+    return { claims, team, approvals, kpis: liveKpis(team, approvals) };
   });
   const TEAM = live.team;
+  // catalogue 180: ageing and outstanding on the manager dashboard
+  const outstanding = live.claims.reduce((t, c) => t + c.reserve, 0);
+  const ageing = AGE_RANGES.map(([bucket, lo, hi]) => ({ bucket, count: live.claims.filter((c) => c.ageDays >= lo && c.ageDays <= hi).length }));
   const K = { ...TEAM_KPIS, ...live.kpis };
   const slaOk = K.slaMet >= K.slaTarget;
   const tatOk = K.avgTat <= K.tatTarget;
   const KPIS = [
-    { label: "Team open claims", value: K.open, sub: `${TEAM.length} handlers`, icon: FolderOpen, tone: "bg-slate-100 text-slate-700", go: "Team Work Queue", to: "/od/team-queue" },
+    { label: "Team open claims", value: K.open, sub: `${lakhShort(outstanding)} outstanding`, icon: FolderOpen, tone: "bg-slate-100 text-slate-700", go: "Team Work Queue", to: "/od/team-queue" },
     { label: "SLA met (30 days)", value: `${K.slaMet}%`, sub: `Target ${K.slaTarget}%`, icon: Gauge, tone: slaOk ? "bg-emerald-50 text-emerald-700" : "bg-red-50 text-red-700", ok: slaOk },
     { label: "Avg TAT (30 days)", value: fmtDays(K.avgTat), sub: `Target ${K.tatTarget} d`, icon: Timer, tone: tatOk ? "bg-emerald-50 text-emerald-700" : "bg-red-50 text-red-700", ok: tatOk },
     { label: "SLA breached", value: K.breached, sub: "Open claims", icon: AlertTriangle, tone: "bg-red-50 text-red-700", go: "Team Work Queue", to: "/od/team-queue?show=breach" },
@@ -1045,6 +1061,7 @@ export default function ODManagerDashboard() {
           >
             <p className="truncate px-3 pt-1 text-[11px] text-slate-500" aria-live="polite">
               {slaView === "status" && (hSla?.key ? `${hSla.label}: ${hSla.count} claims (${pct(hSla.count, K.open)}%)` : `${K.open} team open claims by current SLA position`)}
+              {slaView === "ageing" && (hSla?.bucket ? `${hSla.bucket}: ${hSla.count} claims (${pct(hSla.count, K.open)}%)` : `${K.open} team open claims by age · ${ageing[3].count + ageing[4].count} older than 30 days`)}
               {slaView === "met" && (hSla?.userId ? `${hSla.name}: ${hSla.slaMet}% within SLA · ${hSla.closed30} closed` : `% of claims closed within SLA · team ${K.slaMet}%`)}
               {slaView === "tat" && (hSla?.userId ? `${hSla.name}: ${fmtDays(hSla.avgTat)} average to settle` : `Average days intimation → settlement · team ${fmtDays(K.avgTat)}`)}
             </p>
@@ -1085,6 +1102,12 @@ export default function ODManagerDashboard() {
             )}
             {slaView === "status" && (slaChart === "pie" || slaChart === "donut") && (
               <PieChart items={slaSummary} labelKey="label" total={K.open} donut={slaChart === "donut"} hover={hSla} setHover={setHSla} colorFor={(x) => STATUS_HEX[x.key]} />
+            )}
+            {slaView === "ageing" && slaChart === "bar" && (
+              <Columns items={ageing} labelKey="bucket" hover={hSla} setHover={setHSla} height={70} colorFor={(_, i) => AGE_BG[i]} />
+            )}
+            {slaView === "ageing" && slaChart !== "bar" && (
+              <PieChart items={ageing} labelKey="bucket" total={K.open} donut={slaChart === "donut"} hover={hSla} setHover={setHSla} colorFor={(_, i) => AGE_HEX[i]} />
             )}
             {slaView === "met" && slaChart === "bar" && (
               <Columns

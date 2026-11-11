@@ -39,6 +39,7 @@ import {
   SLA_TREND,
   TAT_TREND,
   AGEING_BUCKETS,
+  WORK_QUEUE,
   STAGE_COUNTS,
   PENDING_WITH,
 } from "../../data/odHandlerMock";
@@ -123,6 +124,8 @@ const chartOptions = (types) => types.map((t) => ({ key: t, label: CHART_LABEL[t
 // stage / loss type = fixed categorical order (colour follows the category).
 const STATUS_HEX = { ok: "#059669", risk: "#f59e0b", breach: "#dc2626" };
 // calm teal ramp (light → dark = newer → older); the same colours are used for bars and slices
+// ₹ in lakh / crore for tiles (Indian numbering)
+const lakhShort = (n) => (n >= 10000000 ? `₹${(n / 10000000).toFixed(2)} Cr` : `₹${(n / 100000).toFixed(1)} L`);
 const AGE_HEX = ["#a3d9d0", "#64bdb0", "#2b9a8b", "#167468", "#0c4e47"];
 const AGE_BG = ["bg-[#a3d9d0]", "bg-[#64bdb0]", "bg-[#2b9a8b]", "bg-[#167468]", "bg-[#0c4e47]"];
 // current month (to date) bar in month trends – lighter version of the main teal
@@ -926,7 +929,8 @@ export default function ODHandlerDashboard() {
       label: "Open claims",
       tab: "all",
       value: total,
-      sub: "Assigned to me",
+      // catalogue 180: dashboards show outstanding – reserve held on my open claims
+      sub: `${lakhShort(WORK_QUEUE.reduce((t, r) => t + r.reserve, 0))} outstanding`,
       icon: FolderOpen,
       tone: "bg-slate-100 text-[#0B1F3A]",
       accent: "bg-[#0B1F3A]",
