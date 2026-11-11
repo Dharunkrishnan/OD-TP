@@ -9,7 +9,7 @@ const KEY = "smartclaims-claim-status";
 // Stages before assessment – withdrawal is allowed only here (catalogue 21)
 export const BEFORE_ASSESSMENT = ["NBNR", "Registered", "Survey pending"];
 
-function readAll() {
+export function readStatusAll() {
   try {
     return JSON.parse(sessionStorage.getItem(KEY) || "{}");
   } catch {
@@ -17,21 +17,31 @@ function readAll() {
   }
 }
 
-/** status record of one claim: { state, stage?, reason, remarks, reviewDate?, at, events: [...] } */
+/** status record of one claim: { state, stage?, reason, remarks, reviewDate?, prevState?, at, events: [...] }
+ *  states: OPEN · NBNR_CONVERTED · NBNR_CLOSED · WITHDRAWN · CLOSED · HOLD
+ *          REPUDIATION_PENDING → REPUDIATED (manager approved) or OPEN (rejected)
+ *          REOPEN_PENDING      → OPEN (approved) or prevState (rejected) */
 export function useClaimStatus(claimNo) {
-  const [rec, setRec] = useState(() => readAll()[claimNo] || null);
+  const [rec, setRec] = useState(() => readStatusAll()[claimNo] || null);
   function save(next) {
-    const all = readAll();
-    if (next) all[claimNo] = next;
-    else delete all[claimNo];
-    try {
-      sessionStorage.setItem(KEY, JSON.stringify(all));
-    } catch {
-      /* ignore */
-    }
+    writeStatus(claimNo, next);
     setRec(next);
   }
   return [rec, save];
+}
+
+/** save one claim's status (also used by the Claims Manager's decision in Approvals) */
+export function writeStatus(claimNo, next) {
+  const all = readStatusAll();
+  if (next) all[claimNo] = next;
+  else delete all[claimNo];
+  try {
+    sessionStorage.setItem(KEY, JSON.stringify(all));
+  } catch {
+    /* ignore */
+  }
+  // header badges / bell of the Claims Manager re-read on this event
+  window.dispatchEvent(new Event("smartclaims:manager-data"));
 }
 
 
@@ -41,7 +51,7 @@ export function effectiveState(stage, rec) {
   return {
     state: s,
     stage: s === "NBNR_CONVERTED" ? "Registered" : stage,
-    closed: ["WITHDRAWN", "CLOSED", "NBNR_CLOSED"].includes(s),
+    closed: ["WITHDRAWN", "CLOSED", "NBNR_CLOSED", "REPUDIATED"].includes(s),
     waiting: ["REPUDIATION_PENDING", "REOPEN_PENDING"].includes(s),
     hold: s === "HOLD",
   };

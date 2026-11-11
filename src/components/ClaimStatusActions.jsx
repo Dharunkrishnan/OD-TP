@@ -44,9 +44,22 @@ const BANNER = {
   REPUDIATION_PENDING: { tone: "bg-red-50 text-red-800 border-red-200", Icon: ShieldX, title: () => `Repudiation sent to ${MANAGER} for approval` },
   REOPEN_PENDING: { tone: "bg-indigo-50 text-indigo-800 border-indigo-200", Icon: RotateCcw, title: () => `Reopen sent to ${MANAGER} for approval` },
   NBNR_CONVERTED: { tone: "bg-emerald-50 text-emerald-800 border-emerald-200", Icon: CheckCircle2, title: () => "NBNR converted – claim registered" },
+  REPUDIATED: { tone: "bg-red-50 text-red-800 border-red-200", Icon: ShieldX, title: (r) => `Repudiated – approved by ${r.decidedBy || MANAGER}` },
 };
 
 export function ClaimStatusBanner({ rec }) {
+  // Claims Manager's answer to a repudiation / reopen request (rejected → claim back to where it was)
+  if (rec?.notice && !BANNER[rec.state]) {
+    return (
+      <div className="flex flex-wrap items-center gap-2 border-t border-sky-200 bg-sky-50 px-4 py-2 text-[12.5px] text-sky-900" role="status">
+        <RotateCcw className="h-4 w-4 flex-none" aria-hidden="true" />
+        <span className="font-semibold">{rec.notice.title}</span>
+        <span className="min-w-0 flex-1 truncate" title={rec.notice.text}>
+          · {rec.notice.text} · {fmt(rec.at)}
+        </span>
+      </div>
+    );
+  }
   if (!rec || !BANNER[rec.state]) return null;
   const b = BANNER[rec.state];
   return (
@@ -200,7 +213,7 @@ export function ClaimStatusDialog({ action, claim, rec, onCancel, onDone }) {
         break;
       case "close":
         if (repudiate) {
-          next = { ...base, state: "REPUDIATION_PENDING", events: [ev("Repudiation sent for approval", `${reason} – ${remarks}. To ${MANAGER}.`), ...prevEvents] };
+          next = { ...base, state: "REPUDIATION_PENDING", prevState: rec?.state || "OPEN", events: [ev("Repudiation sent for approval", `${reason} – ${remarks}. To ${MANAGER}.`), ...prevEvents] };
           msg = `Repudiation sent to ${MANAGER} for approval.`;
         } else {
           next = { ...base, state: "CLOSED", events: [ev("Closed without payment", `${reason}${remarks ? ` – ${remarks}` : ""}. Reserve released to ₹0; closure letter sent.`), ...prevEvents] };
@@ -208,7 +221,7 @@ export function ClaimStatusDialog({ action, claim, rec, onCancel, onDone }) {
         }
         break;
       case "reopen":
-        next = { ...base, state: "REOPEN_PENDING", events: [ev("Reopen sent for approval", `${reason} – ${remarks}. To ${MANAGER}.`), ...prevEvents] };
+        next = { ...base, state: "REOPEN_PENDING", prevState: rec?.state, prevReason: rec?.reason, events: [ev("Reopen sent for approval", `${reason} – ${remarks}. To ${MANAGER}.`), ...prevEvents] };
         msg = `Reopen sent to ${MANAGER} for approval.`;
         break;
       case "hold":

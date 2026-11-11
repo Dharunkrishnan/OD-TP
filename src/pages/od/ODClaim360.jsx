@@ -4,6 +4,8 @@
 // Catalogue refs: Claim Summary 182–183, Policy & Coverage 22–32, Survey 37–51,
 // Damage Assessment 52–59, Document Mgmt 152–157, Reserve 18–19, Audit Trail 171–175,
 // Communication 144–151, Investigation & Fraud 66–69.
+// Phase 2B (src/data/claimWork.js): reserve revision 19 · variance alert 94 · queries 145 ·
+// document upload 153 · document verification 154 · note visibility 173.
 
 import { useMemo, useState } from "react";
 import { Link, useParams, useNavigate, useSearchParams } from "react-router-dom";
@@ -33,6 +35,8 @@ import { TAT_STAGES } from "../../data/odHandlerMock";
 import { getClaimDetail, claimFromSlug, LIFECYCLE, STAGE_TO_STEP } from "../../data/odClaimDetail";
 import { ClaimStatusBanner, ClaimActionsMenu, ClaimStatusDialog } from "../../components/ClaimStatusActions";
 import { useClaimStatus, effectiveState } from "../../data/claimStatus";
+import { useClaimWork, reserveVariance, newId, isoToday, nowStamp, HANDLER, MANAGER, NOTE_VISIBILITY } from "../../data/claimWork";
+import { ReserveDialog, VarianceBanner, QueryDialog, ReplyDialog, QueriesPanel, UploadDialog, RejectDocDialog } from "../../components/ClaimWorkDialogs";
 import AppointSurveyorDialog from "../../components/AppointSurveyorDialog";
 import { useClaimSurvey, daysLeft } from "../../data/claimSurvey";
 
@@ -56,6 +60,7 @@ const TABS = [
   { key: "policy", label: "Policy & vehicle" },
   { key: "loss", label: "Loss & survey" },
   { key: "docs", label: "Documents" },
+  { key: "queries", label: "Queries" },
   { key: "reserve", label: "Reserve & payments" },
   { key: "timeline", label: "Timeline" },
 ];
@@ -115,15 +120,17 @@ function SlaChip({ sla }) {
 
 function DocStatus({ status }) {
   const map = {
-    Received: { cls: "bg-emerald-50 text-emerald-800", Icon: CheckCircle2 },
+    Received: { cls: "bg-sky-50 text-sky-800", Icon: Clock, label: "Received – to verify" },
+    Verified: { cls: "bg-emerald-50 text-emerald-800", Icon: CheckCircle2 },
+    Rejected: { cls: "bg-red-50 text-red-700", Icon: XCircle },
     Pending: { cls: "bg-amber-50 text-amber-900", Icon: Clock },
     "Not yet due": { cls: "bg-slate-100 text-slate-600", Icon: MinusCircle },
   };
-  const { cls, Icon } = map[status];
+  const { cls, Icon, label } = map[status] || map.Pending;
   return (
     <span className={`inline-flex items-center gap-1 whitespace-nowrap rounded px-1.5 text-[11px] font-semibold leading-5 ${cls}`}>
       <Icon className="h-3 w-3" aria-hidden="true" />
-      {status}
+      {label || status}
     </span>
   );
 }
@@ -367,8 +374,6 @@ export default function ODClaim360() {
   const [tab, setTab] = useState("overview");
   const [viewStage, setViewStage] = useState(null); // index of a completed lifecycle stage being viewed, or null
   const [toast, setToast] = useState("");
-  const [extraEvents, setExtraEvents] = useState([]);
-  const [docState, setDocState] = useState({}); // name -> status overrides
   const [modal, setModal] = useState(null); // "note" | "docs"
   const [note, setNote] = useState("");
   const [docPick, setDocPick] = useState([]);
@@ -378,6 +383,10 @@ export default function ODClaim360() {
   // Surveyor appointment / change (catalogue 35, timelines 168)
   const [surveyRec, setSurveyRec] = useClaimSurvey(claimNo);
   const [surveyDialog, setSurveyDialog] = useState(false);
+  // Phase 2B – reserve, queries, documents, notes (catalogue 19, 94, 145, 153, 154, 173)
+  const [work, updateWork] = useClaimWork(claimNo);
+  const [workDialog, setWorkDialog] = useState(null); // "reserve" | "query" | "upload" | { reply } | { reject }
+  const [noteVis, setNoteVis] = useState("team");
 
   function flash(msg) {
     setToast(msg);
@@ -425,13 +434,19 @@ export default function ODClaim360() {
   const lifecycle = STATUS_NOTE[st.state] ? { ...baseLife, hold: true, note: STATUS_NOTE[st.state] } : baseLife;
   // Closed (withdrawn / without payment / NBNR closed) → reserve released to ₹0
   const released = st.closed && base.reserve > 0;
+  // Reserve revised in this session (catalogue 19) – latest revision is the current reserve
+  const revised = work.revisions.length > 0;
   const c =
-    stage === base.stage && lifecycle === base.lifecycle && !released && !surveyed
+    stage === base.stage && lifecycle === base.lifecycle && !released && !surveyed && !revised
       ? base
       : {
           ...base,
           stage,
           lifecycle,
+          ...(revised && {
+            reserve: work.revisions[work.revisions.length - 1].amount,
+            reserveHistory: [...base.reserveHistory, ...work.revisions],
+          }),
           ...(converted && {
             nextAction: "Appoint surveyor",
             policy: { ...base.policy, status: "In force" },
@@ -457,20 +472,32 @@ export default function ODClaim360() {
             reserve: 0,
             reserveHistory: [
               ...base.reserveHistory,
+              ...work.revisions,
               { date: statusRec.at, type: "Released", amount: 0, by: "Claims handler", reason: statusRec.reason || "Claim closed" },
             ],
           }),
         };
   const active = !st.closed && !st.waiting; // closed / waiting for approval → only notes allowed
-  const now = new Date();
-  const stamp = () => ({
-    date: now.toISOString().slice(0, 10),
-    time: now.toTimeString().slice(0, 5),
-  });
-  const documents = c.documents.map((d) => ({ ...d, status: docState[d.name] ?? d.status }));
-  const pendingDocs = documents.filter((d) => d.status === "Pending");
-  const requestable = documents.filter((d) => d.status !== "Received" && d.status !== "Pending");
-  const timeline = [...(statusRec?.events || []), ...(surveyRec?.events || []), ...extraEvents, ...c.timeline].sort((a, b) =>
+  // Documents: claim data + this session's requests, uploads and verification (catalogue 153, 154)
+  // Past the Assessment step (Approval, Repair / DO, Payment, Closed) the documents received earlier were already verified
+  const verifiedEarlier = (STAGE_TO_STEP[c.stage]?.step ?? 0) >= 3;
+  const documents = [
+    ...c.documents.map((d) => ({ ...d, ...(verifiedEarlier && d.status === "Received" ? { status: "Verified" } : {}), ...(work.docs[d.name] || {}) })),
+    ...Object.entries(work.docs)
+      .filter(([, d]) => d.extra)
+      .map(([name, d]) => ({ name, ...d })),
+  ];
+  const pendingDocs = documents.filter((d) => d.status === "Pending" || d.status === "Rejected");
+  const toVerify = documents.filter((d) => d.status === "Received");
+  const requestable = documents.filter((d) => d.status === "Not yet due");
+  const openQueries = work.queries.filter((q) => q.status === "OPEN");
+  const reservePending = work.reserveRequest?.status === "PENDING";
+  // Variance alert (catalogue 94) – reserve vs assessed loss, or garage estimate before assessment
+  const variance = active ? reserveVariance(c.reserve, c.survey) : null;
+  const checks = variance
+    ? [...c.checks, { label: "Reserve vs estimate", ok: !variance.alert, note: variance.pct === 0 ? `Matches the ${variance.basisLabel}` : `${variance.pct}% ${variance.over ? "above" : "below"} the ${variance.basisLabel}${variance.alert ? " – revise" : ""}` }]
+    : c.checks;
+  const timeline = [...(statusRec?.events || []), ...(surveyRec?.events || []), ...work.events, ...c.timeline].sort((a, b) =>
     `${b.date} ${b.time}`.localeCompare(`${a.date} ${a.time}`)
   );
   const tat = TAT_STAGES.find((s) => s.stage === STAGE_TAT[c.stage]);
@@ -490,31 +517,92 @@ export default function ODClaim360() {
     };
   });
 
+  // every Phase 2B action = a change to the claim's work record + a timeline event
+  const logWork = (event, detail, change = (w) => w, extra = {}) =>
+    updateWork((w) => ({ ...change(w), events: [{ ...nowStamp(), event, by: HANDLER, detail, ...extra }, ...w.events] }));
+  const setDoc = (name, patch) => (w) => ({ ...w, docs: { ...w.docs, [name]: { ...(w.docs[name] || {}), ...patch } } });
+
   function addNote(e) {
     e.preventDefault();
     if (!note.trim()) return;
-    setExtraEvents((ev) => [{ ...stamp(), event: "Note added", by: "Karthik Subramanian", detail: note.trim() }, ...ev]);
+    const vis = NOTE_VISIBILITY.find((v) => v.key === noteVis);
+    logWork("Note added", note.trim(), undefined, { visibility: vis.label });
     setNote("");
+    setNoteVis("team");
     setModal(null);
-    flash("Note added to the claim timeline.");
+    flash(`Note added · visible to ${vis.label.toLowerCase()}.`);
   }
 
   function requestDocs(e) {
     e.preventDefault();
     if (docPick.length === 0) return;
-    setDocState((s) => ({ ...s, ...Object.fromEntries(docPick.map((n) => [n, "Pending"])) }));
-    setExtraEvents((ev) => [
-      { ...stamp(), event: "Document requested", by: "Karthik Subramanian", detail: `${docPick.join(", ")} · SMS + email sent to insured` },
-      ...ev,
-    ]);
+    logWork("Document requested", `${docPick.join(", ")} · SMS + email sent to insured`, (w) =>
+      docPick.reduce((acc, n) => setDoc(n, { status: "Pending", requestedOn: isoToday(), reminders: 0 })(acc), w)
+    );
     setDocPick([]);
     setModal(null);
     flash(`${docPick.length} document(s) requested from the insured.`);
   }
 
   function markReceived(name) {
-    setDocState((s) => ({ ...s, [name]: "Received" }));
-    setExtraEvents((ev) => [{ ...stamp(), event: "Document received", by: "Karthik Subramanian", detail: name }, ...ev]);
+    logWork("Document received", `${name} · to verify`, setDoc(name, { status: "Received", receivedOn: isoToday() }));
+  }
+
+  function reviseReserve(r) {
+    setWorkDialog(null);
+    const amt = (n) => "₹" + n.toLocaleString("en-IN");
+    if (r.needsApproval) {
+      logWork("Reserve increase sent for approval", `${amt(r.from)} → ${amt(r.to)} · ${r.reason}${r.remarks ? ` – ${r.remarks}` : ""} · to ${MANAGER}`, (w) => ({
+        ...w,
+        reserveRequest: { id: newId("RSV"), from: r.from, to: r.to, reason: r.reason, remarks: r.remarks, at: isoToday(), status: "PENDING" },
+      }));
+      flash(`Reserve increase to ${amt(r.to)} sent to ${MANAGER} for approval.`);
+    } else {
+      logWork("Reserve revised", `${amt(r.from)} → ${amt(r.to)} · ${r.reason}${r.remarks ? ` – ${r.remarks}` : ""}`, (w) => ({
+        ...w,
+        revisions: [...w.revisions, { date: isoToday(), type: r.to > r.from ? "Revised (increase)" : "Revised (decrease)", amount: r.to, by: HANDLER, reason: r.remarks ? `${r.reason} – ${r.remarks}` : r.reason }],
+      }));
+      flash(`Reserve revised to ${amt(r.to)}.`);
+    }
+  }
+
+  function raiseQuery(q) {
+    setWorkDialog(null);
+    logWork("Query raised", `To ${q.to} (${q.toName}) · ${q.subject} – ${q.details} · reply by ${dt(q.due)}`, (w) => ({
+      ...w,
+      queries: [{ id: newId("Q"), ...q, raisedOn: isoToday(), status: "OPEN", reminders: 0 }, ...w.queries],
+    }));
+    setTab("queries");
+    flash(`Query sent to the ${q.to.toLowerCase()}.`);
+  }
+  function remindQuery(q) {
+    logWork("Query reminder sent", `To ${q.to} · ${q.subject}`, (w) => ({ ...w, queries: w.queries.map((x) => (x.id === q.id ? { ...x, reminders: x.reminders + 1 } : x)) }));
+    flash(`Reminder sent to the ${q.to.toLowerCase()}.`);
+  }
+  function closeQuery(q, reply) {
+    setWorkDialog(null);
+    logWork("Query closed", `${q.to} · ${q.subject} – reply: ${reply}`, (w) => ({
+      ...w,
+      queries: w.queries.map((x) => (x.id === q.id ? { ...x, status: "CLOSED", reply, closedOn: isoToday() } : x)),
+    }));
+    flash("Query closed.");
+  }
+
+  function uploadDoc(u) {
+    setWorkDialog(null);
+    const extra = !c.documents.some((d) => d.name === u.docType);
+    logWork("Document uploaded", `${u.docType} · ${u.fileName} (${u.sizeKb} KB) · from ${u.source}`, setDoc(u.docType, { status: "Received", receivedOn: isoToday(), source: u.source, file: u.fileName, extra }));
+    setTab("docs");
+    flash(`${u.docType} uploaded – verify it in Documents.`);
+  }
+  function verifyDoc(name) {
+    logWork("Document verified", name, setDoc(name, { status: "Verified", verifiedOn: isoToday(), rejectReason: "" }));
+    flash(`${name} verified.`);
+  }
+  function rejectDoc(name, reason, rerequest) {
+    setWorkDialog(null);
+    logWork("Document rejected", `${name} – ${reason}${rerequest ? " · asked the insured again" : ""}`, setDoc(name, { status: "Rejected", rejectReason: reason, rerequested: rerequest, requestedOn: isoToday(), reminders: 0 }));
+    flash(`${name} rejected${rerequest ? " and requested again" : ""}.`);
   }
 
   return (
@@ -570,7 +658,7 @@ export default function ODClaim360() {
                 <ActionButton icon={FilePlus2} onClick={() => setModal("docs")} compact>
                   Request documents
                 </ActionButton>
-                <ActionButton icon={Upload} onClick={() => notBuilt("Upload document")} compact>
+                <ActionButton icon={Upload} onClick={() => setWorkDialog("upload")} compact>
                   Upload
                 </ActionButton>
                 {c.stage === "Registered" && (
@@ -678,9 +766,14 @@ export default function ODClaim360() {
                   }`}
                 >
                   {t.label}
-                  {t.key === "docs" && pendingDocs.length > 0 && (
+                  {t.key === "docs" && pendingDocs.length + toVerify.length > 0 && (
                     <span className={`rounded px-1.5 text-[10.5px] font-semibold ${tab === t.key ? "bg-white/15" : "bg-amber-100 text-amber-900"}`}>
-                      {pendingDocs.length}
+                      {pendingDocs.length + toVerify.length}
+                    </span>
+                  )}
+                  {t.key === "queries" && openQueries.length > 0 && (
+                    <span className={`rounded px-1.5 text-[10.5px] font-semibold ${tab === t.key ? "bg-white/15" : "bg-amber-100 text-amber-900"}`}>
+                      {openQueries.length}
                     </span>
                   )}
                 </button>
@@ -690,6 +783,11 @@ export default function ODClaim360() {
             {/* ===== Overview ===== */}
             {tab === "overview" && (
               <div className="grid grid-cols-[minmax(0,1fr)] gap-2 p-2 xl:grid-cols-2">
+                {variance?.alert && (
+                  <div className="xl:col-span-2">
+                    <VarianceBanner v={variance} reserve={c.reserve} pending={reservePending} canRevise={editMode} onRevise={() => setWorkDialog("reserve")} />
+                  </div>
+                )}
                 <Card title="Loss summary">
                   <Facts
                     cols="grid-cols-2"
@@ -739,6 +837,12 @@ export default function ODClaim360() {
                     </button>
                   }
                 >
+                  {toVerify.length > 0 && (
+                    <p className="border-b border-slate-50 px-3 py-1.5 text-[12px] text-sky-800">
+                      {toVerify.length} received – to verify:{" "}
+                      {toVerify.map((d) => d.name).join(", ")}
+                    </p>
+                  )}
                   {pendingDocs.length === 0 ? (
                     <p className="flex items-center gap-1.5 px-3 py-3 text-[12.5px] text-emerald-700">
                       <CheckCircle2 className="h-4 w-4" aria-hidden="true" /> Nothing pending right now.
@@ -749,7 +853,7 @@ export default function ODClaim360() {
                         <li key={d.name} className="flex items-center justify-between gap-2 px-3 py-1.5 text-[12.5px]">
                           <span className="text-slate-800">{d.name}</span>
                           <span className="text-[11px] text-slate-500">
-                            Requested {dt(d.requestedOn)} · {d.reminders} reminder(s)
+                            {d.status === "Rejected" ? `Rejected – ${d.rejectReason}` : `Requested ${dt(d.requestedOn)} · ${d.reminders || 0} reminder(s)`}
                           </span>
                         </li>
                       ))}
@@ -893,6 +997,16 @@ export default function ODClaim360() {
             {/* ===== Documents ===== */}
             {tab === "docs" && (
               <div className="overflow-x-auto">
+                {editMode && active && (
+                  <div className="flex flex-wrap items-center justify-between gap-2 px-3 py-2">
+                    <p className="text-[12px] text-slate-600">
+                      {documents.filter((d) => d.status === "Verified").length} verified · {toVerify.length} to verify · {pendingDocs.length} pending
+                    </p>
+                    <button type="button" onClick={() => setWorkDialog("upload")} className="flex h-7 items-center gap-1.5 rounded-md bg-teal-700 px-2.5 text-[12px] font-semibold text-white hover:bg-teal-800">
+                      <Upload className="h-3.5 w-3.5" aria-hidden="true" /> Upload document
+                    </button>
+                  </div>
+                )}
                 <table className="w-full min-w-[620px] text-left text-[12.5px]">
                   <thead>
                     <tr className="bg-slate-50 text-[10.5px] uppercase tracking-wide text-slate-500">
@@ -916,22 +1030,36 @@ export default function ODClaim360() {
                           <DocStatus status={d.status} />
                         </td>
                         <td className="px-2 py-1.5 text-slate-600">
-                          {d.status === "Received" && dt(d.receivedOn)}
+                          {d.status === "Received" && `${dt(d.receivedOn)}${d.file ? ` · ${d.file}` : ""}`}
+                          {d.status === "Verified" && `Received ${dt(d.receivedOn)} · verified ${dt(d.verifiedOn || d.receivedOn)}`}
+                          {d.status === "Rejected" && `${d.rejectReason}${d.rerequested ? ` · requested again ${dt(d.requestedOn)}` : ""}`}
                           {d.status === "Pending" && `Requested ${dt(d.requestedOn) !== "–" ? dt(d.requestedOn) : "today"} · ${d.reminders || 0} reminder(s)`}
                           {d.status === "Not yet due" && "–"}
                         </td>
                         <td className="px-2 py-1.5 text-slate-600">{d.source ?? "–"}</td>
-                        <td className="px-3 py-1.5 text-right">
-                          {d.status === "Received" && (
-                            <button type="button" onClick={() => notBuilt(`View ${d.name}`)} className="text-[12px] font-medium text-teal-700 hover:underline">
-                              View
-                            </button>
-                          )}
-                          {d.status === "Pending" && editMode && (
-                            <button type="button" onClick={() => markReceived(d.name)} className="text-[12px] font-medium text-teal-700 hover:underline">
-                              Mark received
-                            </button>
-                          )}
+                        <td className="whitespace-nowrap px-3 py-1.5 text-right">
+                          <span className="inline-flex gap-2.5">
+                            {(d.status === "Received" || d.status === "Verified") && (
+                              <button type="button" onClick={() => notBuilt(`View ${d.name}`)} className="text-[12px] font-medium text-teal-700 hover:underline">
+                                View
+                              </button>
+                            )}
+                            {d.status === "Received" && editMode && active && (
+                              <>
+                                <button type="button" onClick={() => verifyDoc(d.name)} className="text-[12px] font-semibold text-emerald-700 hover:underline">
+                                  Verify
+                                </button>
+                                <button type="button" onClick={() => setWorkDialog({ reject: d.name })} className="text-[12px] font-medium text-red-700 hover:underline">
+                                  Reject
+                                </button>
+                              </>
+                            )}
+                            {(d.status === "Pending" || d.status === "Rejected") && editMode && active && (
+                              <button type="button" onClick={() => markReceived(d.name)} className="text-[12px] font-medium text-teal-700 hover:underline">
+                                Mark received
+                              </button>
+                            )}
+                          </span>
                         </td>
                       </tr>
                     ))}
@@ -940,10 +1068,47 @@ export default function ODClaim360() {
               </div>
             )}
 
+            {/* ===== Queries (catalogue 145) ===== */}
+            {tab === "queries" && (
+              <QueriesPanel
+                queries={work.queries}
+                canAct={editMode && active}
+                onRaise={() => setWorkDialog("query")}
+                onRemind={remindQuery}
+                onClose={(q) => setWorkDialog({ reply: q })}
+              />
+            )}
+
             {/* ===== Reserve & payments ===== */}
             {tab === "reserve" && (
               <div className="flex flex-col gap-2 p-2">
-                <Card title="Reserve history" action={<span className="text-[12px] font-semibold text-slate-800">Current {inr(c.reserve)}</span>}>
+                {variance?.alert && <VarianceBanner v={variance} reserve={c.reserve} pending={reservePending} canRevise={editMode} onRevise={() => setWorkDialog("reserve")} />}
+                {reservePending && (
+                  <p className="rounded-lg border border-violet-200 bg-violet-50 px-3 py-2 text-[12.5px] text-violet-900" role="status">
+                    <b className="font-semibold">Reserve increase waiting for {MANAGER}</b> · {inr(work.reserveRequest.from)} → {inr(work.reserveRequest.to)} · {work.reserveRequest.reason} · sent {dt(work.reserveRequest.at)}
+                  </p>
+                )}
+                {work.reserveRequest && work.reserveRequest.status !== "PENDING" && work.reserveRequest.decidedAt && (
+                  <p className={`rounded-lg border px-3 py-2 text-[12.5px] ${work.reserveRequest.status === "APPROVED" ? "border-emerald-200 bg-emerald-50 text-emerald-900" : "border-sky-200 bg-sky-50 text-sky-900"}`}>
+                    <b className="font-semibold">
+                      Reserve increase to {inr(work.reserveRequest.to)} {work.reserveRequest.status === "APPROVED" ? "approved" : "not approved"} by {MANAGER}
+                    </b>
+                    {work.reserveRequest.decisionRemarks ? ` · “${work.reserveRequest.decisionRemarks}”` : ""} · {dt(work.reserveRequest.decidedAt)}
+                  </p>
+                )}
+                <Card
+                  title="Reserve history"
+                  action={
+                    <span className="flex items-center gap-2">
+                      <span className="text-[12px] font-semibold text-slate-800">Current {inr(c.reserve)}</span>
+                      {editMode && active && !reservePending && (
+                        <button type="button" onClick={() => setWorkDialog("reserve")} className="h-7 rounded-md border border-slate-300 bg-white px-2.5 text-[12px] font-semibold text-slate-700 hover:bg-slate-50">
+                          Revise reserve
+                        </button>
+                      )}
+                    </span>
+                  }
+                >
                   <table className="w-full text-left text-[12.5px]">
                     <thead>
                       <tr className="text-[10.5px] uppercase tracking-wide text-slate-500">
@@ -1004,7 +1169,10 @@ export default function ODClaim360() {
                       </span>
                     </div>
                     <div className="text-[12px] text-slate-600">{e.detail}</div>
-                    <div className="text-[11px] text-slate-500">by {e.by}</div>
+                    <div className="text-[11px] text-slate-500">
+                      by {e.by}
+                      {e.visibility && <span className="ml-1.5 rounded bg-slate-100 px-1.5 py-px font-medium text-slate-600">Visible to: {e.visibility}</span>}
+                    </div>
                   </li>
                 ))}
               </ol>
@@ -1044,7 +1212,7 @@ export default function ODClaim360() {
 
             <Card title="Checks">
               <ul className="flex flex-col px-3 py-1.5">
-                {c.checks.map((k) => (
+                {checks.map((k) => (
                   <li key={k.label} className="flex items-start gap-2 py-1 text-[12px]">
                     {k.ok === true && <CheckCircle2 className="mt-px h-3.5 w-3.5 flex-none text-emerald-600" aria-label="Passed" />}
                     {k.ok === false && <XCircle className="mt-px h-3.5 w-3.5 flex-none text-red-600" aria-label="Failed" />}
@@ -1131,6 +1299,12 @@ export default function ODClaim360() {
         />
       )}
 
+      {workDialog === "reserve" && <ReserveDialog claim={c} onCancel={() => setWorkDialog(null)} onDone={reviseReserve} />}
+      {workDialog === "query" && <QueryDialog claim={c} surveyorName={c.survey.surveyor?.name} onCancel={() => setWorkDialog(null)} onDone={raiseQuery} />}
+      {workDialog?.reply && <ReplyDialog query={workDialog.reply} onCancel={() => setWorkDialog(null)} onDone={(r) => closeQuery(workDialog.reply, r)} />}
+      {workDialog === "upload" && <UploadDialog claim={c} documents={documents} onCancel={() => setWorkDialog(null)} onDone={uploadDoc} />}
+      {workDialog?.reject && <RejectDocDialog docName={workDialog.reject} onCancel={() => setWorkDialog(null)} onDone={(r, again) => rejectDoc(workDialog.reject, r, again)} />}
+
       {modal === "note" && (
         <Modal title="Add note" onClose={() => setModal(null)}>
           <form onSubmit={addNote} className="flex flex-col gap-3 p-4">
@@ -1145,6 +1319,18 @@ export default function ODClaim360() {
                 autoFocus
               />
             </label>
+            <fieldset>
+              <legend className="mb-1 text-[12.5px] font-medium text-slate-700">Who can see this note</legend>
+              <div className="flex flex-col gap-1">
+                {NOTE_VISIBILITY.map((v) => (
+                  <label key={v.key} className="flex items-center gap-2 text-[12.5px] text-slate-800">
+                    <input type="radio" name="note-vis" checked={noteVis === v.key} onChange={() => setNoteVis(v.key)} className="h-4 w-4 accent-teal-700" />
+                    <b className="font-semibold">{v.label}</b>
+                    <span className="text-[11.5px] text-slate-500">{v.hint}</span>
+                  </label>
+                ))}
+              </div>
+            </fieldset>
             <div className="flex justify-end gap-2">
               <button type="button" onClick={() => setModal(null)} className="h-8 rounded-md border border-slate-300 px-3 text-[12.5px] font-medium text-slate-700 hover:bg-slate-50">
                 Cancel

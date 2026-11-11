@@ -12,6 +12,9 @@
 //   Repudiate              – reason + remarks mandatory; handler issues the repudiation letter
 //   Refer to Zonal Head    – only when above my authority (Approve / Repudiate are then not allowed)
 //
+// "From handlers" tab: repudiation, reopen and reserve-increase requests sent from Claim 360
+// (src/data/handlerRequests.js) – Approve / Reject; the claim shows the outcome.
+//
 // Demo: decisions are kept for this browser session only (sessionStorage).
 // Replace with POST /od/approvals/:claimNo/decision.
 
@@ -49,6 +52,8 @@ import {
   REFER_RECOMMENDATIONS,
 } from "../../data/odApprovalsMock";
 import { KEYS, readStore, saveStore } from "../../data/odManagerData";
+import { listHandlerRequests, decideHandlerRequest, REQUEST_KIND } from "../../data/handlerRequests";
+import HandlerRequestDetail, { RequestListItem } from "../../components/HandlerRequestDetail";
 
 
 /* ---------------- helpers ---------------- */
@@ -484,7 +489,8 @@ function ApprovalsPage() {
   const navigate = useNavigate();
   const [params, setParams] = useSearchParams();
   const [decisions, setDecisions] = useState(readDecisions);
-  const [filter, setFilter] = useState("all");
+  const [filter, setFilter] = useState(() => (params.get("tab") === "requests" ? "requests" : "all"));
+  const [reqs, setReqs] = useState(listHandlerRequests);
   const [sort, setSort] = useState("oldest");
   const [query, setQuery] = useState("");
   const [dialog, setDialog] = useState(null);
@@ -511,6 +517,22 @@ function ApprovalsPage() {
 
   function select(c) {
     setParams(c ? { claim: claimSlug(c.claimNo) } : {}, { replace: true });
+  }
+
+  // ----- requests from handlers (repudiation · reopen · reserve increase) -----
+  const selectedReq = reqs.find((r) => r.id === params.get("req")) || reqs[0] || null;
+  function selectReq(r) {
+    setParams(r ? { tab: "requests", req: r.id } : { tab: "requests" }, { replace: true });
+  }
+  function decideReq(r, approve, remarks) {
+    decideHandlerRequest(r, approve, remarks);
+    auditLog("HANDLER_REQUEST_DECISION", { claimNo: r.claimNo, kind: r.kind, approve, remarks });
+    const rest = listHandlerRequests();
+    setReqs(rest);
+    selectReq(rest[0] || null);
+    setToast({ text: `${r.claimNo} · ${REQUEST_KIND[r.kind].label} ${approve ? "approved" : "not approved"}`, sub: `${r.handler.split(" ")[0]} sees the outcome on the claim.` });
+    window.clearTimeout(toastTimer.current);
+    toastTimer.current = window.setTimeout(() => setToast(null), 5000);
   }
 
   useEffect(() => () => window.clearTimeout(toastTimer.current), []);
@@ -580,7 +602,7 @@ function ApprovalsPage() {
               )}
             </label>
             <div className="mt-1.5 flex flex-wrap gap-1" role="tablist" aria-label="Filter approvals">
-              {[...FILTERS.map((f) => ({ ...f, n: counts[f.key] })), { key: "decided", label: "Decided", n: decided.length }].map((f) => {
+              {[...FILTERS.map((f) => ({ ...f, n: counts[f.key] })), { key: "requests", label: "From handlers", n: reqs.length }, { key: "decided", label: "Decided", n: decided.length }].map((f) => {
                 const on = filter === f.key;
                 return (
                   <button
@@ -588,7 +610,11 @@ function ApprovalsPage() {
                     type="button"
                     role="tab"
                     aria-selected={on}
-                    onClick={() => setFilter(f.key)}
+                    onClick={() => {
+                      setFilter(f.key);
+                      if (f.key === "requests") selectReq(selectedReq);
+                      else if (filter === "requests") setParams({}, { replace: true });
+                    }}
                     className={`h-6 rounded-full px-2 text-[11.5px] font-medium ring-1 ring-inset ${
                       on ? "bg-[#0B1F3A] text-white ring-[#0B1F3A]" : "bg-white text-slate-600 ring-slate-200 hover:bg-slate-50"
                     }`}
@@ -598,7 +624,7 @@ function ApprovalsPage() {
                 );
               })}
             </div>
-            {filter !== "decided" && (
+            {filter !== "decided" && filter !== "requests" && (
               <div className="mt-1.5 flex items-center gap-1 text-[11px] text-slate-500">
                 Sort
                 {[
@@ -620,7 +646,17 @@ function ApprovalsPage() {
           </div>
 
           <ul className="min-h-0 flex-1 divide-y divide-slate-100 overflow-y-auto">
-            {list.map((c) => {
+            {filter === "requests" &&
+              (reqs.length ? (
+                reqs.map((r) => (
+                  <li key={r.id}>
+                    <RequestListItem r={r} on={selectedReq?.id === r.id} onClick={() => selectReq(r)} />
+                  </li>
+                ))
+              ) : (
+                <li className="px-3 py-8 text-center text-[12.5px] text-slate-500">No requests from handlers right now.</li>
+              ))}
+            {filter !== "requests" && list.map((c) => {
               const on = selected?.claimNo === c.claimNo;
               const d = decisions[c.claimNo];
               return (
@@ -654,7 +690,7 @@ function ApprovalsPage() {
                 </li>
               );
             })}
-            {!list.length && (
+            {filter !== "requests" && !list.length && (
               <li className="px-3 py-8 text-center text-[12.5px] text-slate-500">
                 {filter === "decided" ? "No decisions yet in this session." : pending.length ? "No claim matches this filter." : "All caught up – nothing waiting for your approval."}
               </li>
@@ -663,7 +699,18 @@ function ApprovalsPage() {
         </aside>
 
         {/* ---------------- Detail ---------------- */}
-        {selected ? (
+        {filter === "requests" ? (
+          selectedReq ? (
+            <HandlerRequestDetail
+              key={selectedReq.id}
+              r={selectedReq}
+              onDecide={(approve, remarks) => decideReq(selectedReq, approve, remarks)}
+              onOpenClaim={() => navigate(`/od/claims/${claimSlug(selectedReq.claimNo)}`)}
+            />
+          ) : (
+            <div className="grid flex-1 place-items-center rounded-lg border border-slate-200 bg-white p-8 text-[13px] text-slate-500">Nothing waiting from handlers.</div>
+          )
+        ) : selected ? (
           <Detail
             key={selected.claimNo}
             c={selected}

@@ -10,6 +10,7 @@
 import { AlertTriangle, CalendarClock, ClipboardCheck, Gavel, Landmark, MessageSquareWarning, Plane, Scale, Timer } from "lucide-react";
 import { WORK_QUEUE } from "./odHandlerMock";
 import { TEAM, APPROVALS, WATCHLIST, MANAGER_AUTHORITY, APPROVAL_SLA_HOURS, HANDLER_CAPACITY } from "./odTeamMock";
+import { listHandlerRequests, REQUEST_KIND } from "./handlerRequests";
 
 /* ================================================================== */
 /* Session storage – this session's manager actions                    */
@@ -325,7 +326,7 @@ export function managerBadges() {
   const today = startOfToday();
   const esc = liveEscalations().filter((e) => e.status !== "CLOSED");
   return {
-    approvals: liveApprovals().length,
+    approvals: liveApprovals().length + listHandlerRequests().length,
     teamqueue: liveTeam().reduce((t, h) => t + h.breached, 0),
     escalations: esc.length,
     escalationsOverdue: esc.filter((e) => dueInfo(e, today).left < 0).length,
@@ -339,6 +340,10 @@ export function managerNotifications() {
   const approvals = liveApprovals();
   const esc = liveEscalations().filter((e) => e.status !== "CLOSED");
   const list = [];
+  // requests sent by handlers from Claim 360 (repudiation · reopen · reserve increase)
+  listHandlerRequests().forEach((r) =>
+    list.push({ id: `req-${r.id}`, kind: "major", Icon: ClipboardCheck, title: `${REQUEST_KIND[r.kind].label} for approval`, text: `${r.insured} · ${r.reason} · ${r.handler.split(" ")[0]}`, ref: r.claimNo, to: `/od/approvals?tab=requests&req=${r.id}`, time: "New", unread: true })
+  );
   esc
     .filter((e) => dueInfo(e, today).left < 0)
     .forEach((e) => list.push({ id: `esc-over-${e.id}`, kind: "sla", Icon: AlertTriangle, title: "Escalation overdue", text: `${RESPONSE_RULES[e.source].label} · response was due ${-dueInfo(e, today).left} d ago · ${e.handler.split(" ")[0]}`, ref: e.id, to: `/od/escalations?esc=${e.id}`, time: "Now", unread: true }));
