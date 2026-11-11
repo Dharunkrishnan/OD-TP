@@ -33,6 +33,8 @@ import { TAT_STAGES } from "../../data/odHandlerMock";
 import { getClaimDetail, claimFromSlug, LIFECYCLE, STAGE_TO_STEP } from "../../data/odClaimDetail";
 import { ClaimStatusBanner, ClaimActionsMenu, ClaimStatusDialog } from "../../components/ClaimStatusActions";
 import { useClaimStatus, effectiveState } from "../../data/claimStatus";
+import AppointSurveyorDialog from "../../components/AppointSurveyorDialog";
+import { useClaimSurvey, daysLeft } from "../../data/claimSurvey";
 
 const inr = (n) => (n == null ? "–" : "₹" + Number(n).toLocaleString("en-IN"));
 const dt = (iso) =>
@@ -373,6 +375,9 @@ export default function ODClaim360() {
   // Phase 2A – claim status (NBNR resolve, withdraw, close without payment, reopen, hold): catalogue 16, 21, 131, 134, 162
   const [statusRec, setStatusRec] = useClaimStatus(claimNo);
   const [statusAction, setStatusAction] = useState(null);
+  // Surveyor appointment / change (catalogue 35, timelines 168)
+  const [surveyRec, setSurveyRec] = useClaimSurvey(claimNo);
+  const [surveyDialog, setSurveyDialog] = useState(false);
 
   function flash(msg) {
     setToast(msg);
@@ -409,29 +414,51 @@ export default function ODClaim360() {
     REPUDIATION_PENDING: "Awaiting manager approval",
     REOPEN_PENDING: "Awaiting manager approval",
   };
-  const baseLife = converted ? STAGE_TO_STEP.Registered : base.lifecycle;
+  // Surveyor appointed in this session → Registered claim moves to Survey pending
+  const surveyed = !!surveyRec && (st.stage === "Registered" || st.stage === "Survey pending");
+  const stage = surveyed ? "Survey pending" : st.stage;
+  const baseLife = surveyed
+    ? { ...STAGE_TO_STEP["Survey pending"], note: `${surveyRec.mode === "video" ? "Video survey" : "Survey"} on ${dt(surveyRec.visitDate)}` }
+    : converted
+      ? STAGE_TO_STEP.Registered
+      : base.lifecycle;
   const lifecycle = STATUS_NOTE[st.state] ? { ...baseLife, hold: true, note: STATUS_NOTE[st.state] } : baseLife;
   // Closed (withdrawn / without payment / NBNR closed) → reserve released to ₹0
   const released = st.closed && base.reserve > 0;
   const c =
-    st.stage === base.stage && lifecycle === base.lifecycle && !released
+    stage === base.stage && lifecycle === base.lifecycle && !released && !surveyed
       ? base
       : {
           ...base,
-          stage: st.stage,
+          stage,
           lifecycle,
+          ...(converted && {
+            nextAction: "Appoint surveyor",
+            policy: { ...base.policy, status: "In force" },
+            checks: base.checks.map((k) =>
+              k.label === "Policy in force on loss date" ? { ...k, ok: true, note: "Yes · confirmed with PAS" } : k
+            ),
+          }),
+          ...(surveyed && {
+            pendingWith: "Surveyor",
+            nextAction: `${surveyRec.mode === "video" ? "Video survey" : "Survey visit"} on ${dt(surveyRec.visitDate)} · report due ${dt(surveyRec.reportDue)}`,
+            sla: { status: daysLeft(surveyRec.reportDue) <= 2 ? "risk" : "ok", label: `report in ${daysLeft(surveyRec.reportDue)} d` },
+            survey: {
+              ...base.survey,
+              surveyor: surveyRec.surveyor,
+              appointedOn: surveyRec.at,
+              surveyType: surveyRec.mode === "video" ? "Video survey" : base.survey.surveyType,
+              visitDate: surveyRec.visitDate,
+              location: surveyRec.location,
+              reportDue: surveyRec.reportDue,
+            },
+          }),
           ...(released && {
             reserve: 0,
             reserveHistory: [
               ...base.reserveHistory,
               { date: statusRec.at, type: "Released", amount: 0, by: "Claims handler", reason: statusRec.reason || "Claim closed" },
             ],
-          }),
-          ...(converted && {
-            policy: { ...base.policy, status: "In force" },
-            checks: base.checks.map((k) =>
-              k.label === "Policy in force on loss date" ? { ...k, ok: true, note: "Yes · confirmed with PAS" } : k
-            ),
           }),
         };
   const active = !st.closed && !st.waiting; // closed / waiting for approval → only notes allowed
@@ -443,7 +470,9 @@ export default function ODClaim360() {
   const documents = c.documents.map((d) => ({ ...d, status: docState[d.name] ?? d.status }));
   const pendingDocs = documents.filter((d) => d.status === "Pending");
   const requestable = documents.filter((d) => d.status !== "Received" && d.status !== "Pending");
-  const timeline = [...(statusRec?.events || []), ...extraEvents, ...c.timeline];
+  const timeline = [...(statusRec?.events || []), ...(surveyRec?.events || []), ...extraEvents, ...c.timeline].sort((a, b) =>
+    `${b.date} ${b.time}`.localeCompare(`${a.date} ${a.time}`)
+  );
   const tat = TAT_STAGES.find((s) => s.stage === STAGE_TAT[c.stage]);
 
   // 5-stage lifecycle shown in the left sidebar while this claim is open
@@ -545,7 +574,7 @@ export default function ODClaim360() {
                   Upload
                 </ActionButton>
                 {c.stage === "Registered" && (
-                  <ActionButton icon={UserCheck} onClick={() => notBuilt("Appoint surveyor")} primary>
+                  <ActionButton icon={UserCheck} onClick={() => setSurveyDialog(true)} primary>
                     Appoint surveyor
                   </ActionButton>
                 )}
@@ -564,7 +593,12 @@ export default function ODClaim360() {
                 </ActionButton>
                   </>
                 )}
-                <ClaimActionsMenu stage={c.stage} rec={statusRec} onPick={setStatusAction} />
+                <ClaimActionsMenu
+                  stage={c.stage}
+                  rec={statusRec}
+                  canChangeSurveyor={c.stage === "Survey pending" && !!c.survey.surveyor}
+                  onPick={(k) => (k === "surveyor" ? setSurveyDialog(true) : setStatusAction(k))}
+                />
                   <span className="mx-0.5 h-5 w-px bg-slate-200" aria-hidden="true" />
                 </>
               )}
@@ -604,7 +638,7 @@ export default function ODClaim360() {
           </dl>
 
           {/* Status after a claim action (hold, withdrawn, closed, waiting for approval, NBNR resolved) */}
-          <ClaimStatusBanner rec={statusRec} />
+          <ClaimStatusBanner rec={surveyed && statusRec?.state === "NBNR_CONVERTED" ? null : statusRec} />
 
           {/* Row 3: next action */}
           {active && (
@@ -612,7 +646,7 @@ export default function ODClaim360() {
             <CircleDot className="h-4 w-4 flex-none text-amber-700" aria-hidden="true" />
             <span className="font-semibold text-slate-800">Next action:</span>
             <span className="truncate text-slate-700" title={c.nextAction}>
-              {statusRec?.state === "NBNR_CONVERTED" ? "Appoint surveyor" : st.hold ? `Review on ${dt(statusRec.reviewDate)} – then release the hold` : c.nextAction}
+              {st.hold ? `Review on ${dt(statusRec.reviewDate)} – then release the hold` : c.nextAction}
             </span>
           </div>
           )}
@@ -827,6 +861,8 @@ export default function ODClaim360() {
                         ["Licence no", c.survey.surveyor.licence, { mono: true }],
                         ["Survey type", c.survey.surveyType],
                         ["Appointed on", dt(c.survey.appointedOn)],
+                        c.survey.visitDate && ["Visit date / place", `${dt(c.survey.visitDate)} · ${c.survey.location}`],
+                        c.survey.reportDue && ["Report due", `${dt(c.survey.reportDue)} (15 days from appointment)`],
                         ["Survey done on", c.survey.surveyDoneOn ? dt(c.survey.surveyDoneOn) : "Pending"],
                         ["Garage", c.garage ? `${c.garage.name} (${c.garage.type})` : "–"],
                       ]}
@@ -1076,6 +1112,20 @@ export default function ODClaim360() {
           onDone={(next, msg) => {
             setStatusRec(next);
             setStatusAction(null);
+            flash(msg);
+          }}
+        />
+      )}
+
+      {surveyDialog && (
+        <AppointSurveyorDialog
+          claim={c}
+          current={c.stage === "Survey pending" && c.survey.surveyor ? (surveyRec || { surveyor: c.survey.surveyor, mode: "physical", at: c.survey.appointedOn, visitDate: c.survey.appointedOn, location: c.loss.vehicleLocation, events: [] }) : null}
+          wasNbnr={base.stage === "NBNR"}
+          onCancel={() => setSurveyDialog(false)}
+          onDone={(next, msg) => {
+            setSurveyRec(next);
+            setSurveyDialog(false);
             flash(msg);
           }}
         />

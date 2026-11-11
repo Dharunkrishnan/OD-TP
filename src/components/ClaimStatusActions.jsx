@@ -6,13 +6,14 @@
 //   131 Closure without payment    – no claim / documents not submitted / duplicate; repudiation goes for approval (62/63)
 //   134 Claim reopening            – reason + authority: sent to the Claims Manager for approval
 //   162 Claim hold / pend          – reason + review date; release any time
+//   35  Change surveyor (menu item) – opens AppointSurveyorDialog from Claim 360
 //
 // Demo: the new status and its history are kept for this browser session (sessionStorage).
 // Replace with: POST /od/claims/:claimNo/{nbnr-resolve|withdraw|close|reopen|hold|release}
 
 import { useEffect, useRef, useState } from "react";
 import { BEFORE_ASSESSMENT, effectiveState } from "../data/claimStatus";
-import { ChevronDown, CirclePause, CirclePlay, FileX2, LogOut, RotateCcw, ShieldX, X, XCircle, Clock, CheckCircle2, AlertTriangle } from "lucide-react";
+import { UserCog, ChevronDown, CirclePause, CirclePlay, FileX2, LogOut, RotateCcw, ShieldX, X, XCircle, Clock, CheckCircle2, AlertTriangle } from "lucide-react";
 
 const HANDLER = "Karthik Subramanian";
 const MANAGER = "Priya Raghavan";
@@ -61,7 +62,7 @@ export function ClaimStatusBanner({ rec }) {
 }
 
 /* ---------------- "Claim actions" menu ---------------- */
-export function ClaimActionsMenu({ stage, rec, onPick }) {
+export function ClaimActionsMenu({ stage, rec, onPick, canChangeSurveyor = false }) {
   const [open, setOpen] = useState(false);
   const ref = useRef(null);
   useEffect(() => {
@@ -83,6 +84,7 @@ export function ClaimActionsMenu({ stage, rec, onPick }) {
     : st.waiting
       ? []
       : [
+          ...(canChangeSurveyor ? [{ key: "surveyor", label: "Change surveyor", Icon: UserCog, note: "Before the survey is done, with reason" }] : []),
           st.hold ? { key: "release", label: "Release hold", Icon: CirclePlay } : { key: "hold", label: "Put on hold", Icon: CirclePause, note: "Reason and review date" },
           { key: "withdraw", label: "Withdraw claim", Icon: LogOut, disabled: !canWithdraw, note: canWithdraw ? "Customer request, before assessment" : "Only before assessment" },
           { key: "close", label: "Close without payment", Icon: FileX2, note: "Repudiation goes for approval" },
@@ -366,7 +368,7 @@ export function ClaimStatusDialog({ action, claim, rec, onCancel, onDone }) {
           {action === "hold" && (
             <p className="flex gap-2 text-[11.5px] text-slate-500">
               <Clock className="mt-0.5 h-3.5 w-3.5 flex-none" aria-hidden="true" />
-              The SLA clock keeps running while on hold unless a clock-stop rule applies (catalogue 170).
+              The claim's SLA clock pauses while on hold. Regulatory TAT reports still count the full days from intimation.
             </p>
           )}
         </div>
