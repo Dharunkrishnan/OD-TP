@@ -9,6 +9,7 @@
 // Replace with: POST /od/claims/:claimNo/{reserve|queries|documents|notes}
 
 import { useState } from "react";
+import { getClaimDetail } from "./odClaimDetail";
 
 export const HANDLER_RESERVE_LIMIT = 100000; // ₹1 L – same as the approval authority used in Approvals
 export const VARIANCE_PCT = 20;
@@ -91,4 +92,22 @@ export function reserveVariance(reserve, survey) {
   if (!basis || !reserve) return null;
   const pct = Math.round((Math.abs(reserve - basis) / basis) * 100);
   return { basis, basisLabel: survey.assessed != null ? "assessed loss" : "garage estimate", pct, over: reserve > basis, alert: pct > VARIANCE_PCT };
+}
+
+/* ---------- quick actions from My Work Queue (no need to open the claim) ---------- */
+export const CALL_OUTCOMES = ["Spoke to the insured", "Not reachable", "Asked to call back", "Wrong number", "Spoke to the garage"];
+
+/** change one claim's work record outside Claim 360 and add a timeline event */
+export function logWorkFor(claimNo, event, detail, change = (w) => w, extra = {}) {
+  const w = { ...EMPTY_WORK, ...(readWorkAll()[claimNo] || {}) };
+  const next = { ...change(w), events: [{ ...nowStamp(), event, by: HANDLER, detail, ...extra }, ...w.events] };
+  writeWork(claimNo, next);
+}
+
+/** documents still pending (or rejected) on a claim, including this session's changes */
+export function pendingDocsFor(claimNo) {
+  const c = getClaimDetail(claimNo);
+  if (!c) return [];
+  const docs = readWorkAll()[claimNo]?.docs || {};
+  return c.documents.map((d) => ({ ...d, ...(docs[d.name] || {}) })).filter((d) => d.status === "Pending" || d.status === "Rejected");
 }

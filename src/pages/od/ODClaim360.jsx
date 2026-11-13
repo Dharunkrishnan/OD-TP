@@ -6,6 +6,8 @@
 // Communication 144–151, Investigation & Fraud 66–69.
 // Phase 2B (src/data/claimWork.js): reserve revision 19 · variance alert 94 · queries 145 ·
 // document upload 153 · document verification 154 · note visibility 173.
+// Settlement panel (src/data/claimSettlement.js): DO 91 · final invoice 79–83 · payee & bank 120, 122 ·
+// discharge 121 · payment 125–126 · closure after payment 130.
 
 import { useMemo, useState } from "react";
 import { Link, useParams, useNavigate, useSearchParams } from "react-router-dom";
@@ -36,6 +38,8 @@ import { getClaimDetail, claimFromSlug, LIFECYCLE, STAGE_TO_STEP } from "../../d
 import { ClaimStatusBanner, ClaimActionsMenu, ClaimStatusDialog } from "../../components/ClaimStatusActions";
 import { useClaimStatus, effectiveState } from "../../data/claimStatus";
 import { useClaimWork, reserveVariance, newId, isoToday, nowStamp, HANDLER, MANAGER, NOTE_VISIBILITY } from "../../data/claimWork";
+import SettlementPanel, { InvoiceDialog, PayeeDialog, CloseSettledDialog } from "../../components/SettlementPanel";
+import { settlementState } from "../../data/claimSettlement";
 import { ReserveDialog, VarianceBanner, QueryDialog, ReplyDialog, QueriesPanel, UploadDialog, RejectDocDialog } from "../../components/ClaimWorkDialogs";
 import AppointSurveyorDialog from "../../components/AppointSurveyorDialog";
 import { useClaimSurvey, daysLeft } from "../../data/claimSurvey";
@@ -360,7 +364,7 @@ function StageView({ c, index, label, documents, timeline, onBack }) {
 /* Page                                                                */
 /* ------------------------------------------------------------------ */
 // Header chip for a closed claim (replaces the stage name)
-const CLOSED_CHIP = { WITHDRAWN: "Withdrawn", CLOSED: "Closed – no payment", NBNR_CLOSED: "NBNR closed" };
+const CLOSED_CHIP = { SETTLED: "Closed – paid", WITHDRAWN: "Withdrawn", CLOSED: "Closed – no payment", NBNR_CLOSED: "NBNR closed" };
 
 export default function ODClaim360() {
   const { id } = useParams();
@@ -425,8 +429,15 @@ export default function ODClaim360() {
   };
   // Surveyor appointed in this session → Registered claim moves to Survey pending
   const surveyed = !!surveyRec && (st.stage === "Registered" || st.stage === "Survey pending");
-  const stage = surveyed ? "Survey pending" : st.stage;
-  const baseLife = surveyed
+  // Settlement (Repair / DO, Payment): payment requested → Payment; paid & closed → Closed
+  const settled = st.state === "SETTLED";
+  const settle = ["Repair / DO", "Payment"].includes(base.stage) ? settlementState(base, work.settlement || {}) : null;
+  const stage = surveyed ? "Survey pending" : settled ? "Closed" : settle?.payment && base.stage === "Repair / DO" ? "Payment" : st.stage;
+  const baseLife = settled
+    ? STAGE_TO_STEP.Closed
+    : stage === "Payment" && base.stage !== "Payment"
+      ? STAGE_TO_STEP.Payment
+      : surveyed
     ? { ...STAGE_TO_STEP["Survey pending"], note: `${surveyRec.mode === "video" ? "Video survey" : "Survey"} on ${dt(surveyRec.visitDate)}` }
     : converted
       ? STAGE_TO_STEP.Registered
@@ -473,7 +484,7 @@ export default function ODClaim360() {
             reserveHistory: [
               ...base.reserveHistory,
               ...work.revisions,
-              { date: statusRec.at, type: "Released", amount: 0, by: "Claims handler", reason: statusRec.reason || "Claim closed" },
+              { date: statusRec.at, type: settled ? "Paid & closed" : "Released", amount: 0, by: "Claims handler", reason: statusRec.reason || "Claim closed" },
             ],
           }),
         };
@@ -491,6 +502,18 @@ export default function ODClaim360() {
   const toVerify = documents.filter((d) => d.status === "Received");
   const requestable = documents.filter((d) => d.status === "Not yet due");
   const openQueries = work.queries.filter((q) => q.status === "OPEN");
+  // Payments: the handler's payment request replaces the demo row once raised in this session
+  const payments = settle?.payment
+    ? [
+        {
+          date: settle.payment.requestedOn,
+          payee: settle.payee?.name || c.payments[0]?.payee || c.insured,
+          mode: settle.payment.mode || "NEFT",
+          amount: settle.payment.amount,
+          status: settle.payment.status === "PAID" ? `Paid · UTR ${settle.payment.utr}` : "Sent to Finance",
+        },
+      ]
+    : c.payments;
   const reservePending = work.reserveRequest?.status === "PENDING";
   // Variance alert (catalogue 94) – reserve vs assessed loss, or garage estimate before assessment
   const variance = active ? reserveVariance(c.reserve, c.survey) : null;
@@ -586,6 +609,59 @@ export default function ODClaim360() {
       queries: w.queries.map((x) => (x.id === q.id ? { ...x, status: "CLOSED", reply, closedOn: isoToday() } : x)),
     }));
     flash("Query closed.");
+  }
+
+  // ----- Settlement (DO → invoice → payee → discharge → payment → close) -----
+  const amtF = (n) => "₹" + Number(n || 0).toLocaleString("en-IN");
+  const saveSettle = (patch, event, detail) => logWork(event, detail, (w) => ({ ...w, settlement: { ...(w.settlement || {}), ...patch } }));
+  function recordInvoice(inv) {
+    setWorkDialog(null);
+    const over = Math.round(((inv.amount - settle.approved) / settle.approved) * 100);
+    const flag = inv.amount > settle.approved * 1.05;
+    saveSettle({ invoice: inv }, "Final invoice received", `${inv.no} · ${amtF(inv.amount)} · ${over > 0 ? `${over}% above` : "within"} approved ${amtF(settle.approved)}${flag ? " – sent to the surveyor for re-check" : ""}`);
+    flash(flag ? `Invoice is ${over}% above approved – sent to the surveyor for re-check.` : "Final invoice recorded.");
+  }
+  function surveyorConfirmed() {
+    saveSettle(
+      { invoice: { ...settle.invoice, surveyorOk: true } },
+      "Surveyor confirmed final bill",
+      `Payable limited to the approved ${amtF(settle.approved)}; excess ${amtF(settle.invoice.amount - settle.approved)} to be collected by the garage from the insured`
+    );
+    flash("Surveyor confirmation recorded.");
+  }
+  function savePayee(p) {
+    setWorkDialog(null);
+    saveSettle({ payee: p }, "Payee set", `${p.type} · ${p.name} · A/c ${p.acct} · IFSC ${p.ifsc} · account verified`);
+    flash(`Payee set – ${p.name}.`);
+  }
+  function dischargeReceived() {
+    saveSettle({ discharge: { receivedOn: isoToday() } }, "Discharge voucher received", `Signed by ${c.insured} for ${amtF(settle.payable)}`);
+    flash("Discharge voucher marked received.");
+  }
+  function requestPayment() {
+    saveSettle(
+      { payment: { status: "REQUESTED", amount: settle.payable, requestedOn: isoToday(), mode: "NEFT" } },
+      "Payment request sent to Finance",
+      `${amtF(settle.payable)} by NEFT to ${settle.payee.name} (A/c ${settle.payee.acct})`
+    );
+    flash(`Payment of ${amtF(settle.payable)} sent to Finance.`);
+  }
+  function markPaid() {
+    const utr = `N${String(Date.now()).slice(-11)}`;
+    saveSettle({ payment: { ...settle.payment, status: "PAID", utr, paidOn: isoToday() } }, "Payment made", `${amtF(settle.payment.amount)} to ${settle.payee?.name || payments[0]?.payee} · UTR ${utr} (Finance)`);
+    flash(`Payment made · UTR ${utr}.`);
+  }
+  function closeSettled() {
+    setWorkDialog(null);
+    const reason = `Paid ${amtF(settle.payment.amount)} to ${settle.payee?.name || payments[0]?.payee}`;
+    setStatusRec({
+      state: "SETTLED",
+      reason,
+      remarks: `UTR ${settle.payment.utr}`,
+      at: isoToday(),
+      events: [{ ...nowStamp(), event: "Claim closed – settled", by: HANDLER, detail: `${reason} · UTR ${settle.payment.utr} · reserve released to ₹0` }, ...(statusRec?.events || [])],
+    });
+    flash("Claim settled and closed.");
   }
 
   function uploadDoc(u) {
@@ -786,6 +862,22 @@ export default function ODClaim360() {
                 {variance?.alert && (
                   <div className="xl:col-span-2">
                     <VarianceBanner v={variance} reserve={c.reserve} pending={reservePending} canRevise={editMode} onRevise={() => setWorkDialog("reserve")} />
+                  </div>
+                )}
+                {settle && (
+                  <div className="xl:col-span-2">
+                    <SettlementPanel
+                      s={settle}
+                      canAct={editMode && active}
+                      closed={settled}
+                      onInvoice={() => setWorkDialog("invoice")}
+                      onSurveyorOk={surveyorConfirmed}
+                      onPayee={() => setWorkDialog("payee")}
+                      onDischarge={dischargeReceived}
+                      onRequestPayment={requestPayment}
+                      onMarkPaid={markPaid}
+                      onClose={() => setWorkDialog("closeSettled")}
+                    />
                   </div>
                 )}
                 <Card title="Loss summary">
@@ -1133,19 +1225,19 @@ export default function ODClaim360() {
                   </table>
                 </Card>
                 <Card title="Payments">
-                  {c.payments.length === 0 ? (
+                  {payments.length === 0 ? (
                     <p className="px-3 py-3 text-[12.5px] text-slate-500">No payments yet. Payment is raised after the delivery order is issued.</p>
                   ) : (
                     <table className="w-full text-left text-[12.5px]">
                       <tbody>
-                        {c.payments.map((p, i) => (
+                        {payments.map((p, i) => (
                           <tr key={i} className="border-t border-slate-100">
                             <td className="px-3 py-1.5 text-slate-600">{dt(p.date)}</td>
                             <td className="px-2 py-1.5 text-slate-800">{p.payee}</td>
                             <td className="px-2 py-1.5">{p.mode}</td>
                             <td className="px-2 py-1.5 text-right font-semibold tabular-nums">{inr(p.amount)}</td>
                             <td className="px-3 py-1.5">
-                              <span className="rounded bg-amber-50 px-1.5 text-[11px] font-semibold leading-5 text-amber-900">{p.status}</span>
+                              <span className={`rounded px-1.5 text-[11px] font-semibold leading-5 ${p.status.startsWith("Paid") ? "bg-emerald-50 text-emerald-800" : "bg-amber-50 text-amber-900"}`}>{p.status}</span>
                             </td>
                           </tr>
                         ))}
@@ -1299,6 +1391,9 @@ export default function ODClaim360() {
         />
       )}
 
+      {workDialog === "invoice" && <InvoiceDialog c={c} s={settle} onCancel={() => setWorkDialog(null)} onDone={recordInvoice} />}
+      {workDialog === "payee" && <PayeeDialog c={c} s={settle} onCancel={() => setWorkDialog(null)} onDone={savePayee} />}
+      {workDialog === "closeSettled" && <CloseSettledDialog c={c} s={settle} onCancel={() => setWorkDialog(null)} onDone={closeSettled} />}
       {workDialog === "reserve" && <ReserveDialog claim={c} onCancel={() => setWorkDialog(null)} onDone={reviseReserve} />}
       {workDialog === "query" && <QueryDialog claim={c} surveyorName={c.survey.surveyor?.name} onCancel={() => setWorkDialog(null)} onDone={raiseQuery} />}
       {workDialog?.reply && <ReplyDialog query={workDialog.reply} onCancel={() => setWorkDialog(null)} onDone={(r) => closeQuery(workDialog.reply, r)} />}

@@ -2,6 +2,8 @@
 // P05 · My Work Queue (persona: OD Claims Handler – Karthik Subramanian · OD0123)
 // Full list of open claims assigned to me – one value per column, full width.
 // Today's diary and Alerts open from buttons in the card header as a side drawer.
+// Row ⋯ quick actions (no need to open the claim): document reminder, diary follow-up, note, call log.
+// They write to the claim's timeline; decisions (reserve, status, surveyor) stay in Claim 360.
 // Main buckets = the 5 claim lifecycle stages (Intake · Survey / Investigation · Assessment ·
 // Decision · Settlement). Inside each bucket: filters (Show = All open / Due today / SLA breached /
 // At risk / Docs pending / NBNR, Stage, Pending with, Loss type) and the claims table.
@@ -44,6 +46,8 @@ import {
 import ODShell from "../../components/layout/ODShell";
 import { WORK_QUEUE, DIARY, ALERTS } from "../../data/odHandlerMock";
 import { claimSlug } from "../../data/odClaimDetail";
+import { QuickActionsMenu, QuickActionDialog } from "../../components/QueueQuickActions";
+import { logWorkFor, pendingDocsFor, isoToday, NOTE_VISIBILITY } from "../../data/claimWork";
 
 const PAGE_SIZE = 15;
 const SLA_RANK = { breach: 0, risk: 1, ok: 2 };
@@ -213,7 +217,8 @@ function FlagDot({ text }) {
 // Pill-style filter: "Label: value ▾". Teal when set, with its own × to clear.
 // Opens a styled menu (✓ on the current choice, claim count per option, ↑ ↓ Enter Esc).
 // Width of the Actions column (view + edit icons) – always shown, never moved out
-const ACTIONS_W = 64;
+const ACTIONS_W = 96;
+const DIARY_KEY = "smartclaims-diary"; // view · edit · quick actions
 
 function FilterPill({ label, icon: Icon, value, onChange, options, allLabel, showClear = true, counts, align = "left" }) {
   const opts = [
@@ -422,7 +427,24 @@ export default function ODWorkQueue() {
       return next;
     });
   }
-  const [diary, setDiary] = useState(DIARY);
+  // Diary is kept for the browser session, so follow-ups added from quick actions stay
+  const [diary, setDiary] = useState(() => {
+    try {
+      return JSON.parse(sessionStorage.getItem(DIARY_KEY) || "null") || DIARY;
+    } catch {
+      return DIARY;
+    }
+  });
+  useEffect(() => {
+    try {
+      sessionStorage.setItem(DIARY_KEY, JSON.stringify(diary));
+    } catch {
+      /* ignore */
+    }
+  }, [diary]);
+  // Row quick actions
+  const [quick, setQuick] = useState(null); // { kind, row, pendingDocs }
+  const [quickTick, setQuickTick] = useState(0); // re-read pending counts after an action
   // Diary: after ticking an item done, a small note box opens to record what was done
   const [noteFor, setNoteFor] = useState(null); // index of the diary item whose note box is open
   const [noteDraft, setNoteDraft] = useState("");
@@ -576,6 +598,37 @@ export default function ODWorkQueue() {
     );
     setNewItem({ time: "17:00", claimNo: "", text: "" });
     setAdding(false);
+  }
+
+  function doQuick({ docs, time, text, vis, outcome }) {
+    const { kind, row } = quick;
+    if (kind === "remind") {
+      logWorkFor(row.claimNo, "Document reminder sent", `${docs.join(", ")} · SMS + email to insured`, (w) => ({
+        ...w,
+        docs: Object.fromEntries([
+          ...Object.entries(w.docs),
+          ...docs.map((n) => {
+            const d = quick.pendingDocs.find((x) => x.name === n);
+            return [n, { ...(w.docs[n] || {}), status: d.status, requestedOn: d.requestedOn || isoToday(), reminders: (d.reminders || 0) + 1 }];
+          }),
+        ]),
+      }));
+      setToast(`Reminder sent for ${docs.length} document(s) · ${row.claimNo}`);
+    } else if (kind === "diary") {
+      setDiary((list) => [...list, { time, claimNo: row.claimNo, text, done: false }].sort((a, b) => a.time.localeCompare(b.time)));
+      setToast(`Added to today's diary at ${time}`);
+    } else if (kind === "note") {
+      const v = NOTE_VISIBILITY.find((x) => x.key === vis);
+      logWorkFor(row.claimNo, "Note added", text, undefined, { visibility: v.label });
+      setToast(`Note added to ${row.claimNo}`);
+    } else {
+      logWorkFor(row.claimNo, "Call logged", `${outcome}${text ? ` – ${text}` : ""}`);
+      setToast(`Call logged on ${row.claimNo}`);
+    }
+    window.clearTimeout(doQuick.t);
+    doQuick.t = window.setTimeout(() => setToast(""), 2600);
+    setQuick(null);
+    setQuickTick((t) => t + 1);
   }
 
   const diaryLeft = diary.filter((d) => !d.done).length;
@@ -878,6 +931,12 @@ export default function ODWorkQueue() {
                         >
                           <FilePen className="h-4 w-4" aria-hidden="true" />
                         </button>
+                        <QuickActionsMenu
+                          key={quickTick}
+                          row={r}
+                          pendingCount={pendingDocsFor(r.claimNo).length}
+                          onPick={(kind) => setQuick({ kind, row: r, pendingDocs: pendingDocsFor(r.claimNo) })}
+                        />
                       </span>
                     </td>
                   </tr>
@@ -1181,6 +1240,8 @@ export default function ODWorkQueue() {
           </aside>
         </div>
       )}
+
+      {quick && <QuickActionDialog kind={quick.kind} row={quick.row} pendingDocs={quick.pendingDocs} onCancel={() => setQuick(null)} onDone={doQuick} />}
 
       {toast && (
         <div role="status" className="fixed bottom-5 left-1/2 z-50 -translate-x-1/2 rounded-lg bg-[#0B1F3A] px-4 py-2.5 text-sm text-white shadow-lg">

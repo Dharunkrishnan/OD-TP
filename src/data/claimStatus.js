@@ -20,7 +20,8 @@ export function readStatusAll() {
 /** status record of one claim: { state, stage?, reason, remarks, reviewDate?, prevState?, at, events: [...] }
  *  states: OPEN · NBNR_CONVERTED · NBNR_CLOSED · WITHDRAWN · CLOSED · HOLD
  *          REPUDIATION_PENDING → REPUDIATED (manager approved) or OPEN (rejected)
- *          REOPEN_PENDING      → OPEN (approved) or prevState (rejected) */
+ *          REOPEN_PENDING      → OPEN (approved) or prevState (rejected)
+ *          SETTLED             – paid and closed from the Settlement panel */
 export function useClaimStatus(claimNo) {
   const [rec, setRec] = useState(() => readStatusAll()[claimNo] || null);
   function save(next) {
@@ -51,7 +52,7 @@ export function effectiveState(stage, rec) {
   return {
     state: s,
     stage: s === "NBNR_CONVERTED" ? "Registered" : stage,
-    closed: ["WITHDRAWN", "CLOSED", "NBNR_CLOSED", "REPUDIATED"].includes(s),
+    closed: ["WITHDRAWN", "CLOSED", "NBNR_CLOSED", "REPUDIATED", "SETTLED"].includes(s),
     waiting: ["REPUDIATION_PENDING", "REOPEN_PENDING"].includes(s),
     hold: s === "HOLD",
   };

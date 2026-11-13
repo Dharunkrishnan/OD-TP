@@ -44,6 +44,7 @@ const BANNER = {
   REPUDIATION_PENDING: { tone: "bg-red-50 text-red-800 border-red-200", Icon: ShieldX, title: () => `Repudiation sent to ${MANAGER} for approval` },
   REOPEN_PENDING: { tone: "bg-indigo-50 text-indigo-800 border-indigo-200", Icon: RotateCcw, title: () => `Reopen sent to ${MANAGER} for approval` },
   NBNR_CONVERTED: { tone: "bg-emerald-50 text-emerald-800 border-emerald-200", Icon: CheckCircle2, title: () => "NBNR converted – claim registered" },
+  SETTLED: { tone: "bg-emerald-50 text-emerald-800 border-emerald-200", Icon: CheckCircle2, title: () => "Settled & closed" },
   REPUDIATED: { tone: "bg-red-50 text-red-800 border-red-200", Icon: ShieldX, title: (r) => `Repudiated – approved by ${r.decidedBy || MANAGER}` },
 };
 
