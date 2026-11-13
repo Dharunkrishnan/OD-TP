@@ -89,6 +89,11 @@ export function QuickActionDialog({ kind, row, pendingDocs, onCancel, onDone }) 
   const ref = useRef(null);
   const [docs, setDocs] = useState(() => pendingDocs.map((d) => d.name));
   const [time, setTime] = useState("17:00");
+  const [[today, maxDate]] = useState(() => {
+    const t = new Date().toISOString().slice(0, 10);
+    return [t, new Date(Date.parse(t) + 30 * 86400000).toISOString().slice(0, 10)];
+  });
+  const [date, setDate] = useState(today);
   const [text, setText] = useState("");
   const [vis, setVis] = useState("team");
   const [outcome, setOutcome] = useState("");
@@ -104,6 +109,7 @@ export function QuickActionDialog({ kind, row, pendingDocs, onCancel, onDone }) 
   let error = null;
   if (kind === "remind" && docs.length === 0) error = "Tick at least one document.";
   if (kind === "diary" && text.trim().length < 3) error = "Write what to follow up.";
+  if (kind === "diary" && (!date || date < today || date > maxDate)) error = "Choose a date within the next 30 days.";
   if (kind === "note" && text.trim().length < 3) error = "Write the note.";
   if (kind === "call" && !outcome) error = "Select the call outcome.";
 
@@ -111,7 +117,7 @@ export function QuickActionDialog({ kind, row, pendingDocs, onCancel, onDone }) 
     e.preventDefault();
     setTried(true);
     if (error) return;
-    onDone({ docs, time, text: text.trim(), vis, outcome });
+    onDone({ docs, time, date, text: text.trim(), vis, outcome });
   }
 
   return (
@@ -151,16 +157,22 @@ export function QuickActionDialog({ kind, row, pendingDocs, onCancel, onDone }) 
             </fieldset>
           )}
           {kind === "diary" && (
-            <div className="grid grid-cols-[110px_1fr] gap-2">
-              <label className="block">
-                <span className="mb-1 block text-[12px] font-medium text-slate-700">Today at</span>
-                <input type="time" value={time} onChange={(e) => setTime(e.target.value)} className={inputCls} />
-              </label>
+            <>
               <label className="block">
                 <span className="mb-1 block text-[12px] font-medium text-slate-700">Follow up</span>
                 <input value={text} onChange={(e) => setText(e.target.value)} placeholder="e.g. Call garage for repair status" className={inputCls} />
               </label>
-            </div>
+              <div className="grid grid-cols-[1fr_120px] gap-2">
+                <label className="block">
+                  <span className="mb-1 block text-[12px] font-medium text-slate-700">Date</span>
+                  <input type="date" value={date} min={today} max={maxDate} onChange={(e) => setDate(e.target.value)} className={inputCls} />
+                </label>
+                <label className="block">
+                  <span className="mb-1 block text-[12px] font-medium text-slate-700">Time</span>
+                  <input type="time" value={time} onChange={(e) => setTime(e.target.value)} className={inputCls} />
+                </label>
+              </div>
+            </>
           )}
           {kind === "note" && (
             <>
@@ -197,7 +209,7 @@ export function QuickActionDialog({ kind, row, pendingDocs, onCancel, onDone }) 
             Cancel
           </button>
           <button type="submit" className="h-9 rounded-lg bg-teal-700 px-3 text-[13px] font-semibold text-white hover:bg-teal-800">
-            {kind === "remind" ? "Send reminder" : kind === "diary" ? "Add to diary" : "Save"}
+            {kind === "remind" ? "Send reminder" : kind === "diary" ? "Set follow-up" : "Save"}
           </button>
         </div>
       </form>

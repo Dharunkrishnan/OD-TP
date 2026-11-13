@@ -6,8 +6,8 @@
 // Communication 144–151, Investigation & Fraud 66–69.
 // Phase 2B (src/data/claimWork.js): reserve revision 19 · variance alert 94 · queries 145 ·
 // document upload 153 · document verification 154 · note visibility 173.
-// Settlement panel (src/data/claimSettlement.js): DO 91 · final invoice 79–83 · payee & bank 120, 122 ·
-// discharge 121 · payment 125–126 · closure after payment 130.
+// Settlement panel (src/data/claimSettlement.js): DO + working sheet 91 · final invoice 79–83 · payee & bank 120, 122 ·
+// consent 121 · delivery & satisfaction before payment 77 · payment 125–126 · auto-close after payment 130.
 
 import { useMemo, useState } from "react";
 import { Link, useParams, useNavigate, useSearchParams } from "react-router-dom";
@@ -38,8 +38,8 @@ import { getClaimDetail, claimFromSlug, LIFECYCLE, STAGE_TO_STEP } from "../../d
 import { ClaimStatusBanner, ClaimActionsMenu, ClaimStatusDialog } from "../../components/ClaimStatusActions";
 import { useClaimStatus, effectiveState } from "../../data/claimStatus";
 import { useClaimWork, reserveVariance, newId, isoToday, nowStamp, HANDLER, MANAGER, NOTE_VISIBILITY } from "../../data/claimWork";
-import SettlementPanel, { InvoiceDialog, PayeeDialog, CloseSettledDialog } from "../../components/SettlementPanel";
-import { settlementState } from "../../data/claimSettlement";
+import SettlementPanel, { InvoiceDialog, PayeeDialog, ConsentDialog, DeliveryDialog, WorkingSheetDialog } from "../../components/SettlementPanel";
+import { settlementState, INVOICE_TOLERANCE_PCT } from "../../data/claimSettlement";
 import { ReserveDialog, VarianceBanner, QueryDialog, ReplyDialog, QueriesPanel, UploadDialog, RejectDocDialog } from "../../components/ClaimWorkDialogs";
 import AppointSurveyorDialog from "../../components/AppointSurveyorDialog";
 import { useClaimSurvey, daysLeft } from "../../data/claimSurvey";
@@ -617,8 +617,8 @@ export default function ODClaim360() {
   function recordInvoice(inv) {
     setWorkDialog(null);
     const over = Math.round(((inv.amount - settle.approved) / settle.approved) * 100);
-    const flag = inv.amount > settle.approved * 1.05;
-    saveSettle({ invoice: inv }, "Final invoice received", `${inv.no} · ${amtF(inv.amount)} · ${over > 0 ? `${over}% above` : "within"} approved ${amtF(settle.approved)}${flag ? " – sent to the surveyor for re-check" : ""}`);
+    const flag = inv.amount > settle.approved * (1 + INVOICE_TOLERANCE_PCT / 100);
+    saveSettle({ invoice: inv }, "Final invoice received", `${inv.no} · ${inv.type} · GSTIN ${inv.gstin} · in favour of ${inv.favour} · ${amtF(inv.amount)} · ${over > 0 ? `${over}% above` : "within"} approved ${amtF(settle.approved)}${flag ? " – sent to the surveyor for re-check" : ""}`);
     flash(flag ? `Invoice is ${over}% above approved – sent to the surveyor for re-check.` : "Final invoice recorded.");
   }
   function surveyorConfirmed() {
@@ -634,9 +634,15 @@ export default function ODClaim360() {
     saveSettle({ payee: p }, "Payee set", `${p.type} · ${p.name} · A/c ${p.acct} · IFSC ${p.ifsc} · account verified`);
     flash(`Payee set – ${p.name}.`);
   }
-  function dischargeReceived() {
-    saveSettle({ discharge: { receivedOn: isoToday() } }, "Discharge voucher received", `Signed by ${c.insured} for ${amtF(settle.payable)}`);
-    flash("Discharge voucher marked received.");
+  function recordConsent(x) {
+    setWorkDialog(null);
+    saveSettle({ consent: x }, "Settlement consent received", `${c.insured} agreed to ${amtF(settle.payable)} · ${x.mode} · ${x.ref}`);
+    flash("Settlement consent recorded.");
+  }
+  function confirmDelivery(x) {
+    setWorkDialog(null);
+    saveSettle({ delivery: x }, "Vehicle delivered", `Delivered ${dt(x.on)} by ${c.garage?.name} · satisfaction note signed by ${c.insured}`);
+    flash("Delivery & satisfaction confirmed – payment can be raised.");
   }
   function requestPayment() {
     saveSettle(
@@ -646,22 +652,21 @@ export default function ODClaim360() {
     );
     flash(`Payment of ${amtF(settle.payable)} sent to Finance.`);
   }
+  // Payment success → claim closes automatically, reserve released to nil (catalogue 130)
   function markPaid() {
     const utr = `N${String(Date.now()).slice(-11)}`;
-    saveSettle({ payment: { ...settle.payment, status: "PAID", utr, paidOn: isoToday() } }, "Payment made", `${amtF(settle.payment.amount)} to ${settle.payee?.name || payments[0]?.payee} · UTR ${utr} (Finance)`);
-    flash(`Payment made · UTR ${utr}.`);
-  }
-  function closeSettled() {
-    setWorkDialog(null);
-    const reason = `Paid ${amtF(settle.payment.amount)} to ${settle.payee?.name || payments[0]?.payee}`;
+    const payee = settle.payee?.name || payments[0]?.payee;
+    const stamp = nowStamp();
+    saveSettle({ payment: { ...settle.payment, status: "PAID", utr, paidOn: isoToday() } }, "Payment made", `${amtF(settle.payment.amount)} to ${payee} · UTR ${utr} (Finance)`);
+    const reason = `Paid ${amtF(settle.payment.amount)} to ${payee}`;
     setStatusRec({
       state: "SETTLED",
       reason,
-      remarks: `UTR ${settle.payment.utr}`,
+      remarks: `UTR ${utr}`,
       at: isoToday(),
-      events: [{ ...nowStamp(), event: "Claim closed – settled", by: HANDLER, detail: `${reason} · UTR ${settle.payment.utr} · reserve released to ₹0` }, ...(statusRec?.events || [])],
+      events: [{ ...stamp, event: "Claim closed – settled", by: "System (auto)", detail: `${reason} · UTR ${utr} · reserve released to ₹0` }, ...(statusRec?.events || [])],
     });
-    flash("Claim settled and closed.");
+    flash(`Payment made · UTR ${utr}. Claim closed automatically.`);
   }
 
   function uploadDoc(u) {
@@ -684,10 +689,12 @@ export default function ODClaim360() {
   return (
     <ODShell
       active="queue"
-      title={c.claimNo}
-      subtitle={`Claim 360 · ${c.insured} · ${c.regNo}`}
+      // Claim no, insured and vehicle are shown once – in the claim card below – so the page header
+      // carries only the screen name and the mode (edit / view only)
+      title="Claim 360"
+      subtitle={editMode ? "Edit mode · actions are saved to the claim" : "View only · use the pen icon in My Work Queue to work on this claim"}
       onNavigateMissing={notBuilt}
-      claimNav={{ claimNo: c.claimNo, backTo: "/od/worklist", backLabel: "Back to My Work Queue", steps: lifecycleSteps }}
+      claimNav={{ backTo: "/od/worklist", backLabel: "Back to My Work Queue", steps: lifecycleSteps }}
     >
       <div className="flex flex-col gap-2">
         {/* ---------------- Back (small screens only) ---------------- */}
@@ -873,10 +880,11 @@ export default function ODClaim360() {
                       onInvoice={() => setWorkDialog("invoice")}
                       onSurveyorOk={surveyorConfirmed}
                       onPayee={() => setWorkDialog("payee")}
-                      onDischarge={dischargeReceived}
+                      onConsent={() => setWorkDialog("consent")}
+                      onDelivery={() => setWorkDialog("delivery")}
+                      onViewSheet={() => setWorkDialog("sheet")}
                       onRequestPayment={requestPayment}
                       onMarkPaid={markPaid}
-                      onClose={() => setWorkDialog("closeSettled")}
                     />
                   </div>
                 )}
@@ -1393,7 +1401,9 @@ export default function ODClaim360() {
 
       {workDialog === "invoice" && <InvoiceDialog c={c} s={settle} onCancel={() => setWorkDialog(null)} onDone={recordInvoice} />}
       {workDialog === "payee" && <PayeeDialog c={c} s={settle} onCancel={() => setWorkDialog(null)} onDone={savePayee} />}
-      {workDialog === "closeSettled" && <CloseSettledDialog c={c} s={settle} onCancel={() => setWorkDialog(null)} onDone={closeSettled} />}
+      {workDialog === "consent" && <ConsentDialog c={c} s={settle} onCancel={() => setWorkDialog(null)} onDone={recordConsent} />}
+      {workDialog === "delivery" && <DeliveryDialog c={c} onCancel={() => setWorkDialog(null)} onDone={confirmDelivery} />}
+      {workDialog === "sheet" && <WorkingSheetDialog c={c} s={settle} onCancel={() => setWorkDialog(null)} />}
       {workDialog === "reserve" && <ReserveDialog claim={c} onCancel={() => setWorkDialog(null)} onDone={reviseReserve} />}
       {workDialog === "query" && <QueryDialog claim={c} surveyorName={c.survey.surveyor?.name} onCancel={() => setWorkDialog(null)} onDone={raiseQuery} />}
       {workDialog?.reply && <ReplyDialog query={workDialog.reply} onCancel={() => setWorkDialog(null)} onDone={(r) => closeQuery(workDialog.reply, r)} />}

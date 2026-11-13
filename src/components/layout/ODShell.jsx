@@ -312,10 +312,13 @@ export default function ODShell({ active = "dashboard", title, subtitle, childre
               <Tip show={c}>{claimNav.backLabel || "Back to My Work Queue"}</Tip>
             </button>
 
-            <div className={`mx-1 mt-2 rounded-lg bg-white/5 px-3 py-2 ${hideWhenCollapsed}`}>
-              <p className="text-[10.5px] font-semibold uppercase tracking-wider text-slate-400">{claimNav.headLabel || "Claim"}</p>
-              <p className="truncate font-mono text-[13px] font-semibold text-white">{claimNav.claimNo}</p>
-            </div>
+            {/* Claim number box only when the page itself does not show it (Claim 360 shows it in its claim card) */}
+            {claimNav.claimNo && (
+              <div className={`mx-1 mt-2 rounded-lg bg-white/5 px-3 py-2 ${hideWhenCollapsed}`}>
+                <p className="text-[10.5px] font-semibold uppercase tracking-wider text-slate-400">{claimNav.headLabel || "Claim"}</p>
+                <p className="truncate font-mono text-[13px] font-semibold text-white">{claimNav.claimNo}</p>
+              </div>
+            )}
 
             <p className={`mb-1 mt-4 px-3 text-[10.5px] font-semibold uppercase tracking-wider text-slate-400 ${hideWhenCollapsed}`}>
               {claimNav.stepsTitle || "Claim lifecycle"}

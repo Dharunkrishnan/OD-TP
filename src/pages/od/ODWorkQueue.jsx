@@ -600,7 +600,7 @@ export default function ODWorkQueue() {
     setAdding(false);
   }
 
-  function doQuick({ docs, time, text, vis, outcome }) {
+  function doQuick({ docs, time, date, text, vis, outcome }) {
     const { kind, row } = quick;
     if (kind === "remind") {
       logWorkFor(row.claimNo, "Document reminder sent", `${docs.join(", ")} · SMS + email to insured`, (w) => ({
@@ -615,8 +615,9 @@ export default function ODWorkQueue() {
       }));
       setToast(`Reminder sent for ${docs.length} document(s) · ${row.claimNo}`);
     } else if (kind === "diary") {
-      setDiary((list) => [...list, { time, claimNo: row.claimNo, text, done: false }].sort((a, b) => a.time.localeCompare(b.time)));
-      setToast(`Added to today's diary at ${time}`);
+      setDiary((list) => [...list, { date, time, claimNo: row.claimNo, text, done: false }].sort((a, b) => a.time.localeCompare(b.time)));
+      logWorkFor(row.claimNo, "Follow-up set", `${text} · ${date} ${time}`);
+      setToast(date === todayIso ? `Added to today's diary at ${time}` : `Follow-up set for ${new Date(date + "T00:00:00").toLocaleDateString("en-IN", { day: "2-digit", month: "short" })} at ${time}`);
     } else if (kind === "note") {
       const v = NOTE_VISIBILITY.find((x) => x.key === vis);
       logWorkFor(row.claimNo, "Note added", text, undefined, { visibility: v.label });
@@ -631,7 +632,9 @@ export default function ODWorkQueue() {
     setQuickTick((t) => t + 1);
   }
 
-  const diaryLeft = diary.filter((d) => !d.done).length;
+  const [todayIso] = useState(isoToday);
+  const diaryLeft = diary.filter((d) => !d.done && (!d.date || d.date <= todayIso)).length;
+  const upcoming = diary.filter((d) => d.date && d.date > todayIso).sort((a, b) => `${a.date}${a.time}`.localeCompare(`${b.date}${b.time}`));
 
   // What each column shows – one value per cell
   function cell(key, r) {
@@ -1096,7 +1099,7 @@ export default function ODWorkQueue() {
               </form>
             )}
             <ul className="flex flex-col px-1.5 py-1">
-              {diary.map((d, idx) => (
+              {diary.map((d, idx) => d.date && d.date > todayIso ? null : (
                 <li key={d.time + d.claimNo + idx} className="rounded">
                   <button
                     type="button"
@@ -1192,6 +1195,24 @@ export default function ODWorkQueue() {
                 </li>
               ))}
             </ul>
+            {/* Follow-ups dated after today (catalogue 161 – diary dates) */}
+            {upcoming.length > 0 && (
+              <div className="mx-3 mb-2 border-t border-slate-100 pt-1.5">
+                <p className="text-[10.5px] font-semibold uppercase tracking-wide text-slate-500">Upcoming</p>
+                <ul>
+                  {upcoming.map((d, i) => (
+                    <li key={i} className="flex items-start gap-2 py-0.5 text-[12px] text-slate-700">
+                      <span className="min-w-0 flex-1">
+                        {d.text} <span className="font-mono text-[10.5px] text-slate-500">{d.claimNo}</span>
+                      </span>
+                      <span className="flex-none text-[11px] tabular-nums text-slate-500">
+                        {new Date(d.date + "T00:00:00").toLocaleDateString("en-IN", { day: "2-digit", month: "short" })} · {d.time}
+                      </span>
+                    </li>
+                  ))}
+                </ul>
+              </div>
+            )}
                 </>
               ) : (
             <ul className="flex flex-col px-1.5 py-1">
