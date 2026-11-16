@@ -11,6 +11,7 @@
 // personas have their own screens (demo).
 
 import { useEffect, useRef, useState } from "react";
+import FilePicker from "./FilePicker";
 import { INVOICE_TOLERANCE_PCT, INVOICE_TYPES, CONSENT_MODES, GSTIN_RE } from "../data/claimSettlement";
 import { X, Check, FileCheck2, Landmark, ReceiptText, Send, BadgeCheck, Lock, Truck, AlertTriangle, CarFront } from "lucide-react";
 
@@ -148,11 +149,11 @@ export function InvoiceDialog({ c, s, onCancel, onDone }) {
         )}
         <Err msg={err("amount")} />
       </label>
-      <label className="block">
-        <Label req>Invoice file</Label>
-        <input type="file" accept=".pdf,.jpg,.jpeg,.png" onChange={(e) => setFile(e.target.files?.[0] || null)} className="block w-full text-[12px] file:mr-2 file:rounded file:border-0 file:bg-slate-100 file:px-2 file:py-1" aria-label="Invoice file" />
+      <div>
+        <Label req>Invoice file · PDF, JPG or PNG</Label>
+        <FilePicker file={file} onChange={setFile} label="Invoice file" invalid={!!err("file")} />
         <Err msg={err("file")} />
-      </label>
+      </div>
     </Frame>
   );
 }
@@ -316,10 +317,10 @@ export function ConsentDialog({ c, s, onCancel, onDone }) {
         </div>
       )}
       {mode === CONSENT_MODES[2] && (
-        <label className="block">
-          <Label req>Signed voucher</Label>
-          <input type="file" accept=".pdf,.jpg,.jpeg,.png" onChange={(e) => setFile(e.target.files?.[0] || null)} className="block w-full text-[12px] file:mr-2 file:rounded file:border-0 file:bg-slate-100 file:px-2 file:py-1" aria-label="Signed voucher" />
-        </label>
+        <div>
+          <Label req>Signed voucher · PDF, JPG or PNG</Label>
+          <FilePicker file={file} onChange={setFile} label="Signed voucher" />
+        </div>
       )}
       <Err msg={tried ? error : null} />
     </Frame>

@@ -8,7 +8,8 @@
 // Data rules live in src/data/claimWork.js.
 
 import { useEffect, useRef, useState } from "react";
-import { X, AlertTriangle, MessageSquarePlus, BellRing, CheckCircle2, Upload, Paperclip } from "lucide-react";
+import { X, AlertTriangle, MessageSquarePlus, BellRing, CheckCircle2 } from "lucide-react";
+import FilePicker from "./FilePicker";
 import {
   HANDLER_RESERVE_LIMIT,
   VARIANCE_PCT,
@@ -398,17 +399,13 @@ export function UploadDialog({ claim, documents, onCancel, onDone }) {
           <Err msg={err("other")} />
         </label>
       )}
-      <label className="block">
+      <div>
         <Label req hint={`PDF, JPG or PNG · max ${UPLOAD_MAX_MB} MB`}>
           File
         </Label>
-        <span className={`flex items-center gap-2 rounded-lg border border-dashed px-3 py-2.5 text-[12.5px] ${err("file") ? "border-red-400" : "border-slate-300"}`}>
-          {file ? <Paperclip className="h-4 w-4 text-teal-700" aria-hidden="true" /> : <Upload className="h-4 w-4 text-slate-400" aria-hidden="true" />}
-          <span className="min-w-0 flex-1 truncate text-slate-700">{file ? `${file.name} · ${Math.max(1, Math.round(file.size / 1024))} KB` : "Choose a file"}</span>
-          <input type="file" accept=".pdf,.jpg,.jpeg,.png" onChange={(e) => setFile(e.target.files?.[0] || null)} className="w-[96px] text-[11px] file:mr-0 file:rounded file:border-0 file:bg-slate-100 file:px-2 file:py-1 file:text-[11.5px]" aria-label="Choose file" />
-        </span>
+        <FilePicker file={file} onChange={setFile} label="Choose file" invalid={!!err("file")} />
         <Err msg={err("file")} />
-      </label>
+      </div>
       <label className="block max-w-[220px]">
         <Label>Received from</Label>
         <select value={source} onChange={(e) => setSource(e.target.value)} className={inputCls}>
