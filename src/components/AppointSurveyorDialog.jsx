@@ -188,9 +188,11 @@ export default function AppointSurveyorDialog({ claim, current, wasNbnr, onCance
               Surveyor <span className="text-red-600">*</span>
             </legend>
             <ul className="divide-y divide-slate-100 overflow-hidden rounded-lg border border-slate-200">
-              {ranked
-                .filter((s) => !s.blocked || s.blocked === "Current surveyor")
-                .slice(0, mode === "video" ? 1 : 6)
+              {[
+                // current surveyor first (Change surveyor), then up to 6 eligible
+                ...ranked.filter((s) => s.blocked === "Current surveyor"),
+                ...ranked.filter((s) => !s.blocked).slice(0, mode === "video" ? 1 : 6),
+              ]
                 .map((s) => {
                 const isSug = suggested && s.id === suggested.id;
                 const isPick = chosen && s.id === chosen.id;

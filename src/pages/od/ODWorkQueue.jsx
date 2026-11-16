@@ -45,6 +45,8 @@ import {
 } from "lucide-react";
 import ODShell from "../../components/layout/ODShell";
 import { WORK_QUEUE, DIARY, ALERTS } from "../../data/odHandlerMock";
+import { openQueue, closedList } from "../../data/claimLists";
+import ClosedClaimsTable from "../../components/ClosedClaimsTable";
 import { claimSlug } from "../../data/odClaimDetail";
 import { QuickActionsMenu, QuickActionDialog } from "../../components/QueueQuickActions";
 import { logWorkFor, pendingDocsFor, isoToday, NOTE_VISIBILITY } from "../../data/claimWork";
@@ -63,7 +65,8 @@ const LIFECYCLE = [
 const BUCKET_OF_STAGE = Object.fromEntries(LIFECYCLE.flatMap((b) => b.stages.map((st) => [st, b.key])));
 // A claim with the investigator (SIU) sits in Survey / Investigation whatever its stage
 const bucketOf = (r) => (r.pendingWith === "SIU / investigator" ? "survey" : BUCKET_OF_STAGE[r.stage] || "intake");
-const QUEUE = WORK_QUEUE.map((r) => ({ ...r, bucket: bucketOf(r) }));
+// The open queue is read when the page opens: claims closed in Claim 360 leave it, reopened claims come back
+const loadQueue = () => openQueue().map((r) => ({ ...r, bucket: bucketOf(r) }));
 // "All" bucket = every open claim, shown first
 const inBucket = (r, b) => b === "all" || r.bucket === b;
 const BUCKETS = [{ key: "all", label: "All" }, ...LIFECYCLE];
@@ -346,6 +349,19 @@ function FilterPill({ label, icon: Icon, value, onChange, options, allLabel, sho
 /* ------------------------------------------------------------------ */
 export default function ODWorkQueue() {
   const [params, setParams] = useSearchParams();
+  const [QUEUE] = useState(loadQueue);
+  const [closed] = useState(closedList);
+  const view = params.get("view") === "closed" ? "closed" : "open";
+  const setView = (v) =>
+    setParams(
+      (p) => {
+        const n = new URLSearchParams(p);
+        if (v === "closed") n.set("view", "closed");
+        else n.delete("view");
+        return n;
+      },
+      { replace: true }
+    );
   const navigate = useNavigate();
   // Eye icon / row click → Claim 360 read only; paper-and-pen icon → Claim 360 ready to work on
   const openClaim = (claimNo) => navigate(`/od/claims/${claimSlug(claimNo)}`);
@@ -500,7 +516,7 @@ export default function ODWorkQueue() {
   }
 
   // Claims in the selected bucket; tab counts are on the whole bucket
-  const bucketRows = useMemo(() => QUEUE.filter((r) => inBucket(r, bucket)), [bucket]);
+  const bucketRows = useMemo(() => QUEUE.filter((r) => inBucket(r, bucket)), [bucket, QUEUE]);
   const counts = useMemo(() => Object.fromEntries(TABS.map((t) => [t.key, bucketRows.filter(t.test).length])), [bucketRows]);
   // Bucket bar: claims, breached and at-risk per lifecycle stage
   const bucketStats = useMemo(
@@ -609,7 +625,7 @@ export default function ODWorkQueue() {
           ...Object.entries(w.docs),
           ...docs.map((n) => {
             const d = quick.pendingDocs.find((x) => x.name === n);
-            return [n, { ...(w.docs[n] || {}), status: d.status, requestedOn: d.requestedOn || isoToday(), reminders: (d.reminders || 0) + 1 }];
+            return [n, { ...w.docs[n], status: d.status, requestedOn: d.requestedOn || isoToday(), reminders: (d.reminders || 0) + 1 }];
           }),
         ]),
       }));
@@ -701,20 +717,42 @@ export default function ODWorkQueue() {
     <ODShell
       active="queue"
       title="My Work Queue"
-      subtitle={`${WORK_QUEUE.length} open claims assigned to me · priority order`}
+      subtitle={view === "closed" ? `${closed.length} closed claims · most recent first` : `${QUEUE.length} open claims assigned to me · priority order`}
       onNavigateMissing={notBuilt}
     >
       <div className="flex flex-col gap-2">
         {/* ================= Queue (full width) ================= */}
         <Card
-          title="Claims"
+          title={
+            // Open / Closed – closed claims sit outside the SLA queue (catalogue 130, 131, 134)
+            <span className="inline-flex rounded-lg bg-slate-100 p-0.5" role="tablist" aria-label="Open or closed claims">
+              {[
+                ["open", "Open", QUEUE.length],
+                ["closed", "Closed", closed.length],
+              ].map(([k, l, n]) => (
+                <button
+                  key={k}
+                  type="button"
+                  role="tab"
+                  aria-selected={view === k}
+                  onClick={() => setView(k)}
+                  className={`flex h-7 items-center gap-1.5 rounded-md px-3 text-[12.5px] font-semibold ${view === k ? "bg-white text-[#0B1F3A] shadow-sm" : "text-slate-600 hover:text-slate-900"}`}
+                >
+                  {l}
+                  <span className={`rounded px-1.5 text-[10.5px] ${view === k ? "bg-teal-700 text-white" : "bg-slate-200 text-slate-600"}`}>{n}</span>
+                </button>
+              ))}
+            </span>
+          }
           action={
             <span className="flex flex-wrap items-center gap-2">
+              {view === "open" && (
               <span className="text-[11px] text-slate-500">
                 Showing <b className="font-semibold text-slate-700">{filtered.length}</b> of {bucketRows.length}
                 <span className="mx-1.5 text-slate-300">·</span>
                 Reserve <b className="font-semibold text-slate-700">{lakh(filtered.reduce((t, r) => t + r.reserve, 0))}</b>
               </span>
+              )}
               <button
                 type="button"
                 onClick={() => setDrawer("diary")}
@@ -742,6 +780,10 @@ export default function ODWorkQueue() {
             </span>
           }
         >
+          {view === "closed" ? (
+            <ClosedClaimsTable rows={closed} onOpen={(no, edit) => navigate(`/od/claims/${claimSlug(no)}${edit ? "?mode=edit" : ""}`)} />
+          ) : (
+          <>
           {/* Main buckets – claim lifecycle */}
           <div role="tablist" aria-label="Claim lifecycle" className="flex gap-1.5 overflow-x-auto border-b border-slate-200 bg-slate-50/70 p-1.5 [scrollbar-width:none] lg:grid lg:grid-cols-[auto_minmax(0,1fr)_minmax(0,1.2fr)_minmax(0,1fr)_minmax(0,1fr)_minmax(0,1fr)]">
             {BUCKETS.map((b, i) => {
@@ -999,6 +1041,8 @@ export default function ODWorkQueue() {
               </button>
             </div>
           </div>
+          </>
+          )}
         </Card>
 
       </div>
@@ -1074,7 +1118,7 @@ export default function ODWorkQueue() {
                       required
                     >
                       <option value="">Select claim</option>
-                      {WORK_QUEUE.map((r) => (
+                      {QUEUE.map((r) => (
                         <option key={r.claimNo} value={r.claimNo}>
                           {r.claimNo}
                         </option>

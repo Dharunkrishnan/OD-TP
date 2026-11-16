@@ -363,6 +363,14 @@ function StageView({ c, index, label, documents, timeline, onBack }) {
 /* ------------------------------------------------------------------ */
 /* Page                                                                */
 /* ------------------------------------------------------------------ */
+// Closure recorded in the claim data → the same shape as a status record saved in this session
+const CLOSURE_STATE = { Paid: "SETTLED", Withdrawn: "WITHDRAWN", Repudiated: "REPUDIATED", "Closed without payment": "CLOSED", "NBNR closed": "NBNR_CLOSED" };
+function closureRec(cl) {
+  if (!cl) return null;
+  const reason = cl.type === "Paid" ? `Paid ₹${cl.paid.toLocaleString("en-IN")} to ${cl.payee}` : cl.reason;
+  return { state: CLOSURE_STATE[cl.type], reason, remarks: cl.utr ? `UTR ${cl.utr}` : "", decidedBy: cl.approvedBy, at: cl.closedOn, events: [] };
+}
+
 // Header chip for a closed claim (replaces the stage name)
 const CLOSED_CHIP = { SETTLED: "Closed – paid", WITHDRAWN: "Withdrawn", CLOSED: "Closed – no payment", NBNR_CLOSED: "NBNR closed" };
 
@@ -414,7 +422,10 @@ export default function ODClaim360() {
     );
   }
 
-  const st = effectiveState(base.stage, statusRec);
+  // A claim closed earlier (My Work Queue → Closed) carries its closure in the claim data; a change made
+  // in this session (e.g. reopen) is saved as the claim's status record and takes over from it
+  const statusNow = statusRec || closureRec(base.closure);
+  const st = effectiveState(base.stage, statusNow);
   // the claim as it stands now (an NBNR converted in this session shows as Registered)
   // NBNR converted → premium realised, so the policy is now confirmed in force
   const converted = base.stage === "NBNR" && st.stage === "Registered";
@@ -484,7 +495,7 @@ export default function ODClaim360() {
             reserveHistory: [
               ...base.reserveHistory,
               ...work.revisions,
-              { date: statusRec.at, type: settled ? "Paid & closed" : "Released", amount: 0, by: "Claims handler", reason: statusRec.reason || "Claim closed" },
+              { date: statusNow.at, type: settled ? "Paid & closed" : "Released", amount: 0, by: "Claims handler", reason: statusNow.reason || "Claim closed" },
             ],
           }),
         };
@@ -493,7 +504,7 @@ export default function ODClaim360() {
   // Past the Assessment step (Approval, Repair / DO, Payment, Closed) the documents received earlier were already verified
   const verifiedEarlier = (STAGE_TO_STEP[c.stage]?.step ?? 0) >= 3;
   const documents = [
-    ...c.documents.map((d) => ({ ...d, ...(verifiedEarlier && d.status === "Received" ? { status: "Verified" } : {}), ...(work.docs[d.name] || {}) })),
+    ...c.documents.map((d) => ({ ...d, ...(verifiedEarlier && d.status === "Received" ? { status: "Verified" } : {}), ...work.docs[d.name] })),
     ...Object.entries(work.docs)
       .filter(([, d]) => d.extra)
       .map(([name, d]) => ({ name, ...d })),
@@ -543,7 +554,7 @@ export default function ODClaim360() {
   // every Phase 2B action = a change to the claim's work record + a timeline event
   const logWork = (event, detail, change = (w) => w, extra = {}) =>
     updateWork((w) => ({ ...change(w), events: [{ ...nowStamp(), event, by: HANDLER, detail, ...extra }, ...w.events] }));
-  const setDoc = (name, patch) => (w) => ({ ...w, docs: { ...w.docs, [name]: { ...(w.docs[name] || {}), ...patch } } });
+  const setDoc = (name, patch) => (w) => ({ ...w, docs: { ...w.docs, [name]: { ...w.docs[name], ...patch } } });
 
   function addNote(e) {
     e.preventDefault();
@@ -613,7 +624,7 @@ export default function ODClaim360() {
 
   // ----- Settlement (DO → invoice → payee → discharge → payment → close) -----
   const amtF = (n) => "₹" + Number(n || 0).toLocaleString("en-IN");
-  const saveSettle = (patch, event, detail) => logWork(event, detail, (w) => ({ ...w, settlement: { ...(w.settlement || {}), ...patch } }));
+  const saveSettle = (patch, event, detail) => logWork(event, detail, (w) => ({ ...w, settlement: { ...w.settlement, ...patch } }));
   function recordInvoice(inv) {
     setWorkDialog(null);
     const over = Math.round(((inv.amount - settle.approved) / settle.approved) * 100);
@@ -664,7 +675,7 @@ export default function ODClaim360() {
       reason,
       remarks: `UTR ${utr}`,
       at: isoToday(),
-      events: [{ ...stamp, event: "Claim closed – settled", by: "System (auto)", detail: `${reason} · UTR ${utr} · reserve released to ₹0` }, ...(statusRec?.events || [])],
+      events: [{ ...stamp, event: "Claim closed – settled", by: "System (auto)", detail: `${reason} · UTR ${utr} · reserve released to ₹0` }, ...(statusNow?.events || [])],
     });
     flash(`Payment made · UTR ${utr}. Claim closed automatically.`);
   }
@@ -766,7 +777,7 @@ export default function ODClaim360() {
                 )}
                 <ClaimActionsMenu
                   stage={c.stage}
-                  rec={statusRec}
+                  rec={statusNow}
                   canChangeSurveyor={c.stage === "Survey pending" && !!c.survey.surveyor}
                   onPick={(k) => (k === "surveyor" ? setSurveyDialog(true) : setStatusAction(k))}
                 />
@@ -809,7 +820,7 @@ export default function ODClaim360() {
           </dl>
 
           {/* Status after a claim action (hold, withdrawn, closed, waiting for approval, NBNR resolved) */}
-          <ClaimStatusBanner rec={surveyed && statusRec?.state === "NBNR_CONVERTED" ? null : statusRec} />
+          <ClaimStatusBanner rec={surveyed && statusNow?.state === "NBNR_CONVERTED" ? null : statusNow} />
 
           {/* Row 3: next action */}
           {active && (
@@ -1375,7 +1386,7 @@ export default function ODClaim360() {
         <ClaimStatusDialog
           action={statusAction}
           claim={base}
-          rec={statusRec}
+          rec={statusNow}
           onCancel={() => setStatusAction(null)}
           onDone={(next, msg) => {
             setStatusRec(next);

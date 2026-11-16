@@ -222,7 +222,7 @@ export function ClaimStatusDialog({ action, claim, rec, onCancel, onDone }) {
         }
         break;
       case "reopen":
-        next = { ...base, state: "REOPEN_PENDING", prevState: rec?.state, prevReason: rec?.reason, events: [ev("Reopen sent for approval", `${reason} – ${remarks}. To ${MANAGER}.`), ...prevEvents] };
+        next = { ...base, state: "REOPEN_PENDING", prevState: rec?.state, prevReason: rec?.reason, prevAt: rec?.at, events: [ev("Reopen sent for approval", `${reason} – ${remarks}. To ${MANAGER}.`), ...prevEvents] };
         msg = `Reopen sent to ${MANAGER} for approval.`;
         break;
       case "hold":

@@ -17,6 +17,13 @@ export const LICENSED_LIMIT = 50000;
 export const APPOINT_WITHIN_HOURS = 24;
 export const REPORT_WITHIN_DAYS = 15;
 
+export const isoToday = () => new Date().toISOString().slice(0, 10);
+export const addDaysIso = (iso, d) => {
+  const x = new Date(iso + "T00:00:00Z");
+  x.setUTCDate(x.getUTCDate() + d);
+  return x.toISOString().slice(0, 10);
+};
+
 /* ---------------- surveyor panel (Chennai, Motor department) ---------------- */
 // kind: "panel" = external licensed surveyor · "inhouse" = licensed surveyor on the insurer's rolls · "video" = video survey desk
 export const SURVEYOR_PANEL = [
@@ -25,7 +32,7 @@ export const SURVEYOR_PANEL = [
   { id: "SV03", name: "Er. R. Dinesh Kumar", kind: "panel", licence: "IRDAI/SLA/12730", licenceTill: "2027-03-31", areas: ["Ambattur", "Porur", "Anna Nagar"], open: 9, capacity: 10, lastDays: 1, avgTat: 2.6, phone: "94440XXXXX" },
   { id: "SV04", name: "Er. V. Lakshmi Narayanan", kind: "panel", licence: "IRDAI/SLA/18815", licenceTill: "2029-01-31", areas: ["Tambaram", "OMR", "Thoraipakkam", "Sholinganallur"], open: 3, capacity: 10, lastDays: 4, avgTat: 1.9, speciality: "EV & luxury cars", phone: "90030XXXXX" },
   { id: "SV05", name: "Er. A. Mohamed Rafiq", kind: "panel", licence: "IRDAI/SLA/11094", licenceTill: "2026-10-31", areas: ["Velachery", "OMR"], open: 2, capacity: 10, lastDays: 9, avgTat: 2.4, phone: "98410XXXXX" },
-  { id: "SV06", name: "Er. K. Saravanan", kind: "panel", licence: "IRDAI/SLA/15563", licenceTill: "2028-02-29", areas: ["Porur", "Ambattur"], open: 5, capacity: 10, lastDays: 6, avgTat: 2.2, onLeaveTill: "2026-11-14", phone: "97910XXXXX" },
+  { id: "SV06", name: "Er. K. Saravanan", kind: "panel", licence: "IRDAI/SLA/15563", licenceTill: "2028-02-29", areas: ["Porur", "Ambattur"], open: 5, capacity: 10, lastDays: 6, avgTat: 2.2, onLeaveTill: addDaysIso(isoToday(), 3), phone: "97910XXXXX" }, // on leave for the next few days (demo)
   { id: "SV07", name: "R. Senthil Kumar", kind: "inhouse", licence: "SLA-87654", licenceTill: "2028-12-31", areas: ["Guindy", "Anna Salai", "Velachery", "Ambattur", "Porur", "OMR"], open: 7, capacity: 12, lastDays: 1, avgTat: 1.6, phone: "Ext. 4412" },
   { id: "SV08", name: "M. Farook", kind: "inhouse", licence: "SLA-91230", licenceTill: "2027-12-31", areas: ["Tambaram", "Thoraipakkam", "OMR", "Velachery"], open: 5, capacity: 12, lastDays: 2, avgTat: 1.7, phone: "Ext. 4418" },
   { id: "SV09", name: "Video survey desk – Chennai", kind: "video", licence: null, licenceTill: null, areas: ["All"], open: 11, capacity: 30, lastDays: 0, avgTat: 0.5, phone: "Ext. 4400" },
@@ -43,12 +50,6 @@ export const OVERRIDE_REASONS = [
 export const CHANGE_REASONS = ["Surveyor did not visit on the agreed date", "Surveyor unavailable / on leave", "Insured complaint about the surveyor", "Conflict of interest", "Other"];
 
 const DAY = 86400000;
-export const isoToday = () => new Date().toISOString().slice(0, 10);
-export const addDaysIso = (iso, d) => {
-  const x = new Date(iso + "T00:00:00Z");
-  x.setUTCDate(x.getUTCDate() + d);
-  return x.toISOString().slice(0, 10);
-};
 
 /** Why a surveyor cannot take this claim (null = eligible) */
 export function blockReason(s, { amount, mode, today = isoToday() }) {

@@ -75,7 +75,7 @@ export const EMPTY_WORK = { revisions: [], reserveRequest: null, queries: [], do
 
 /** [record, update] – update(fn) receives the current record and returns the next one */
 export function useClaimWork(claimNo) {
-  const [rec, setRec] = useState(() => ({ ...EMPTY_WORK, ...(readWorkAll()[claimNo] || {}) }));
+  const [rec, setRec] = useState(() => ({ ...EMPTY_WORK, ...readWorkAll()[claimNo] }));
   function update(fn) {
     setRec((cur) => {
       const next = fn(cur);
@@ -99,7 +99,7 @@ export const CALL_OUTCOMES = ["Spoke to the insured", "Not reachable", "Asked to
 
 /** change one claim's work record outside Claim 360 and add a timeline event */
 export function logWorkFor(claimNo, event, detail, change = (w) => w, extra = {}) {
-  const w = { ...EMPTY_WORK, ...(readWorkAll()[claimNo] || {}) };
+  const w = { ...EMPTY_WORK, ...readWorkAll()[claimNo] };
   const next = { ...change(w), events: [{ ...nowStamp(), event, by: HANDLER, detail, ...extra }, ...w.events] };
   writeWork(claimNo, next);
 }
@@ -109,5 +109,5 @@ export function pendingDocsFor(claimNo) {
   const c = getClaimDetail(claimNo);
   if (!c) return [];
   const docs = readWorkAll()[claimNo]?.docs || {};
-  return c.documents.map((d) => ({ ...d, ...(docs[d.name] || {}) })).filter((d) => d.status === "Pending" || d.status === "Rejected");
+  return c.documents.map((d) => ({ ...d, ...docs[d.name] })).filter((d) => d.status === "Pending" || d.status === "Rejected");
 }

@@ -11,6 +11,7 @@ import { AlertTriangle, CalendarClock, ClipboardCheck, Gavel, Landmark, MessageS
 import { WORK_QUEUE } from "./odHandlerMock";
 import { TEAM, APPROVALS, WATCHLIST, MANAGER_AUTHORITY, APPROVAL_SLA_HOURS, HANDLER_CAPACITY } from "./odTeamMock";
 import { listHandlerRequests, REQUEST_KIND } from "./handlerRequests";
+import { closedInSession } from "./claimLists";
 
 /* ================================================================== */
 /* Session storage – this session's manager actions                    */
@@ -272,7 +273,9 @@ export function dueInfo(e, today) {
 /* ================================================================== */
 /** team claims with their current handler after reallocations */
 export function liveClaims(moves = readStore(KEYS.moves)) {
-  return TEAM_CLAIMS.map((c) => ({ ...c, effHandler: moves[c.claimNo]?.to || c.handlerId }));
+  // claims a handler closed in Claim 360 leave the team's open counts and SLA
+  const closed = closedInSession();
+  return TEAM_CLAIMS.filter((c) => !closed.has(c.claimNo)).map((c) => ({ ...c, effHandler: moves[c.claimNo]?.to || c.handlerId }));
 }
 
 /** TEAM with open / breached / at risk / due today recounted from the live claims */

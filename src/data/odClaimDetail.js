@@ -7,6 +7,7 @@
 // All people, policy numbers and amounts are fictional.
 
 import { WORK_QUEUE } from "./odHandlerMock";
+import { CLOSED_CLAIMS } from "./odClosedClaims";
 
 /* ---------------- URL helpers: claim no has "/" so use "-" in URLs ---------------- */
 export const claimSlug = (claimNo) => claimNo.replaceAll("/", "-");
@@ -125,7 +126,8 @@ function maskMobile(r) {
 
 /* ---------------- main builder ---------------- */
 export function getClaimDetail(claimNo) {
-  const row = WORK_QUEUE.find((r) => r.claimNo === claimNo);
+  // open queue first, then claims closed earlier (My Work Queue → Closed)
+  const row = WORK_QUEUE.find((r) => r.claimNo === claimNo) || CLOSED_CLAIMS.find((r) => r.claimNo === claimNo);
   if (!row) return null;
   const r = rng(seedOf(claimNo));
   const step = STAGE_STEP[row.stage] ?? 0;
@@ -292,8 +294,9 @@ export function getClaimDetail(claimNo) {
       reason: "Revised to assessed loss after survey",
     });
   }
-  const payments =
-    row.stage === "Payment"
+  const payments = row.closure?.type === "Paid"
+    ? [{ date: row.closure.closedOn, payee: row.closure.payee, mode: "NEFT", amount: row.closure.paid, status: `Paid · UTR ${row.closure.utr}` }]
+    : row.stage === "Payment"
       ? [{ date: addDays(TODAY_LOCAL, -1), payee: garage?.name || row.insured, mode: "NEFT", amount: netLiability ?? row.reserve, status: "Sent to Finance" }]
       : [];
 
@@ -319,6 +322,16 @@ export function getClaimDetail(claimNo) {
   if (step >= 6) push(Math.max(5, row.ageDays - 4), "17:00", "Repair authorised", "Claims approver", "Delivery order issued to garage");
   if (step >= 7) push(Math.max(6, row.ageDays - 1), "11:00", "Payment requested", "Karthik Subramanian", `NEFT to ${garage?.name || row.insured}`);
   row.flags.forEach((f) => push(1, "09:00", `Flag raised: ${f}`, "System (rules)", f === "Fraud flag" ? "Theft within 30 days of policy inception" : f));
+  if (row.closure) {
+    const c = row.closure;
+    t.push({
+      date: c.closedOn,
+      time: "16:40",
+      event: c.type === "Paid" ? "Claim closed – settled" : `Claim closed – ${c.type.toLowerCase()}`,
+      by: c.type === "Paid" ? "System (auto)" : c.approvedBy ? `Karthik Subramanian · approved by ${c.approvedBy}` : "Karthik Subramanian",
+      detail: c.type === "Paid" ? `Paid ₹${c.paid.toLocaleString("en-IN")} to ${c.payee} · UTR ${c.utr} · reserve released to ₹0` : `${c.reason}${c.by ? ` · request by ${c.by}` : ""} · reserve released to ₹0`,
+    });
+  }
   t.sort((a, b) => (b.date + b.time).localeCompare(a.date + a.time));
 
   /* ---- red flags / checks ---- */
@@ -350,6 +363,7 @@ export function getClaimDetail(claimNo) {
     documents,
     reserveHistory,
     payments,
+    closure: row.closure || null,
     timeline: t,
     checks,
   };

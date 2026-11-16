@@ -43,6 +43,13 @@ export function settlementState(c, saved = {}) {
       payment: { status: "REQUESTED", amount: p?.amount ?? approved, requestedOn: p?.date || approvedOn, mode: "NEFT" },
     });
   }
+  // a claim closed earlier after payment: every step is complete
+  if (c.closure?.type === "Paid") {
+    const cl = c.closure;
+    base.payment = { status: "PAID", amount: cl.paid, requestedOn: cl.closedOn, paidOn: cl.closedOn, utr: cl.utr, mode: "NEFT" };
+    base.payee = { type: cashless ? "Garage" : "Insured", name: cl.payee, acct: base.payee?.acct || "XXXXXX4821", ifsc: base.payee?.ifsc || "HDFC0001234", validatedOn: cl.closedOn };
+    if (cashless) base.delivery = { on: cl.closedOn };
+  }
   const s = { ...base, ...saved };
   const inv = s.invoice;
   const overPct = inv ? Math.round(((inv.amount - approved) / approved) * 100) : 0;

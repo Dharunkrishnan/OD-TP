@@ -31,6 +31,7 @@ import {
 } from "lucide-react";
 import ODShell from "../../components/layout/ODShell";
 import { useAuth } from "../../auth";
+import { openQueue } from "../../data/claimLists";
 import {
   HANDLER_KPIS,
   SLA_KPIS,
@@ -39,7 +40,6 @@ import {
   SLA_TREND,
   TAT_TREND,
   AGEING_BUCKETS,
-  WORK_QUEUE,
   STAGE_COUNTS,
   PENDING_WITH,
 } from "../../data/odHandlerMock";
@@ -930,7 +930,7 @@ export default function ODHandlerDashboard() {
       tab: "all",
       value: total,
       // catalogue 180: dashboards show outstanding – reserve held on my open claims
-      sub: `${lakhShort(WORK_QUEUE.reduce((t, r) => t + r.reserve, 0))} outstanding`,
+      sub: `${lakhShort(openQueue().reduce((t, r) => t + r.reserve, 0))} outstanding`,
       icon: FolderOpen,
       tone: "bg-slate-100 text-[#0B1F3A]",
       accent: "bg-[#0B1F3A]",

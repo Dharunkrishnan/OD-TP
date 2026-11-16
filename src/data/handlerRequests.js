@@ -81,7 +81,7 @@ export function decideHandlerRequest(req, approve, remarks) {
   const stamp = nowStamp();
   const ev = (event, detail) => ({ ...stamp, event, by: BY, detail });
   if (req.kind === "RESERVE") {
-    const w = { ...EMPTY_WORK, ...(readWorkAll()[req.claimNo] || {}) };
+    const w = { ...EMPTY_WORK, ...readWorkAll()[req.claimNo] };
     const q = w.reserveRequest;
     const decided = { ...q, status: approve ? "APPROVED" : "REJECTED", decidedAt: stamp.date, decisionRemarks: remarks };
     const next = {
