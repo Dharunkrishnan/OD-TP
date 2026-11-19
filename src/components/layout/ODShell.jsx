@@ -25,7 +25,8 @@ import SearchPopover from "../SearchPopover";
 import NotificationsPopover from "../NotificationsPopover";
 import { NOTIFICATIONS } from "../../data/notifications";
 import { managerBadges, managerNotifications } from "../../data/odManagerData";
-import { HANDLER_KPIS, DIARY } from "../../data/odHandlerMock";
+import { DIARY } from "../../data/odHandlerMock";
+import { handlerSummary } from "../../data/claimLists";
 import { claimSlug } from "../../data/odClaimDetail";
 import { searchClaims, dueTodayClaims, searchPolicies, slaTone } from "../../data/searchIndex";
 import {
@@ -53,15 +54,21 @@ import {
 import { useAuth, getRole, isDualAccess } from "../../auth";
 import ProfileMenu from "./ProfileMenu";
 
-// Menu for OD Claims Handler. Other roles get their own menu later.
+// Menu for OD Claims Handler. Queue / NBNR / Docs badges are counted live from the open queue
+// (closed claims drop out) – see handlerMenu() below.
 const HANDLER_MENU = [
   { key: "dashboard", label: "Dashboard", icon: LayoutDashboard, to: "/od/dashboard" },
-  { key: "queue", label: "My Work Queue", icon: ListChecks, to: "/od/worklist", badge: HANDLER_KPIS.open },
+  { key: "queue", label: "My Work Queue", icon: ListChecks, to: "/od/worklist", badge: "open" },
   { key: "intimation", label: "Claim Intimation", icon: FilePlus2, to: "/od/intimation" },
-  { key: "nbnr", label: "NBNR Bucket", icon: Inbox, to: "/od/nbnr", badge: HANDLER_KPIS.nbnr },
+  { key: "nbnr", label: "NBNR Bucket", icon: Inbox, to: "/od/nbnr", badge: "nbnr" },
   { key: "diary", label: "Diary & Follow-ups", icon: CalendarClock, to: "/od/diary", badge: DIARY.filter((d) => !d.done).length },
-  { key: "docs", label: "Docs Pending", icon: FileStack, to: "/od/documents", badge: HANDLER_KPIS.docsPending },
+  { key: "docs", label: "Docs Pending", icon: FileStack, to: "/od/documents", badge: "docsPending" },
 ];
+
+function handlerMenu() {
+  const sum = handlerSummary();
+  return HANDLER_MENU.map((m) => (typeof m.badge === "string" ? { ...m, badge: sum[m.badge] || undefined } : m));
+}
 
 // Menu for OD Claims Manager (team supervision). Screens are added one by one.
 const MANAGER_MENU = [
@@ -185,16 +192,16 @@ export default function ODShell({ active = "dashboard", title, subtitle, childre
   const collapsed = claimNav ? claimCollapsed : isQueue ? queueNav !== "full" : menuCollapsed;
   const role = getRole(user, "OD");
   const isManager = role?.role === "CLAIMS_MANAGER";
-  // manager badges and bell are live: recount when a manager action is saved on this page
+  // badges and bell are live: recount when a claim action is saved on this page
+  // (manager approvals, or a handler closing / reopening a claim)
   const [, setMgrTick] = useState(0);
   useEffect(() => {
-    if (!isManager) return undefined;
     const bump = () => setMgrTick((t) => t + 1);
     window.addEventListener("smartclaims:manager-data", bump);
     return () => window.removeEventListener("smartclaims:manager-data", bump);
-  }, [isManager]);
+  }, []);
   const mgrBadges = isManager ? managerBadges() : null;
-  const menu = isManager ? MANAGER_MENU.map((m) => ({ ...m, badge: mgrBadges[m.key] || undefined })) : HANDLER_MENU;
+  const menu = isManager ? MANAGER_MENU.map((m) => ({ ...m, badge: mgrBadges[m.key] || undefined })) : handlerMenu();
 
   // Esc closes the slide-in menu
   useEffect(() => {
@@ -280,7 +287,7 @@ export default function ODShell({ active = "dashboard", title, subtitle, childre
             </span>
             <div className={`leading-tight ${hideWhenCollapsed}`}>
               <p className="text-[15px] font-bold text-white">Smart Claims</p>
-              <p className="text-[11px] text-slate-400">Motor Own Damage</p>
+              <p className="text-[12px] text-slate-400">Motor Own Damage</p>
             </div>
           </div>
           <button
@@ -315,12 +322,12 @@ export default function ODShell({ active = "dashboard", title, subtitle, childre
             {/* Claim number box only when the page itself does not show it (Claim 360 shows it in its claim card) */}
             {claimNav.claimNo && (
               <div className={`mx-1 mt-2 rounded-lg bg-white/5 px-3 py-2 ${hideWhenCollapsed}`}>
-                <p className="text-[10.5px] font-semibold uppercase tracking-wider text-slate-400">{claimNav.headLabel || "Claim"}</p>
+                <p className="text-[11px] font-semibold uppercase tracking-wider text-slate-400">{claimNav.headLabel || "Claim"}</p>
                 <p className="truncate font-mono text-[13px] font-semibold text-white">{claimNav.claimNo}</p>
               </div>
             )}
 
-            <p className={`mb-1 mt-4 px-3 text-[10.5px] font-semibold uppercase tracking-wider text-slate-400 ${hideWhenCollapsed}`}>
+            <p className={`mb-1 mt-4 px-3 text-[11px] font-semibold uppercase tracking-wider text-slate-400 ${hideWhenCollapsed}`}>
               {claimNav.stepsTitle || "Claim lifecycle"}
             </p>
             <ol className={`flex flex-col ${c ? "lg:mt-3 lg:items-center" : ""}`} aria-label={claimNav.stepsTitle || "Claim lifecycle"}>
@@ -400,7 +407,7 @@ export default function ODShell({ active = "dashboard", title, subtitle, childre
                       >
                         {st.label}
                       </span>
-                      <span className={`block text-[11.5px] ${statusCls}`}>{st.status}</span>
+                      <span className={`block text-[12px] ${statusCls}`}>{st.status}</span>
                     </span>
                     </Row>
                     <Tip show={c}>
@@ -435,14 +442,14 @@ export default function ODShell({ active = "dashboard", title, subtitle, childre
                     <span className="relative flex-none">
                       <Icon className={`h-[18px] w-[18px] ${isActive ? "text-teal-300" : ""}`} aria-hidden="true" />
                       {c && item.badge != null && (
-                        <span className="absolute -right-2.5 -top-2 hidden min-w-[18px] rounded-full bg-teal-500 px-1 text-center text-[10px] font-bold leading-[16px] text-[#0B1F3A] lg:block">
+                        <span className="absolute -right-2.5 -top-2 hidden min-w-[18px] rounded-full bg-teal-500 px-1 text-center text-[11px] font-bold leading-[16px] text-[#0B1F3A] lg:block">
                           {item.badge}
                         </span>
                       )}
                     </span>
                     <span className={`flex-1 truncate ${hideWhenCollapsed}`}>{item.label}</span>
                     {item.badge != null && (
-                      <span className={`rounded-full bg-white/10 px-2 py-0.5 text-[11px] font-semibold text-slate-200 ${hideWhenCollapsed}`}>
+                      <span className={`rounded-full bg-white/10 px-2 py-0.5 text-[12px] font-semibold text-slate-200 ${hideWhenCollapsed}`}>
                         {item.badge}
                       </span>
                     )}
@@ -555,7 +562,7 @@ export default function ODShell({ active = "dashboard", title, subtitle, childre
 
           <div className="min-w-0 flex-1">
             <h1 className="truncate text-[15px] font-semibold leading-tight text-[#0B1F3A]">{title}</h1>
-            {subtitle && <p className="truncate text-[11px] text-slate-500">{subtitle}</p>}
+            {subtitle && <p className="truncate text-[12px] text-slate-500">{subtitle}</p>}
           </div>
 
           <div className="ml-auto flex items-center gap-2">

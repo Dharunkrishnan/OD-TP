@@ -5,7 +5,7 @@
 //   • a closed claim reopened with the manager's approval goes back to the open queue
 // Used by My Work Queue (Open / Closed), the handler dashboard and the manager's team counts.
 
-import { WORK_QUEUE } from "./odHandlerMock";
+import { WORK_QUEUE, summariseQueue } from "./odHandlerMock";
 import { CLOSED_CLAIMS } from "./odClosedClaims";
 import { readStatusAll } from "./claimStatus";
 import { readWorkAll } from "./claimWork";
@@ -76,4 +76,16 @@ export function closedList() {
 export function closedInSession() {
   const all = readStatusAll();
   return new Set(Object.entries(all).filter(([, r]) => isClosedState(r.state) || r.state === "REOPEN_PENDING").map(([no]) => no));
+}
+
+/** live dashboard / badge counts: open-claim figures plus closed and all-claims totals */
+export function handlerSummary() {
+  const closed = closedList();
+  const open = summariseQueue(openQueue());
+  return {
+    ...open,
+    closed: closed.length,
+    closedPaid: closed.reduce((t, r) => t + (r.paid || 0), 0),
+    all: open.open + closed.length,
+  };
 }

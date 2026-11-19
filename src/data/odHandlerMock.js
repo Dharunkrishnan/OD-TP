@@ -278,3 +278,48 @@ export const TAT_STAGES = TAT_BASE.map((t) => ({
   ...t,
   breachedOpen: countWhere((r) => r.sla.status === "breach" && STAGE_TO_TAT[r.stage] === t.stage),
 }));
+
+/**
+ * Live counts for any list of open claims – used by the handler dashboard and the sidebar badges
+ * with openQueue(), so a claim closed (settled, withdrawn, repudiated, NBNR closed…) drops out at once
+ * and a reopened claim comes back. Same definitions as the constants above.
+ */
+export function summariseQueue(rows) {
+  const count = (fn) => rows.filter(fn).length;
+  const tallyRows = (key, order, norm = (v) => v) => {
+    const m = new Map();
+    rows.forEach((r) => { const k = norm(r[key]); m.set(k, (m.get(k) || 0) + 1); });
+    const keys = order ? order.filter((k) => m.has(k)) : [...m.keys()].sort((a, b) => m.get(b) - m.get(a));
+    return keys.map((k) => [k, m.get(k)]);
+  };
+  const breached = count((r) => r.sla.status === "breach");
+  const atRisk = count((r) => r.sla.status === "risk");
+  return {
+    open: rows.length,
+    outstanding: rows.reduce((t, r) => t + (r.reserve || 0), 0),
+    dueToday: count((r) => r.dueToday),
+    breached,
+    atRisk,
+    nbnr: count((r) => r.stage === "NBNR"),
+    docsPending: count((r) => r.stage === "Documents pending"),
+    slaSummary: [
+      { key: "ok", label: "On track", count: rows.length - breached - atRisk },
+      { key: "risk", label: "At risk (≤ 24 h)", count: atRisk },
+      { key: "breach", label: "Breached", count: breached },
+    ],
+    stageCounts: tallyRows("stage", STAGE_ORDER).map(([stage, n]) => ({ stage, short: STAGE_SHORT[stage] || stage, count: n })),
+    ageing: [
+      { bucket: "0–7 d", count: count((r) => r.ageDays <= 7) },
+      { bucket: "8–15 d", count: count((r) => r.ageDays >= 8 && r.ageDays <= 15) },
+      { bucket: "16–30 d", count: count((r) => r.ageDays >= 16 && r.ageDays <= 30) },
+      { bucket: "31–60 d", count: count((r) => r.ageDays >= 31 && r.ageDays <= 60) },
+      { bucket: "60+ d", count: count((r) => r.ageDays > 60) },
+    ],
+    // a reopened claim has no party yet ("–") – it is back with the handler
+    pendingWith: tallyRows("pendingWith", null, (v) => (!v || v === "–" ? "Me (handler)" : v)).map(([party, n]) => ({ party, count: n })),
+    tatStages: TAT_BASE.map((t) => ({
+      ...t,
+      breachedOpen: count((r) => r.sla.status === "breach" && STAGE_TO_TAT[r.stage] === t.stage),
+    })),
+  };
+}

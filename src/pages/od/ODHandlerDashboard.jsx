@@ -30,25 +30,18 @@ import {
   ChevronDown,
 } from "lucide-react";
 import ODShell from "../../components/layout/ODShell";
-import { openQueue } from "../../data/claimLists";
+import { handlerSummary } from "../../data/claimLists";
 import {
-  HANDLER_KPIS,
   SLA_KPIS,
-  SLA_SUMMARY,
-  TAT_STAGES,
   SLA_TREND,
   TAT_TREND,
-  AGEING_BUCKETS,
-  STAGE_COUNTS,
-  PENDING_WITH,
 } from "../../data/odHandlerMock";
 
 // Stages the system does automatically (intimation submit runs the registration jobs and
 // generates the claim no) – no handler TAT to track, so they are left out of the stage table.
 const AUTOMATED_STAGES = ["Intimation → Registration"];
-const HANDLER_TAT_STAGES = TAT_STAGES.filter((s) => !AUTOMATED_STAGES.includes(s.stage));
 
-const pct = (n, total) => Math.round((n / total) * 100);
+const pct = (n, total) => (total ? Math.round((n / total) * 100) : 0);
 const fmtDays = (d) => `${Number(d).toFixed(1)} d`;
 
 // Combined SLA card – views selectable from a dropdown (choice remembered per browser)
@@ -846,6 +839,21 @@ function LineChart({ items, labelKey, valueKey, hover, setHover, height = 80, ta
 export default function ODHandlerDashboard() {
   const navigate = useNavigate();
   const [toast, setToast] = useState("");
+  // Live counts from the open queue: a claim closed in Claim 360 (settled, withdrawn, repudiated,
+  // closed without payment, NBNR closed) leaves every card at once; a reopened claim comes back.
+  const [sum, setSum] = useState(handlerSummary);
+  useEffect(() => {
+    const refresh = () => setSum(handlerSummary());
+    window.addEventListener("smartclaims:manager-data", refresh);
+    window.addEventListener("storage", refresh);
+    window.addEventListener("focus", refresh);
+    return () => {
+      window.removeEventListener("smartclaims:manager-data", refresh);
+      window.removeEventListener("storage", refresh);
+      window.removeEventListener("focus", refresh);
+    };
+  }, []);
+  const HANDLER_TAT_STAGES = sum.tatStages.filter((st) => !AUTOMATED_STAGES.includes(st.stage));
   const [hAge, setHAge] = useState(null);
   const [hStage, setHStage] = useState(null);
   const [hSla, setHSla] = useState(null);
@@ -894,7 +902,7 @@ export default function ODHandlerDashboard() {
     saveView(PORT_VIEW_KEY, v);
   }
 
-  const total = HANDLER_KPIS.open;
+  const total = sum.open;
 
   function notBuilt(what) {
     setToast(`${what} – this page comes in a later build step.`);
@@ -902,44 +910,39 @@ export default function ODHandlerDashboard() {
     notBuilt.t = window.setTimeout(() => setToast(""), 2600);
   }
 
-  const slaOk = SLA_KPIS.slaCompliance >= SLA_KPIS.slaTarget;
-  const tatOk = SLA_KPIS.avgSettlementTat <= SLA_KPIS.settlementTarget;
 
   const KPIS = [
+    {
+      label: "All claims",
+      value: sum.all,
+      sub: `${sum.open} open · ${sum.closed} closed`,
+      icon: Layers,
+      tone: "bg-slate-100 text-slate-700",
+      accent: "bg-slate-400",
+    },
     {
       label: "Open claims",
       tab: "all",
       value: total,
       // catalogue 180: dashboards show outstanding – reserve held on my open claims
-      sub: `${lakhShort(openQueue().reduce((t, r) => t + r.reserve, 0))} outstanding`,
+      sub: `${lakhShort(sum.outstanding)} outstanding`,
       icon: FolderOpen,
       tone: "bg-slate-100 text-[#0B1F3A]",
       accent: "bg-[#0B1F3A]",
     },
     {
-      label: "SLA met",
-      value: `${SLA_KPIS.slaCompliance}%`,
-      sub: `Target ${SLA_KPIS.slaTarget}%`,
-      icon: Gauge,
-      tone: slaOk ? "bg-emerald-50 text-emerald-700" : "bg-red-50 text-red-700",
-      accent: slaOk ? "bg-emerald-500" : "bg-red-500",
-      status: slaOk ? "ok" : "breach",
-      statusText: slaOk ? "On target" : "Below target",
-    },
-    {
-      label: "Avg TAT",
-      value: fmtDays(SLA_KPIS.avgSettlementTat),
-      sub: `Target ${SLA_KPIS.settlementTarget} d`,
-      icon: Timer,
-      tone: tatOk ? "bg-emerald-50 text-emerald-700" : "bg-red-50 text-red-700",
-      accent: tatOk ? "bg-emerald-500" : "bg-red-500",
-      status: tatOk ? "ok" : "breach",
-      statusText: tatOk ? "On target" : "Over target",
+      label: "Closed claims",
+      tab: "closed",
+      value: sum.closed,
+      sub: `${lakhShort(sum.closedPaid)} paid`,
+      icon: CheckCircle2,
+      tone: "bg-emerald-50 text-emerald-700",
+      accent: "bg-emerald-500",
     },
     {
       label: "SLA breached",
       tab: "breach",
-      value: HANDLER_KPIS.slaBreached,
+      value: sum.breached,
       sub: "Open claims",
       icon: AlertTriangle,
       tone: "bg-red-50 text-red-700",
@@ -948,7 +951,7 @@ export default function ODHandlerDashboard() {
     {
       label: "At risk",
       tab: "risk",
-      value: SLA_KPIS.atRisk,
+      value: sum.atRisk,
       sub: "Due ≤ 24 h",
       icon: Clock,
       tone: "bg-amber-50 text-amber-800",
@@ -974,8 +977,8 @@ export default function ODHandlerDashboard() {
               {...(k.tab
                 ? {
                     type: "button",
-                    onClick: () => navigate(k.tab === "all" ? "/od/worklist" : `/od/worklist?tab=${k.tab}`),
-                    title: "Open in My Work Queue",
+                    onClick: () => navigate(k.tab === "all" ? "/od/worklist" : k.tab === "closed" ? "/od/worklist?view=closed" : `/od/worklist?tab=${k.tab}`),
+                    title: k.tab === "closed" ? "Open closed claims in My Work Queue" : "Open in My Work Queue",
                   }
                 : {})}
               className={`relative flex min-w-0 items-center gap-2.5 overflow-hidden rounded-xl border border-slate-200/80 bg-white py-1.5 pl-3.5 pr-2 text-left [@media(max-height:660px)]:py-1 ${CARD_SHADOW} ${
@@ -1046,14 +1049,14 @@ export default function ODHandlerDashboard() {
                 <div
                   className="flex h-3 gap-[2px] overflow-hidden rounded-full"
                   role="img"
-                  aria-label={SLA_SUMMARY.map((x) => `${x.label} ${x.count}`).join(", ")}
+                  aria-label={sum.slaSummary.map((x) => `${x.label} ${x.count}`).join(", ")}
                 >
-                  {SLA_SUMMARY.map((x) => (
+                  {sum.slaSummary.map((x) => (
                     <span key={x.key} className={STATUS[x.key].bar} style={{ width: `${pct(x.count, total)}%` }} />
                   ))}
                 </div>
                 <ul className="grid grid-cols-3 gap-1.5">
-                  {SLA_SUMMARY.map((x) => {
+                  {sum.slaSummary.map((x) => {
                     const st = STATUS[x.key];
                     return (
                       <li key={x.key} className="flex min-w-0 items-center gap-2 rounded-lg border border-slate-100 bg-slate-50/70 px-2 py-1" title={x.label}>
@@ -1078,7 +1081,7 @@ export default function ODHandlerDashboard() {
             )}
             {slaView === "status" && slaChart === "bar" && (
               <Columns
-                items={SLA_SUMMARY}
+                items={sum.slaSummary}
                 labelKey="label"
                 hover={hSla}
                 setHover={setHSla}
@@ -1088,7 +1091,7 @@ export default function ODHandlerDashboard() {
             )}
             {slaView === "status" && (slaChart === "pie" || slaChart === "donut") && (
               <PieChart
-                items={SLA_SUMMARY}
+                items={sum.slaSummary}
                 labelKey="label"
                 total={total}
                 donut={slaChart === "donut"}
@@ -1181,7 +1184,7 @@ export default function ODHandlerDashboard() {
             {/* --- Ageing --- */}
             {portView === "ageing" && portChart === "bar" && (
               <Columns
-                items={AGEING_BUCKETS}
+                items={sum.ageing}
                 labelKey="bucket"
                 hover={hAge}
                 setHover={setHAge}
@@ -1191,7 +1194,7 @@ export default function ODHandlerDashboard() {
             )}
             {portView === "ageing" && portChart !== "bar" && (
               <PieChart
-                items={AGEING_BUCKETS}
+                items={sum.ageing}
                 labelKey="bucket"
                 total={total}
                 donut={portChart === "donut"}
@@ -1203,11 +1206,11 @@ export default function ODHandlerDashboard() {
 
             {/* --- Stage --- */}
             {portView === "stage" && portChart === "bar" && (
-              <BarList items={STAGE_COUNTS} labelKey="stage" total={total} hover={hStage} setHover={setHStage} />
+              <BarList items={sum.stageCounts} labelKey="stage" total={total} hover={hStage} setHover={setHStage} />
             )}
             {portView === "stage" && portChart !== "bar" && (
               <PieChart
-                items={foldToSix(STAGE_COUNTS, "stage")}
+                items={foldToSix(sum.stageCounts, "stage")}
                 labelKey="stage"
                 total={total}
                 donut={portChart === "donut"}
@@ -1231,11 +1234,11 @@ export default function ODHandlerDashboard() {
             </p>
 
             {workChart === "bar" && (
-              <BarList items={PENDING_WITH} labelKey="party" total={total} hover={hPend} setHover={setHPend} />
+              <BarList items={sum.pendingWith} labelKey="party" total={total} hover={hPend} setHover={setHPend} />
             )}
             {workChart !== "bar" && (
               <PieChart
-                items={foldToSix(PENDING_WITH, "party")}
+                items={foldToSix(sum.pendingWith, "party")}
                 labelKey="party"
                 total={total}
                 donut={workChart === "donut"}
