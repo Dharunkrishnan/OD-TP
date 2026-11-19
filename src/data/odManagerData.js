@@ -48,8 +48,9 @@ const STAGE_WEIGHT = [2, 5, 7, 7, 10, 5, 5, 4];
 const PENDING_BY_STAGE = {
   NBNR: ["Handler", "PAS / underwriting"],
   Registered: ["Handler"],
-  "Survey pending": ["Surveyor", "Surveyor", "Surveyor", "SIU / investigator"],
-  Assessment: ["Surveyor", "Handler"],
+  // the handler is also the surveyor; an external surveyor (IPS) only by exception
+  "Survey pending": ["Handler", "Handler", "External surveyor (IPS)", "SIU / investigator"],
+  Assessment: ["Handler"],
   "Documents pending": ["Insured", "Insured", "Garage / dealer"],
   Approval: ["Claims approver"],
   "Repair / DO": ["Garage / dealer"],
@@ -57,8 +58,8 @@ const PENDING_BY_STAGE = {
 };
 const NEXT_BY_STAGE = {
   NBNR: "Verify premium realisation with PAS",
-  Registered: "Appoint surveyor",
-  "Survey pending": "Chase survey report",
+  Registered: "Schedule inspection with garage",
+  "Survey pending": "Complete inspection and survey report",
   Assessment: "Review assessment report",
   "Documents pending": "Follow up pending documents",
   Approval: "Await approval decision",
@@ -195,7 +196,7 @@ const SAMPLE = [
   },
   {
     id: "ESC-26-0398", source: "IGMS", raisedDaysAgo: 15, status: "FOLLOWUP", handler: "Arvind Kumar",
-    claimNo: "OD/CHN/26/003290", insured: "S. Karthika", vehicle: "Maruti Brezza ZXi", regNo: "TN 09 BK 4410", stage: "Survey pending", pendingWith: "Surveyor", sla: { status: "breach", label: "Breached 6 d" }, reserve: 48500, ageDays: 66,
+    claimNo: "OD/CHN/26/003290", insured: "S. Karthika", vehicle: "Maruti Brezza ZXi", regNo: "TN 09 BK 4410", stage: "Survey pending", pendingWith: "Handler", sla: { status: "breach", label: "Breached 6 d" }, reserve: 48500, ageDays: 66,
     ref: "IGMS token 2026-TN-117902", raisedBy: "S. Karthika (insured) via IGMS", channel: "IGMS portal",
     complaint: "Surveyor has not inspected my car for 3 weeks. Car is lying at the garage and I am paying for a taxi daily.",
     history: [{ d: 15, text: "Grievance received from IGMS" }, { d: 15, text: "Acknowledged to complainant" }, { d: 12, text: "Follow-up assigned to Arvind: get survey done, update customer" }],
@@ -237,7 +238,7 @@ const SAMPLE = [
   },
   {
     id: "ESC-26-0420", source: "SLA", raisedDaysAgo: 0, status: "NEW", handler: "Fathima Begum",
-    claimNo: "OD/CHN/26/003890", insured: "V. Ashwin", vehicle: "Toyota Glanza G", regNo: "TN 19 AF 2205", stage: "Survey pending", pendingWith: "Surveyor", sla: { status: "breach", label: "Breached 4 d" }, reserve: 64200, ageDays: 41,
+    claimNo: "OD/CHN/26/003890", insured: "V. Ashwin", vehicle: "Toyota Glanza G", regNo: "TN 19 AF 2205", stage: "Survey pending", pendingWith: "Handler", sla: { status: "breach", label: "Breached 4 d" }, reserve: 64200, ageDays: 41,
     ref: "Auto-escalated by system", raisedBy: "SLA rule – breached > 3 days", channel: "System",
     complaint: "Claim breached the survey SLA by 4 days. Handler is on leave.",
     history: [{ d: 0, text: "Auto-escalated: SLA breached by more than 3 days" }],

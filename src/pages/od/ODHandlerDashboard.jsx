@@ -7,15 +7,15 @@
 // Page scrolls normally; sidebar and header stay fixed.
 
 import { useEffect, useId, useRef, useState } from "react";
-import { useNavigate } from "react-router-dom";
+import { useNavigate, useSearchParams } from "react-router-dom";
 import {
   FolderOpen,
-  Gauge,
+  Landmark,
+  ListTodo,
   Timer,
   AlertTriangle,
   Clock,
   CheckCircle2,
-  Percent,
   Hourglass,
   Layers,
   Users,
@@ -30,12 +30,8 @@ import {
   ChevronDown,
 } from "lucide-react";
 import ODShell from "../../components/layout/ODShell";
+import HandlerMyDay from "../../components/HandlerMyDay";
 import { handlerSummary } from "../../data/claimLists";
-import {
-  SLA_KPIS,
-  SLA_TREND,
-  TAT_TREND,
-} from "../../data/odHandlerMock";
 
 // Stages the system does automatically (intimation submit runs the registration jobs and
 // generates the claim no) – no handler TAT to track, so they are left out of the stage table.
@@ -43,14 +39,6 @@ const AUTOMATED_STAGES = ["Intimation → Registration"];
 
 const pct = (n, total) => (total ? Math.round((n / total) * 100) : 0);
 const fmtDays = (d) => `${Number(d).toFixed(1)} d`;
-
-// Combined SLA card – views selectable from a dropdown (choice remembered per browser)
-const SLA_VIEWS = [
-  { key: "status", label: "SLA status (open)", icon: Gauge, hint: "On track · at risk · breached now" },
-  { key: "compliance", label: "SLA % by month", icon: Percent, hint: "Share of claims closed within SLA" },
-  { key: "tat", label: "Avg TAT by month", icon: Timer, hint: "Average days to settle a claim" },
-];
-const SLA_VIEW_KEY = "smartclaims-od-sla-view";
 
 // Combined portfolio card – same pattern
 const PORT_VIEWS = [
@@ -79,12 +67,10 @@ function saveView(key, v) {
 // Chart types the user can pick. Only types that suit the data are offered:
 // trends (by month) → Bar / Line;  shares of a whole → Bar / Pie / Donut.
 const CHART_LABEL = { summary: "Summary", bar: "Bar", pie: "Pie", donut: "Donut", line: "Line" };
-const SLA_CHARTS = { status: ["summary", "bar", "pie", "donut"], compliance: ["bar", "line"], tat: ["bar", "line"] };
 const PORT_CHARTS = { ageing: ["bar", "pie", "donut"], stage: ["bar", "pie", "donut"] };
 // Pending with: shares of my open claims
 const WORK_CHARTS = ["bar", "pie", "donut"];
 const WORK_CHART_KEY = "smartclaims-od-work-chart";
-const SLA_CHART_KEY = "smartclaims-od-sla-chart";
 const PORT_CHART_KEY = "smartclaims-od-portfolio-chart";
 const readChart = (key) => {
   try {
@@ -98,7 +84,6 @@ const chartOptions = (types) => types.map((t) => ({ key: t, label: CHART_LABEL[t
 
 // Slice colours. Status = reserved SLA colours; ageing = one-hue ramp (ordered);
 // stage / loss type = fixed categorical order (colour follows the category).
-const STATUS_HEX = { ok: "#059669", risk: "#f59e0b", breach: "#dc2626" };
 // calm teal ramp (light → dark = newer → older); the same colours are used for bars and slices
 // ₹ in lakh / crore for tiles (Indian numbering)
 const lakhShort = (n) => (n >= 10000000 ? `₹${(n / 10000000).toFixed(2)} Cr` : `₹${(n / 100000).toFixed(1)} L`);
@@ -756,80 +741,56 @@ function PieChart({ items, labelKey, colorFor, donut, hover, setHover, total }) 
 }
 
 /** Line chart for month trends. Scale is zoomed to the data range (lines need not start at 0). */
-function LineChart({ items, labelKey, valueKey, hover, setHover, height = 80, target, format = (v) => v, targetLabel }) {
-  const vals = items.map((i) => i[valueKey]);
-  const lo = Math.min(...vals, target ?? Infinity);
-  const hi = Math.max(...vals, target ?? -Infinity);
-  const pad = (hi - lo) * 0.35 || 1;
-  const min = lo - pad;
-  const max = hi + pad;
-  const n = items.length;
-  const x = (i) => ((i + 0.5) / n) * 100;
-  const y = (v) => ((v - min) / (max - min)) * 100;
-  const points = items.map((it, i) => `${x(i)},${100 - y(it[valueKey])}`).join(" ");
 
+/* ------------------------------------------------------------------ */
+/* IRDAI regulatory TAT (catalogue 168)                                 */
+/* ------------------------------------------------------------------ */
+function IrdaiTatCard({ steps, onOpen }) {
+  const cell = (n, tone, tab) =>
+    n ? (
+      <button
+        type="button"
+        onClick={() => onOpen(tab)}
+        title="Open in My Work Queue"
+        className={`inline-flex min-w-7 justify-center rounded px-1.5 text-[12px] font-semibold leading-5 tabular-nums hover:ring-1 hover:ring-inset ${tone}`}
+      >
+        {n}
+      </button>
+    ) : (
+      <span className="inline-flex min-w-7 justify-center text-[12px] leading-5 text-slate-500">–</span>
+    );
   return (
-    <div className="px-3 pb-1.5 pt-3">
-      <div className="relative" style={{ height }}>
-        {target != null && (
-          <div
-            className="pointer-events-none absolute inset-x-0 border-t-2 border-dashed border-slate-700"
-            style={{ bottom: `${y(target)}%` }}
-            aria-hidden="true"
-          />
-        )}
-        <svg className="absolute inset-0 h-full w-full overflow-visible" viewBox="0 0 100 100" preserveAspectRatio="none" aria-hidden="true">
-          <polyline points={points} fill="none" stroke="#0f766e" strokeWidth="2" vectorEffect="non-scaling-stroke" strokeLinejoin="round" />
-        </svg>
-        {items.map((it, i) => {
-          const active = hover?.[labelKey] === it[labelKey];
-          return (
-            <div key={it[labelKey]} className="pointer-events-none absolute" style={{ left: `${x(i)}%`, bottom: `${y(it[valueKey])}%` }}>
-              <span
-                className={`absolute bottom-0 left-1/2 block -translate-x-1/2 translate-y-1/2 rounded-full ${
-                  it.mtd ? "h-3 w-3 border-2 border-teal-700 bg-white" : "h-3 w-3 bg-teal-700 ring-2 ring-white"
-                } ${active ? "scale-125" : ""}`}
-              />
-              <span className="absolute bottom-2 left-1/2 -translate-x-1/2 whitespace-nowrap rounded bg-white/90 px-0.5 text-[12px] font-semibold tabular-nums text-slate-800">
-                {format(it[valueKey])}
-              </span>
-            </div>
-          );
-        })}
-        {/* hover columns */}
-        <div className="absolute inset-0 flex" role="list" aria-label={items.map((it) => `${it[labelKey]} ${format(it[valueKey])}`).join(", ")}>
-          {items.map((it) => (
-            <div
-              key={it[labelKey]}
-              role="listitem"
-              className="h-full flex-1"
-              onMouseEnter={() => setHover(it)}
-              onMouseLeave={() => setHover(null)}
-            />
+    <Card title="IRDAI TAT" icon={Landmark} note="Regulatory timelines">
+      <p className="px-3 pt-1 text-[12px] text-slate-500">Open claims against IRDAI claim timelines · due = within 24 h</p>
+      <table className="mx-3 mt-1 w-[calc(100%-1.5rem)] text-left">
+        <thead>
+          <tr className="text-[11px] font-semibold uppercase tracking-wide text-slate-500">
+            <th className="py-1 font-semibold">Milestone</th>
+            <th className="w-14 py-1 text-center font-semibold">Open</th>
+            <th className="w-14 py-1 text-center font-semibold" title="IRDAI limit falls within the next 24 hours">Due</th>
+            <th className="w-[72px] py-1 text-center font-semibold" title="Past the IRDAI limit">Breached</th>
+          </tr>
+        </thead>
+        <tbody>
+          {steps.map((st) => (
+            <tr key={st.key} className="border-t border-slate-100 align-middle">
+              <td className="py-1.5 pr-2">
+                <span className="block text-[12.5px] font-medium leading-tight text-slate-800">{st.label}</span>
+                <span className="block text-[12px] leading-tight text-slate-500">{st.rule}</span>
+              </td>
+              <td className="text-center">{cell(st.total, "bg-slate-100 text-slate-700 hover:ring-slate-300", "all")}</td>
+              <td className="text-center">{cell(st.due, "bg-amber-50 text-amber-900 hover:ring-amber-300", "risk")}</td>
+              <td className="text-center">{cell(st.late, "bg-red-50 text-red-800 hover:ring-red-300", "breach")}</td>
+            </tr>
           ))}
-        </div>
-      </div>
-      <div className="mt-1 flex">
-        {items.map((it) => (
-          <span key={it[labelKey]} className="flex-1 text-center text-[12px] leading-tight text-slate-500">
-            {it[labelKey]}
-          </span>
-        ))}
-      </div>
-      <p className="mt-1 flex flex-wrap items-center gap-x-4 gap-y-1 text-[11px] text-slate-500">
-        {target != null && (
-          <span className="flex items-center gap-1.5">
-            <span className="inline-block w-5 border-t-2 border-dashed border-slate-700" aria-hidden="true" />
-            {targetLabel ?? `Target ${format(target)}`}
-          </span>
-        )}
-        <span className="flex items-center gap-1.5">
-          <span className="inline-block h-2.5 w-2.5 rounded-full border-2 border-teal-700 bg-white" aria-hidden="true" />
-          Current month to date
-        </span>
-        <span>Scale zoomed to data range</span>
+        </tbody>
+      </table>
+      <p className="mx-3 mt-1.5 flex items-start gap-1.5 rounded-md bg-emerald-50 px-2 py-1.5 text-[12px] leading-snug text-emerald-800">
+        <CheckCircle2 className="mt-px h-3.5 w-3.5 flex-none" aria-hidden="true" />
+        Surveyor allocation (24 h) is met at registration – claims are allocated to you as the surveyor.
       </p>
-    </div>
+      <p className="mt-auto px-3 pb-2 pt-1.5 text-[12px] text-slate-500">As per IRDAI Master Circular on General Insurance Business, June 2024.</p>
+    </Card>
   );
 }
 
@@ -838,6 +799,10 @@ function LineChart({ items, labelKey, valueKey, hover, setHover, height = 80, ta
 /* ------------------------------------------------------------------ */
 export default function ODHandlerDashboard() {
   const navigate = useNavigate();
+  // Two views: My Day (work to act on – default) and Performance (SLA / TAT figures)
+  const [params, setParams] = useSearchParams();
+  const view = params.get("view") === "performance" ? "performance" : "myday";
+  const setView = (v) => setParams(v === "performance" ? { view: v } : {}, { replace: true });
   const [toast, setToast] = useState("");
   // Live counts from the open queue: a claim closed in Claim 360 (settled, withdrawn, repudiated,
   // closed without payment, NBNR closed) leaves every card at once; a reopened claim comes back.
@@ -856,12 +821,8 @@ export default function ODHandlerDashboard() {
   const HANDLER_TAT_STAGES = sum.tatStages.filter((st) => !AUTOMATED_STAGES.includes(st.stage));
   const [hAge, setHAge] = useState(null);
   const [hStage, setHStage] = useState(null);
-  const [hSla, setHSla] = useState(null);
-  const [hTat, setHTat] = useState(null);
-  const [slaView, setSlaView] = useState(() => readView(SLA_VIEW_KEY, SLA_VIEWS));
   const [portView, setPortView] = useState(() => readView(PORT_VIEW_KEY, PORT_VIEWS));
   const [stageChart, setStageChart] = useState(() => readView(STAGE_CHART_KEY, STAGE_CHARTS));
-  const [slaChartPick, setSlaChartPick] = useState(() => readChart(SLA_CHART_KEY));
   const [portChartPick, setPortChartPick] = useState(() => readChart(PORT_CHART_KEY));
   const [workChartPick, setWorkChartPick] = useState(() => readChart(WORK_CHART_KEY));
   const [hPend, setHPend] = useState(null);
@@ -872,27 +833,15 @@ export default function ODHandlerDashboard() {
   }
 
   // If the saved chart type does not suit the current view, use that view's default
-  const slaChart = SLA_CHARTS[slaView].includes(slaChartPick) ? slaChartPick : SLA_CHARTS[slaView][0];
   const portChart = PORT_CHARTS[portView].includes(portChartPick) ? portChartPick : PORT_CHARTS[portView][0];
 
   function changeStageChart(t) {
     setStageChart(t);
     saveView(STAGE_CHART_KEY, t);
   }
-  function changeSlaChart(t) {
-    setSlaChartPick(t);
-    saveView(SLA_CHART_KEY, t);
-  }
   function changePortChart(t) {
     setPortChartPick(t);
     saveView(PORT_CHART_KEY, t);
-  }
-
-  function changeSlaView(v) {
-    setSlaView(v);
-    setHSla(null);
-    setHTat(null);
-    saveView(SLA_VIEW_KEY, v);
   }
 
   function changePortView(v) {
@@ -935,6 +884,8 @@ export default function ODHandlerDashboard() {
       tab: "closed",
       value: sum.closed,
       sub: `${lakhShort(sum.closedPaid)} paid`,
+      // hover / focus: how the claims closed (catalogue 184 – settled, repudiated, closed)
+      pop: sum.closedByType,
       icon: CheckCircle2,
       tone: "bg-emerald-50 text-emerald-700",
       accent: "bg-emerald-500",
@@ -966,14 +917,45 @@ export default function ODHandlerDashboard() {
       title="My Dashboard"
       onNavigateMissing={notBuilt}
     >
+      {/* ---------------- View switch: My Day · Performance ---------------- */}
+      <div className="mb-2 flex flex-wrap items-center gap-3">
+        <div role="tablist" aria-label="Dashboard view" className="inline-flex rounded-lg bg-slate-200/70 p-0.5">
+          {[
+            { key: "myday", label: "My Day", Icon: ListTodo },
+            { key: "performance", label: "Performance", Icon: BarChart3 },
+          ].map((t) => (
+            <button
+              key={t.key}
+              type="button"
+              role="tab"
+              aria-selected={view === t.key}
+              onClick={() => setView(t.key)}
+              className={`inline-flex h-8 items-center gap-1.5 rounded-md px-3 text-[13px] font-semibold transition ${
+                view === t.key ? "bg-white text-[#0B1F3A] shadow-sm" : "text-slate-600 hover:text-slate-900"
+              }`}
+            >
+              <t.Icon className="h-4 w-4" aria-hidden="true" />
+              {t.label}
+            </button>
+          ))}
+        </div>
+        <span className="text-[12px] text-slate-500">
+          {view === "myday" ? "What needs your action today" : "Your SLA, TAT, ageing and pending position"}
+        </span>
+      </div>
+
+      {view === "myday" ? (
+        <HandlerMyDay />
+      ) : (
       <div className="flex flex-col gap-2">
         {/* ---------------- KPI row ---------------- */}
         <div className="grid grid-cols-2 gap-2 sm:grid-cols-3 lg:grid-cols-5">
           {KPIS.map((k) => {
             const Tag = k.tab ? "button" : "div";
             return (
+            <div key={k.label} className="group relative min-w-0">
             <Tag
-              key={k.label}
+              aria-describedby={k.pop ? "closed-breakdown" : undefined}
               {...(k.tab
                 ? {
                     type: "button",
@@ -981,7 +963,7 @@ export default function ODHandlerDashboard() {
                     title: k.tab === "closed" ? "Open closed claims in My Work Queue" : "Open in My Work Queue",
                   }
                 : {})}
-              className={`relative flex min-w-0 items-center gap-2.5 overflow-hidden rounded-xl border border-slate-200/80 bg-white py-1.5 pl-3.5 pr-2 text-left [@media(max-height:660px)]:py-1 ${CARD_SHADOW} ${
+              className={`relative flex h-full w-full min-w-0 items-center gap-2.5 overflow-hidden rounded-xl border border-slate-200/80 bg-white py-1.5 pl-3.5 pr-2 text-left [@media(max-height:660px)]:py-1 ${CARD_SHADOW} ${
                 k.tab ? "transition hover:-translate-y-px hover:border-teal-600/60 hover:shadow-md" : ""
               }`}
             >
@@ -1011,154 +993,31 @@ export default function ODHandlerDashboard() {
                 </span>
               </span>
             </Tag>
+            {k.pop && (
+              <div
+                id="closed-breakdown"
+                role="tooltip"
+                className="pointer-events-none absolute left-0 top-full z-30 mt-1 hidden w-60 rounded-lg border border-slate-200 bg-white p-2 shadow-lg group-focus-within:block group-hover:block"
+              >
+                <p className="mb-1 text-[11px] font-semibold uppercase tracking-wide text-slate-500">How they closed</p>
+                <ul className="flex flex-col gap-0.5">
+                  {k.pop.map((x) => (
+                    <li key={x.type} className="flex items-center justify-between text-[12.5px] text-slate-700">
+                      <span>{x.type}</span>
+                      <span className="font-semibold tabular-nums text-slate-900">{x.count}</span>
+                    </li>
+                  ))}
+                </ul>
+              </div>
+            )}
+            </div>
             );
           })}
         </div>
 
-        {/* ---------------- Row 2: SLA · Portfolio · Workload (view + chart-type dropdowns) ---------------- */}
+        {/* ---------------- Row 2: IRDAI TAT · Portfolio · Pending with ---------------- */}
         <div className="grid grid-cols-[minmax(0,1fr)] gap-2 md:grid-cols-2 lg:grid-cols-3">
-          <Card
-            title="SLA"
-            icon={Gauge}
-            action={
-              <div className="flex flex-wrap items-center gap-1.5">
-                <ViewSelect value={slaView} onChange={changeSlaView} views={SLA_VIEWS} label="Choose SLA view" />
-                <ViewSelect value={slaChart} onChange={changeSlaChart} views={chartOptions(SLA_CHARTS[slaView])} label="Chart type" />
-              </div>
-            }
-          >
-            {/* sub-header: what this view measures / hover readout */}
-            <p className="px-3 pt-1 text-[12px] text-slate-500" aria-live="polite">
-              {slaView === "status" &&
-                (hSla?.key
-                  ? `${hSla.label}: ${hSla.count} claims (${pct(hSla.count, total)}%)`
-                  : `${total} open claims by current SLA position`)}
-              {slaView === "compliance" &&
-                (hSla?.month
-                  ? `${hSla.month}${hSla.mtd ? " (to date)" : ""}: ${hSla.value}% closed within SLA`
-                  : "% of claims closed within SLA · hover a month")}
-              {slaView === "tat" &&
-                (hTat
-                  ? `${hTat.month}${hTat.mtd ? " (to date)" : ""}: ${fmtDays(hTat.value)} intimation → settlement`
-                  : "Average days from intimation to settlement · hover a month")}
-            </p>
-
-            {/* --- SLA status --- */}
-            {slaView === "status" && slaChart === "summary" && (
-              <div className="flex flex-col gap-2 px-3 py-1.5">
-                <div
-                  className="flex h-3 gap-[2px] overflow-hidden rounded-full"
-                  role="img"
-                  aria-label={sum.slaSummary.map((x) => `${x.label} ${x.count}`).join(", ")}
-                >
-                  {sum.slaSummary.map((x) => (
-                    <span key={x.key} className={STATUS[x.key].bar} style={{ width: `${pct(x.count, total)}%` }} />
-                  ))}
-                </div>
-                <ul className="grid grid-cols-3 gap-1.5">
-                  {sum.slaSummary.map((x) => {
-                    const st = STATUS[x.key];
-                    return (
-                      <li key={x.key} className="flex min-w-0 items-center gap-2 rounded-lg border border-slate-100 bg-slate-50/70 px-2 py-1" title={x.label}>
-                        <span className={`grid h-6 w-6 flex-none place-items-center rounded-md ${st.chip}`}>
-                          <st.Icon className="h-3.5 w-3.5" aria-hidden="true" />
-                        </span>
-                        <span className="min-w-0">
-                          <span className="block truncate text-[12px] leading-tight text-slate-500">{x.label.split(" (")[0]}</span>
-                          <span className="flex items-baseline gap-1.5">
-                            <span className="text-base font-bold leading-tight tabular-nums text-slate-900">{x.count}</span>
-                            <span className="text-xs tabular-nums text-slate-500">{pct(x.count, total)}%</span>
-                          </span>
-                        </span>
-                      </li>
-                    );
-                  })}
-                </ul>
-                <p className="text-[11px] leading-snug text-slate-500">
-                  Settlement SLA clock pauses while documents are with the insured.
-                </p>
-              </div>
-            )}
-            {slaView === "status" && slaChart === "bar" && (
-              <Columns
-                items={sum.slaSummary}
-                labelKey="label"
-                hover={hSla}
-                setHover={setHSla}
-                height={70}
-                colorFor={(x) => STATUS[x.key].bar}
-              />
-            )}
-            {slaView === "status" && (slaChart === "pie" || slaChart === "donut") && (
-              <PieChart
-                items={sum.slaSummary}
-                labelKey="label"
-                total={total}
-                donut={slaChart === "donut"}
-                hover={hSla}
-                setHover={setHSla}
-                colorFor={(x) => STATUS_HEX[x.key]}
-              />
-            )}
-
-            {/* --- SLA compliance trend --- */}
-            {slaView === "compliance" && slaChart === "bar" && (
-              <Columns
-                items={SLA_TREND}
-                labelKey="month"
-                valueKey="value"
-                hover={hSla}
-                setHover={setHSla}
-                height={70}
-                target={SLA_KPIS.slaTarget}
-                targetLabel={`Target ${SLA_KPIS.slaTarget}% (higher is better)`}
-                format={(v) => `${v}%`}
-                colorFor={(m) => (m.mtd ? MTD_BG : "bg-teal-700")}
-                inkFor={(m) => (m.mtd ? "text-slate-900" : "text-white")}
-              />
-            )}
-            {slaView === "compliance" && slaChart === "line" && (
-              <LineChart
-                items={SLA_TREND}
-                labelKey="month"
-                valueKey="value"
-                hover={hSla}
-                setHover={setHSla}
-                target={SLA_KPIS.slaTarget}
-                targetLabel={`Target ${SLA_KPIS.slaTarget}% (higher is better)`}
-                format={(v) => `${v}%`}
-              />
-            )}
-
-            {/* --- Settlement TAT trend --- */}
-            {slaView === "tat" && slaChart === "bar" && (
-              <Columns
-                items={TAT_TREND}
-                labelKey="month"
-                valueKey="value"
-                hover={hTat}
-                setHover={setHTat}
-                height={70}
-                target={SLA_KPIS.settlementTarget}
-                targetLabel={`Target ${SLA_KPIS.settlementTarget} days (lower is better)`}
-                format={(v) => `${Number(v).toFixed(1)}`}
-                colorFor={(m) => (m.mtd ? MTD_BG : "bg-teal-700")}
-                inkFor={(m) => (m.mtd ? "text-slate-900" : "text-white")}
-              />
-            )}
-            {slaView === "tat" && slaChart === "line" && (
-              <LineChart
-                items={TAT_TREND}
-                labelKey="month"
-                valueKey="value"
-                hover={hTat}
-                setHover={setHTat}
-                target={SLA_KPIS.settlementTarget}
-                targetLabel={`Target ${SLA_KPIS.settlementTarget} days (lower is better)`}
-                format={(v) => `${Number(v).toFixed(1)}`}
-              />
-            )}
-          </Card>
+          <IrdaiTatCard steps={sum.irdai} onOpen={(tab) => navigate(`/od/worklist?tab=${tab}`)} />
 
           <Card
             title="Portfolio"
@@ -1310,6 +1169,7 @@ export default function ODHandlerDashboard() {
         </Card>
 
       </div>
+      )}
 
       {toast && (
         <div

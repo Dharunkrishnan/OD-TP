@@ -571,6 +571,7 @@ export default function ODShell({ active = "dashboard", title, subtitle, childre
               label="Search claims and policies"
               placeholder="Claim no, vehicle no, policy no or insured name"
               suggest={globalSuggest}
+              openEvent="smartclaims:open-search"
             />
             {isDualAccess(user) && (
               <span className="hidden rounded-md bg-teal-50 px-2 py-1 text-xs font-semibold text-teal-800 sm:inline">

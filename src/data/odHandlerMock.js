@@ -99,11 +99,39 @@ const RAW_QUEUE = [
   {claimNo: "OD/CHN/26/004676", regNo: "TN 10 TD 9902", vehicle: "Toyota Glanza V", insured: "K. Ramesh", lossType: "Accident – partial", lossDate: "2026-09-27", regDate: "2026-09-28", stage: "Payment", pendingWith: "Me (handler)", ageDays: 24, sla: {status: "risk", label: "5 h left"}, nextAction: "Raise payment request to Finance", dueToday: true, flags: [], reserve: 61400},
 ];
 
-export const WORK_QUEUE = RAW_QUEUE.map((r) => ({
-  ...r,
-  lossDate: shiftISO(r.lossDate, DEMO_SHIFT_DAYS),
-  regDate: shiftISO(r.regDate, DEMO_SHIFT_DAYS),
-}));
+// Claims Handler and Surveyor are ONE persona: the handler surveys and assesses their own claims
+// (catalogue 33, 42, 55, 60 list the handler on survey / assessment work). An external surveyor (IPS)
+// is appointed only as an exception – CAT events, theft and total loss (catalogue 48, 194).
+const needsIps = (r) => r.flags.includes("CAT event") || /theft|total/i.test(r.lossType);
+const OWN_SURVEY_ACTION = {
+  "Appoint surveyor – overdue": "Inspect vehicle – overdue",
+  "Appoint surveyor – spot survey": "Spot survey at accident location",
+  "Appoint surveyor": "Schedule inspection with garage",
+  "Chase surveyor visit": "Visit vehicle for inspection",
+  "Share garage address with surveyor": "Fix inspection time with garage",
+  "Escalate – surveyor visit overdue": "Inspection overdue – inspect today",
+  "Follow up final survey report": "Complete final survey report",
+};
+function asOneHandler(r) {
+  const ips = needsIps(r);
+  if (ips) {
+    // exception claims keep a separate surveyor
+    return r.pendingWith === "Surveyor" ? { ...r, pendingWith: "External surveyor (IPS)" } : r;
+  }
+  return {
+    ...r,
+    pendingWith: r.pendingWith === "Surveyor" ? "Me (handler)" : r.pendingWith,
+    nextAction: OWN_SURVEY_ACTION[r.nextAction] || r.nextAction,
+  };
+}
+
+export const WORK_QUEUE = RAW_QUEUE.map((r) =>
+  asOneHandler({
+    ...r,
+    lossDate: shiftISO(r.lossDate, DEMO_SHIFT_DAYS),
+    regDate: shiftISO(r.regDate, DEMO_SHIFT_DAYS),
+  })
+);
 
 // Today's follow-ups (diary)
 export const DIARY = [
@@ -279,6 +307,14 @@ export const TAT_STAGES = TAT_BASE.map((t) => ({
   breachedOpen: countWhere((r) => r.sla.status === "breach" && STAGE_TO_TAT[r.stage] === t.stage),
 }));
 
+// IRDAI Master Circular on General Insurance Business (June 2024) – retail motor OD timelines
+// Surveyor allocation (24 h) is met at registration: the claim is allocated to the handler, who is
+// the surveyor. What the handler owns is the survey report and the decision.
+export const IRDAI_STEPS = [
+  { key: "report", label: "Survey report", rule: "Within 15 d of allocation", stages: ["Registered", "Survey pending"] },
+  { key: "decision", label: "Claim decision", rule: "Within 7 d of survey report", stages: ["Assessment", "Documents pending", "Approval"] },
+];
+
 /**
  * Live counts for any list of open claims – used by the handler dashboard and the sidebar badges
  * with openQueue(), so a claim closed (settled, withdrawn, repudiated, NBNR closed…) drops out at once
@@ -317,6 +353,19 @@ export function summariseQueue(rows) {
     ],
     // a reopened claim has no party yet ("–") – it is back with the handler
     pendingWith: tallyRows("pendingWith", null, (v) => (!v || v === "–" ? "Me (handler)" : v)).map(([party, n]) => ({ party, count: n })),
+    // IRDAI regulatory TAT (catalogue 168) – which regulatory clock each open claim is on now.
+    // Demo: the claim's SLA position stands in for its regulatory position (breach = past the
+    // IRDAI limit, risk = due within 24 h). Real system: computed from intimation, surveyor
+    // allocation and survey report timestamps.
+    irdai: IRDAI_STEPS.map((st) => {
+      const inStep = rows.filter((r) => st.stages.includes(r.stage));
+      return {
+        ...st,
+        total: inStep.length,
+        due: inStep.filter((r) => r.sla.status === "risk").length,
+        late: inStep.filter((r) => r.sla.status === "breach").length,
+      };
+    }),
     tatStages: TAT_BASE.map((t) => ({
       ...t,
       breachedOpen: count((r) => r.sla.status === "breach" && STAGE_TO_TAT[r.stage] === t.stage),

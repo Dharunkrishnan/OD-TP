@@ -86,6 +86,7 @@ export function handlerSummary() {
     ...open,
     closed: closed.length,
     closedPaid: closed.reduce((t, r) => t + (r.paid || 0), 0),
+    closedByType: CLOSURE_TYPES.map((type) => ({ type, count: closed.filter((r) => r.closureType === type).length })),
     all: open.open + closed.length,
   };
 }

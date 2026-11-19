@@ -112,3 +112,17 @@ export function decideHandlerRequest(req, approve, remarks) {
   }
   writeStatus(req.claimNo, next);
 }
+
+/** Manager decisions on the handler's requests (newest first) – shown on the handler's My Day.
+ *  Read back from the claim timelines, so nothing extra is stored. */
+const APPROVED_EVENTS = ["Repudiation approved", "Claim reopened", "Reserve increase approved"];
+export function managerDecisions() {
+  const out = [];
+  const add = (claimNo, e) => {
+    if (e.by !== BY) return;
+    out.push({ claimNo, title: e.event, detail: e.detail, date: e.date, time: e.time, approved: APPROVED_EVENTS.includes(e.event) });
+  };
+  Object.entries(readStatusAll()).forEach(([no, r]) => (r.events || []).forEach((e) => add(no, e)));
+  Object.entries(readWorkAll()).forEach(([no, w]) => (w.events || []).forEach((e) => add(no, e)));
+  return out.sort((a, b) => `${b.date}${b.time}`.localeCompare(`${a.date}${a.time}`));
+}

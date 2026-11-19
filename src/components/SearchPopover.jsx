@@ -25,6 +25,7 @@ export default function SearchPopover({
   active,
   align = "right",
   size = "md",
+  openEvent, // optional window event name that opens the panel (e.g. a "Find a claim" tile)
 }) {
   const [open, setOpen] = useState(false);
   const [q, setQ] = useState("");
@@ -56,6 +57,14 @@ export default function SearchPopover({
     setOpen(true);
     window.setTimeout(() => input.current?.focus(), 0);
   }
+
+  // let other parts of the page open this search
+  useEffect(() => {
+    if (!openEvent) return undefined;
+    const onOpen = () => openPanel();
+    window.addEventListener(openEvent, onOpen);
+    return () => window.removeEventListener(openEvent, onOpen);
+  });
 
   function choose(item) {
     setOpen(false);
@@ -135,7 +144,7 @@ export default function SearchPopover({
               aria-expanded="true"
               aria-controls={listId}
               aria-activedescendant={hi >= 0 ? `${listId}-${hi}` : undefined}
-              className="h-full min-w-0 flex-1 border-0 bg-transparent p-0 text-[14px] text-slate-900 placeholder:text-slate-400 focus:outline-none focus:ring-0"
+              className="h-full min-w-0 flex-1 border-0 bg-transparent p-0 text-[14px] text-slate-900 placeholder:text-slate-500 focus:outline-none focus:ring-0"
             />
             {q ? (
               <button
@@ -150,25 +159,25 @@ export default function SearchPopover({
                 <X className="h-3.5 w-3.5" aria-hidden="true" />
               </button>
             ) : (
-              <kbd className="flex-none rounded-md border border-slate-200 bg-slate-50 px-1.5 py-0.5 font-sans text-[10.5px] font-medium text-slate-500">Esc</kbd>
+              <kbd className="flex-none rounded-md border border-slate-200 bg-slate-50 px-1.5 py-0.5 font-sans text-[11px] font-medium text-slate-500">Esc</kbd>
             )}
           </div>
 
           <div id={listId} role="listbox" aria-label="Suggestions" className="max-h-[min(380px,60vh)] overflow-y-auto px-2 pb-2 pt-1">
             {flat.length === 0 ? (
               <div className="flex flex-col items-center gap-1.5 px-3 py-8 text-center">
-                <span className="grid h-10 w-10 place-items-center rounded-full bg-slate-100 text-slate-400">
+                <span className="grid h-10 w-10 place-items-center rounded-full bg-slate-100 text-slate-500">
                   <Search className="h-5 w-5" aria-hidden="true" />
                 </span>
                 <p className="text-[13px] font-medium text-slate-700">{q.trim() ? `No match for “${q.trim()}”` : "Start typing to search"}</p>
-                <p className="text-[11.5px] text-slate-500">Try a claim no, vehicle no, policy no or the insured's name.</p>
+                <p className="text-[12px] text-slate-500">Try a claim no, vehicle no, policy no or the insured's name.</p>
               </div>
             ) : (
               groups.map(
                 (g) =>
                   g.items.length > 0 && (
                     <div key={g.group} className="pt-2 first:pt-1">
-                      <p className="flex items-center justify-between px-2 pb-1 text-[10.5px] font-semibold uppercase tracking-wider text-slate-400">
+                      <p className="flex items-center justify-between px-2 pb-1 text-[11px] font-semibold uppercase tracking-wider text-slate-500">
                         {g.group}
                         <span className="font-medium normal-case tracking-normal text-slate-300">{g.items.length}</span>
                       </p>
@@ -197,11 +206,11 @@ export default function SearchPopover({
                             </span>
                             <span className="min-w-0 flex-1">
                               <span className={`block truncate text-[13px] font-semibold leading-tight ${on ? "text-teal-900" : "text-slate-800"}`}>{it.title}</span>
-                              {it.subtitle && <span className="mt-0.5 block truncate text-[11.5px] leading-tight text-slate-500">{it.subtitle}</span>}
+                              {it.subtitle && <span className="mt-0.5 block truncate text-[12px] leading-tight text-slate-500">{it.subtitle}</span>}
                             </span>
                             {it.meta && (
                               <span
-                                className={`flex-none rounded-full px-2 py-0.5 text-[10.5px] font-semibold ${
+                                className={`flex-none rounded-full px-2 py-0.5 text-[11px] font-semibold ${
                                   it.metaTone === "red"
                                     ? "bg-red-50 text-red-700 ring-1 ring-inset ring-red-200"
                                     : it.metaTone === "amber"
@@ -224,18 +233,18 @@ export default function SearchPopover({
             )}
           </div>
 
-          <div className="flex items-center gap-4 border-t border-slate-100 bg-slate-50/80 px-4 py-2 text-[11px] text-slate-500">
+          <div className="flex items-center gap-4 border-t border-slate-100 bg-slate-50/80 px-4 py-2 text-[12px] text-slate-500">
             <span className="flex items-center gap-1">
-              <kbd className="rounded border border-slate-200 bg-white px-1 font-sans text-[10px] shadow-sm">↑</kbd>
-              <kbd className="rounded border border-slate-200 bg-white px-1 font-sans text-[10px] shadow-sm">↓</kbd>
+              <kbd className="rounded border border-slate-200 bg-white px-1 font-sans text-[11px] shadow-sm">↑</kbd>
+              <kbd className="rounded border border-slate-200 bg-white px-1 font-sans text-[11px] shadow-sm">↓</kbd>
               to move
             </span>
             <span className="flex items-center gap-1">
-              <kbd className="rounded border border-slate-200 bg-white px-1 font-sans text-[10px] shadow-sm">↵</kbd>
+              <kbd className="rounded border border-slate-200 bg-white px-1 font-sans text-[11px] shadow-sm">↵</kbd>
               {onSubmit && submitLabel ? submitLabel : "to open"}
             </span>
             <span className="flex items-center gap-1">
-              <kbd className="rounded border border-slate-200 bg-white px-1 font-sans text-[10px] shadow-sm">Esc</kbd>
+              <kbd className="rounded border border-slate-200 bg-white px-1 font-sans text-[11px] shadow-sm">Esc</kbd>
               to close
             </span>
           </div>
