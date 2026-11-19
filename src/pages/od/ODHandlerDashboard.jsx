@@ -30,7 +30,6 @@ import {
   ChevronDown,
 } from "lucide-react";
 import ODShell from "../../components/layout/ODShell";
-import { useAuth } from "../../auth";
 import { openQueue } from "../../data/claimLists";
 import {
   HANDLER_KPIS,
@@ -48,22 +47,6 @@ import {
 // generates the claim no) – no handler TAT to track, so they are left out of the stage table.
 const AUTOMATED_STAGES = ["Intimation → Registration"];
 const HANDLER_TAT_STAGES = TAT_STAGES.filter((s) => !AUTOMATED_STAGES.includes(s.stage));
-
-function greeting() {
-  const h = new Date().getHours();
-  if (h < 12) return "Good morning";
-  if (h < 17) return "Good afternoon";
-  return "Good evening";
-}
-
-function todayLabel() {
-  return new Date().toLocaleDateString("en-IN", {
-    weekday: "long",
-    day: "numeric",
-    month: "short",
-    year: "numeric",
-  });
-}
 
 const pct = (n, total) => Math.round((n / total) * 100);
 const fmtDays = (d) => `${Number(d).toFixed(1)} d`;
@@ -203,7 +186,7 @@ function ViewSelect({ value, onChange, views, label }) {
       >
         {CurIcon && <CurIcon className={`h-3.5 w-3.5 flex-none ${open ? "text-teal-700" : "text-slate-500"}`} aria-hidden="true" />}
         <span className="truncate">{cur.label}</span>
-        <ChevronDown className={`h-3.5 w-3.5 flex-none text-slate-400 transition ${open ? "rotate-180" : ""}`} aria-hidden="true" />
+        <ChevronDown className={`h-3.5 w-3.5 flex-none text-slate-500 transition ${open ? "rotate-180" : ""}`} aria-hidden="true" />
       </button>
       {open && (
         <ul
@@ -212,7 +195,7 @@ function ViewSelect({ value, onChange, views, label }) {
           aria-label={label}
           className="absolute right-0 top-full z-30 mt-1.5 w-max min-w-full max-w-[280px] rounded-xl border border-slate-200 bg-white p-1 shadow-xl"
         >
-          <li className="px-2 pb-1 pt-1 text-[10px] font-semibold uppercase tracking-wider text-slate-400" role="presentation">
+          <li className="px-2 pb-1 pt-1 text-[11px] font-semibold uppercase tracking-wider text-slate-500" role="presentation">
             {label}
           </li>
           {views.map((v, i) => {
@@ -235,7 +218,7 @@ function ViewSelect({ value, onChange, views, label }) {
                 </span>
                 <span className="min-w-0 flex-1">
                   <span className={`block text-[12.5px] leading-tight ${sel ? "font-semibold text-teal-900" : "font-medium text-slate-800"}`}>{v.label}</span>
-                  {v.hint && <span className="block text-[11px] leading-snug text-slate-500">{v.hint}</span>}
+                  {v.hint && <span className="block text-[12px] leading-snug text-slate-500">{v.hint}</span>}
                 </span>
                 <Check className={`mt-1 h-3.5 w-3.5 flex-none ${sel ? "text-teal-700" : "text-transparent"}`} aria-hidden="true" />
               </li>
@@ -274,7 +257,7 @@ const overBy = (s) => +(s.actual - s.target).toFixed(1);
 /** Shared legend for the stage charts */
 function StageLegend({ type }) {
   return (
-    <div className="flex flex-wrap items-center gap-x-3 gap-y-1 text-[11px] text-slate-600">
+    <div className="flex flex-wrap items-center gap-x-3 gap-y-1 text-[12px] text-slate-600">
       {type === "variance" ? (
         <>
           <span className="flex items-center gap-1.5"><span className="h-2.5 w-2.5 rounded-sm bg-teal-600" aria-hidden="true" />Under target (days spare)</span>
@@ -293,7 +276,7 @@ function StageLegend({ type }) {
           <span className="flex items-center gap-1.5"><span className="w-3.5 border-t-2 border-dashed border-slate-800" aria-hidden="true" />Target</span>
         </>
       )}
-      <span className="ml-auto text-slate-400">days</span>
+      <span className="ml-auto text-slate-500">days</span>
     </div>
   );
 }
@@ -301,7 +284,7 @@ function StageLegend({ type }) {
 /** Tooltip text for a stage */
 function StageTip({ s }) {
   return (
-    <div className="pointer-events-none absolute left-1/2 top-0 z-30 -translate-x-1/2 whitespace-nowrap rounded-md bg-slate-900 px-2.5 py-1.5 text-[11px] text-white shadow-lg">
+    <div className="pointer-events-none absolute left-1/2 top-0 z-30 -translate-x-1/2 whitespace-nowrap rounded-md bg-slate-900 px-2.5 py-1.5 text-[12px] text-white shadow-lg">
       <p className="font-semibold">{s.stage}</p>
       <p className="tabular-nums text-slate-300">
         Avg {s.actual} d · target {s.target} d ·{" "}
@@ -341,7 +324,7 @@ function StageBars({ items }) {
               onMouseEnter={() => setHover(s.stage)}
               onFocus={() => setHover(s.stage)}
               aria-label={`${s.stage}: average ${s.actual} days, target ${s.target} days`}
-              className={`grid grid-cols-[minmax(0,150px)_minmax(0,1fr)_44px] items-center gap-2 rounded px-1 py-px text-[11.5px] ${on ? "bg-slate-100" : ""}`}
+              className={`grid grid-cols-[minmax(0,150px)_minmax(0,1fr)_44px] items-center gap-2 rounded px-1 py-px text-[12px] ${on ? "bg-slate-100" : ""}`}
             >
               <span className="truncate text-slate-700" title={s.stage}>
                 {(STAGE_SHORT[s.stage] || [s.stage]).join(" ")}
@@ -358,7 +341,7 @@ function StageBars({ items }) {
           );
         })}
       </ul>
-      <div className="mt-1 grid grid-cols-[minmax(0,150px)_minmax(0,1fr)_44px] gap-2 px-1 text-[10px] text-slate-400" aria-hidden="true">
+      <div className="mt-1 grid grid-cols-[minmax(0,150px)_minmax(0,1fr)_44px] gap-2 px-1 text-[11px] text-slate-500" aria-hidden="true">
         <span />
         <span className="flex justify-between tabular-nums">
           {Array.from({ length: top / 2 + 1 }, (_, i) => (
@@ -434,7 +417,7 @@ function StageVariance({ items }) {
               onMouseEnter={() => setHover(s.stage)}
               onFocus={() => setHover(s.stage)}
               aria-label={`${s.stage}: ${d > 0 ? `${d} days over target` : `${Math.abs(d)} days under target`}`}
-              className={`grid grid-cols-[minmax(0,150px)_minmax(0,1fr)_58px] items-center gap-2 rounded px-1 py-px text-[11.5px] ${on ? "bg-slate-100" : ""}`}
+              className={`grid grid-cols-[minmax(0,150px)_minmax(0,1fr)_58px] items-center gap-2 rounded px-1 py-px text-[12px] ${on ? "bg-slate-100" : ""}`}
             >
               <span className="truncate text-slate-700" title={s.stage}>
                 {(STAGE_SHORT[s.stage] || [s.stage]).join(" ")}
@@ -454,7 +437,7 @@ function StageVariance({ items }) {
           );
         })}
       </ul>
-      <div className="mt-1 grid grid-cols-[minmax(0,150px)_minmax(0,1fr)_58px] gap-2 px-1 text-[10px] text-slate-400" aria-hidden="true">
+      <div className="mt-1 grid grid-cols-[minmax(0,150px)_minmax(0,1fr)_58px] gap-2 px-1 text-[11px] text-slate-500" aria-hidden="true">
         <span />
         <span className="flex justify-between">
           <span>← spare</span>
@@ -481,7 +464,7 @@ function StageColumns({ items }) {
         {/* y axis */}
         <div className="relative w-6 flex-none" style={{ height: H }} aria-hidden="true">
           {ticks.map((t) => (
-            <span key={t} className="absolute right-1 translate-y-1/2 text-[10px] leading-none tabular-nums text-slate-400" style={{ bottom: y(t) }}>
+            <span key={t} className="absolute right-1 translate-y-1/2 text-[11px] leading-none tabular-nums text-slate-500" style={{ bottom: y(t) }}>
               {t}
             </span>
           ))}
@@ -508,7 +491,7 @@ function StageColumns({ items }) {
                   {on && <span className="absolute inset-x-1 bottom-[34px] top-0 rounded bg-slate-100/70" aria-hidden="true" />}
                   {/* value label – above the bar or the target line, whichever is higher */}
                   <span
-                    className={`absolute z-20 flex items-center gap-0.5 whitespace-nowrap text-[11px] font-semibold tabular-nums ${over ? "text-red-700" : "text-slate-700"}`}
+                    className={`absolute z-20 flex items-center gap-0.5 whitespace-nowrap text-[12px] font-semibold tabular-nums ${over ? "text-red-700" : "text-slate-700"}`}
                     style={{ bottom: 34 + y(Math.max(s.actual, s.target)) + 4 }}
                   >
                     {over && <AlertTriangle className="h-3 w-3" aria-hidden="true" />}
@@ -526,7 +509,7 @@ function StageColumns({ items }) {
                     aria-hidden="true"
                   />
                   {/* x label */}
-                  <span className="flex h-[34px] w-full flex-col items-center justify-start pt-1 text-center text-[10.5px] leading-tight text-slate-500">
+                  <span className="flex h-[34px] w-full flex-col items-center justify-start pt-1 text-center text-[11px] leading-tight text-slate-500">
                     <span className="max-w-full truncate">{l1}</span>
                     <span className="max-w-full truncate">{l2}</span>
                   </span>
@@ -575,7 +558,7 @@ const STATUS = {
 function StatusChip({ kind, children }) {
   const s = STATUS[kind];
   return (
-    <span className={`inline-flex items-center gap-1 whitespace-nowrap rounded px-1.5 py-0 text-[10.5px] font-semibold leading-[18px] ${s.chip}`}>
+    <span className={`inline-flex items-center gap-1 whitespace-nowrap rounded px-1.5 py-0 text-[11px] font-semibold leading-[18px] ${s.chip}`}>
       <s.Icon className="h-3.5 w-3.5" aria-hidden="true" />
       {children}
     </span>
@@ -663,7 +646,7 @@ function Columns({ items, labelKey, valueKey = "count", hover, setHover, colorFo
                 style={{ height: h }}
               >
                 {inside && (
-                  <span className={`text-[11.5px] font-semibold tabular-nums ${active ? "text-white" : inkFor ? inkFor(it, i) : "text-white"}`}>
+                  <span className={`text-[12px] font-semibold tabular-nums ${active ? "text-white" : inkFor ? inkFor(it, i) : "text-white"}`}>
                     {format(it[valueKey])}
                   </span>
                 )}
@@ -674,13 +657,13 @@ function Columns({ items, labelKey, valueKey = "count", hover, setHover, colorFo
       </div>
       <div className="mt-1 flex gap-3">
         {items.map((it) => (
-          <span key={it[labelKey]} className="flex-1 text-center text-[11px] leading-tight text-slate-500">
+          <span key={it[labelKey]} className="flex-1 text-center text-[12px] leading-tight text-slate-500">
             {it[labelKey]}
           </span>
         ))}
       </div>
       {inside && (
-        <p className="mt-1 flex flex-wrap items-center gap-x-4 gap-y-1 text-[10.5px] text-slate-500">
+        <p className="mt-1 flex flex-wrap items-center gap-x-4 gap-y-1 text-[11px] text-slate-500">
           <span className="flex items-center gap-1.5">
             <span className="inline-block w-5 border-t-2 border-dashed border-slate-700" aria-hidden="true" />
             {targetLabel ?? `Target ${format(target)}`}
@@ -751,7 +734,7 @@ function PieChart({ items, labelKey, colorFor, donut, hover, setHover, total }) 
               <span className="block text-lg font-semibold leading-none tabular-nums text-slate-900">
                 {active ? active.count : total}
               </span>
-              <span className="block text-[10px] text-slate-500">{active ? `${pct(active.count, total)}%` : "open"}</span>
+              <span className="block text-[11px] text-slate-500">{active ? `${pct(active.count, total)}%` : "open"}</span>
             </span>
           </div>
         )}
@@ -771,7 +754,7 @@ function PieChart({ items, labelKey, colorFor, donut, hover, setHover, total }) 
               {it[labelKey]}
             </span>
             <span className="font-semibold tabular-nums text-slate-800">{it.count}</span>
-            <span className="w-8 text-right text-[11px] tabular-nums text-slate-500">{pct(it.count, total)}%</span>
+            <span className="w-8 text-right text-[12px] tabular-nums text-slate-500">{pct(it.count, total)}%</span>
           </li>
         ))}
       </ul>
@@ -814,7 +797,7 @@ function LineChart({ items, labelKey, valueKey, hover, setHover, height = 80, ta
                   it.mtd ? "h-3 w-3 border-2 border-teal-700 bg-white" : "h-3 w-3 bg-teal-700 ring-2 ring-white"
                 } ${active ? "scale-125" : ""}`}
               />
-              <span className="absolute bottom-2 left-1/2 -translate-x-1/2 whitespace-nowrap rounded bg-white/90 px-0.5 text-[11px] font-semibold tabular-nums text-slate-800">
+              <span className="absolute bottom-2 left-1/2 -translate-x-1/2 whitespace-nowrap rounded bg-white/90 px-0.5 text-[12px] font-semibold tabular-nums text-slate-800">
                 {format(it[valueKey])}
               </span>
             </div>
@@ -835,12 +818,12 @@ function LineChart({ items, labelKey, valueKey, hover, setHover, height = 80, ta
       </div>
       <div className="mt-1 flex">
         {items.map((it) => (
-          <span key={it[labelKey]} className="flex-1 text-center text-[11px] leading-tight text-slate-500">
+          <span key={it[labelKey]} className="flex-1 text-center text-[12px] leading-tight text-slate-500">
             {it[labelKey]}
           </span>
         ))}
       </div>
-      <p className="mt-1 flex flex-wrap items-center gap-x-4 gap-y-1 text-[10.5px] text-slate-500">
+      <p className="mt-1 flex flex-wrap items-center gap-x-4 gap-y-1 text-[11px] text-slate-500">
         {target != null && (
           <span className="flex items-center gap-1.5">
             <span className="inline-block w-5 border-t-2 border-dashed border-slate-700" aria-hidden="true" />
@@ -861,7 +844,6 @@ function LineChart({ items, labelKey, valueKey, hover, setHover, height = 80, ta
 /* Page                                                                */
 /* ------------------------------------------------------------------ */
 export default function ODHandlerDashboard() {
-  const { user } = useAuth();
   const navigate = useNavigate();
   const [toast, setToast] = useState("");
   const [hAge, setHAge] = useState(null);
@@ -912,7 +894,6 @@ export default function ODHandlerDashboard() {
     saveView(PORT_VIEW_KEY, v);
   }
 
-  const firstName = (user?.name || "").split(" ")[0];
   const total = HANDLER_KPIS.open;
 
   function notBuilt(what) {
@@ -979,8 +960,7 @@ export default function ODHandlerDashboard() {
   return (
     <ODShell
       active="dashboard"
-      title={`${greeting()}, ${firstName}`}
-      subtitle={`${todayLabel()} · Your SLA and TAT performance`}
+      title="My Dashboard"
       onNavigateMissing={notBuilt}
     >
       <div className="flex flex-col gap-2">
@@ -1008,11 +988,11 @@ export default function ODHandlerDashboard() {
                 <k.icon className="h-4 w-4" aria-hidden="true" />
               </span>
               <span className="min-w-0 flex-1">
-                <span className="block truncate text-[10.5px] font-semibold uppercase leading-tight tracking-wide text-slate-500" title={k.label}>
+                <span className="block truncate text-[11px] font-semibold uppercase leading-tight tracking-wide text-slate-500" title={k.label}>
                   {k.label}
                 </span>
                 <span className="block text-[19px] [@media(max-height:660px)]:text-[17px] font-bold leading-tight tracking-tight text-slate-900 tabular-nums">{k.value}</span>
-                <span className="flex min-w-0 items-center gap-1.5 text-[10.5px] leading-tight text-slate-500">
+                <span className="flex min-w-0 items-center gap-1.5 text-[11px] leading-tight text-slate-500">
                   <span className="truncate">{k.sub}</span>
                   {k.status && (
                     <span
@@ -1045,7 +1025,7 @@ export default function ODHandlerDashboard() {
             }
           >
             {/* sub-header: what this view measures / hover readout */}
-            <p className="px-3 pt-1 text-[11px] text-slate-500" aria-live="polite">
+            <p className="px-3 pt-1 text-[12px] text-slate-500" aria-live="polite">
               {slaView === "status" &&
                 (hSla?.key
                   ? `${hSla.label}: ${hSla.count} claims (${pct(hSla.count, total)}%)`
@@ -1081,7 +1061,7 @@ export default function ODHandlerDashboard() {
                           <st.Icon className="h-3.5 w-3.5" aria-hidden="true" />
                         </span>
                         <span className="min-w-0">
-                          <span className="block truncate text-[11px] leading-tight text-slate-500">{x.label.split(" (")[0]}</span>
+                          <span className="block truncate text-[12px] leading-tight text-slate-500">{x.label.split(" (")[0]}</span>
                           <span className="flex items-baseline gap-1.5">
                             <span className="text-base font-bold leading-tight tabular-nums text-slate-900">{x.count}</span>
                             <span className="text-xs tabular-nums text-slate-500">{pct(x.count, total)}%</span>
@@ -1091,7 +1071,7 @@ export default function ODHandlerDashboard() {
                     );
                   })}
                 </ul>
-                <p className="text-[10.5px] leading-snug text-slate-500">
+                <p className="text-[11px] leading-snug text-slate-500">
                   Settlement SLA clock pauses while documents are with the insured.
                 </p>
               </div>
@@ -1187,7 +1167,7 @@ export default function ODHandlerDashboard() {
               </div>
             }
           >
-            <p className="px-3 pt-1 text-[11px] text-slate-500" aria-live="polite">
+            <p className="px-3 pt-1 text-[12px] text-slate-500" aria-live="polite">
               {portView === "ageing" &&
                 (hAge
                   ? `${hAge.bucket}: ${hAge.count} claims (${pct(hAge.count, total)}%)`
@@ -1246,7 +1226,7 @@ export default function ODHandlerDashboard() {
             icon={Users}
             action={<ViewSelect value={workChart} onChange={changeWorkChart} views={chartOptions(WORK_CHARTS)} label="Chart type" />}
           >
-            <p className="px-3 pt-1 text-[11px] text-slate-500" aria-live="polite">
+            <p className="px-3 pt-1 text-[12px] text-slate-500" aria-live="polite">
               {hPend ? `${hPend.party}: ${hPend.count} claims (${pct(hPend.count, total)}%)` : `Who my ${total} open claims are waiting on`}
             </p>
 
@@ -1283,7 +1263,7 @@ export default function ODHandlerDashboard() {
           <StageTatChart items={HANDLER_TAT_STAGES} type={stageChart} />
           <table className="w-full self-start text-left text-[12px]">
             <thead>
-              <tr className="bg-slate-50 text-[10.5px] uppercase tracking-wide text-slate-500">
+              <tr className="bg-slate-50 text-[11px] uppercase tracking-wide text-slate-500">
                 <th scope="col" className="px-3 py-1 font-semibold">Stage</th>
                 <th scope="col" className="whitespace-nowrap px-3 py-1 text-right font-semibold">Avg TAT / target</th>
                 <th scope="col" className="hidden px-3 py-1 font-semibold sm:table-cell">Status</th>
@@ -1299,7 +1279,7 @@ export default function ODHandlerDashboard() {
                     <td className="px-3 py-1 text-slate-700">{s.stage}</td>
                     <td className="whitespace-nowrap px-3 py-1 text-right tabular-nums">
                       <span className={`font-semibold ${over ? "text-red-700" : "text-slate-800"}`}>{fmtDays(s.actual)}</span>
-                      <span className="text-slate-400"> / {fmtDays(s.target)}</span>
+                      <span className="text-slate-500"> / {fmtDays(s.target)}</span>
                     </td>
                     <td className="hidden px-3 py-1 sm:table-cell">
                       {over ? <StatusChip kind="breach">Over by {diff} d</StatusChip> : <StatusChip kind="ok">On track</StatusChip>}
