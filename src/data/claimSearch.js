@@ -12,10 +12,10 @@ const SURVEY_KEY = "smartclaims-claim-survey"; // surveyor appointed in this ses
 const norm = (s) => String(s || "").toUpperCase().replace(/[\s\-/.]/g, "");
 
 export const BASIC_FIELDS = [
-  { key: "claim", label: "Claim number", placeholder: "Enter claim number", hint: "Full or part of the number" },
-  { key: "policy", label: "Policy number", placeholder: "Enter policy number", hint: "Full or part of the number" },
-  { key: "vehicle", label: "Vehicle number", placeholder: "Enter vehicle number", hint: "With or without spaces" },
-  { key: "mobile", label: "Mobile number", placeholder: "Enter mobile number", hint: "Insured's registered mobile", inputMode: "numeric" },
+  { key: "claim", label: "Claim number", placeholder: "Full or part of claim no", hint: "Full or part of the number" },
+  { key: "policy", label: "Policy number", placeholder: "Full or part of policy no", hint: "Full or part of the number" },
+  { key: "vehicle", label: "Vehicle number", placeholder: "Vehicle no, spaces optional", hint: "With or without spaces" },
+  { key: "mobile", label: "Mobile number", placeholder: "Insured's mobile", hint: "Insured's registered mobile", inputMode: "numeric" },
 ];
 export const ADVANCED_KEYS = ["name", "garage", "svType", "svName", "status", "loss", "from", "to"];
 export const SEARCH_KEYS = [...BASIC_FIELDS.map((f) => f.key), ...ADVANCED_KEYS];
@@ -39,10 +39,9 @@ export function searchIndex() {
     const session = surveys[r.claimNo]?.surveyor;
     const panel = session && SURVEYOR_PANEL.find((s) => s.id === session.id || s.name === session.name);
     const sv = d.survey?.surveyor;
-    let svName = session?.name || sv?.name || "";
-    let svType = panel ? SURVEYOR_TYPE[panel.kind] : sv ? sv.type || "In-house surveyor" : "";
-    if (!session && r.pendingWith === "External surveyor (IPS)") svType = "Panel surveyor (IPS)";
-    if (!svName) svType = "";
+    const svName = session?.name || sv?.name || "";
+    const svType0 = panel ? SURVEYOR_TYPE[panel.kind] : sv ? sv.type || "In-house surveyor" : "";
+    const svType = svName ? svType0 : "";
     return {
       ...r,
       policyNo: d.policy?.policyNo || "",

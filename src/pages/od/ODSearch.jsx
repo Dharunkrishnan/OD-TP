@@ -19,7 +19,7 @@ const fmtDate = (iso) => (iso ? new Date(iso.slice(0, 10) + "T00:00:00").toLocal
 const SLA_TONE = { breach: "text-red-700", risk: "text-amber-700", ok: "text-slate-600" };
 
 const INPUT =
-  "h-10 w-full rounded-lg border border-slate-300 bg-white px-3 text-[13.5px] text-slate-900 placeholder:text-slate-500 focus:border-teal-600 focus:outline-none focus:ring-2 focus:ring-teal-600/20 aria-[invalid=true]:border-red-600";
+  "h-9 w-full rounded-md border border-slate-300 bg-white px-3 text-[13.5px] text-slate-900 placeholder:text-slate-500 focus:border-teal-600 focus:outline-none focus:ring-2 focus:ring-teal-600/20 aria-[invalid=true]:border-red-600";
 
 function Field({ id, label, hint, error, children }) {
   return (
@@ -33,7 +33,7 @@ function Field({ id, label, hint, error, children }) {
           {error}
         </p>
       ) : (
-        hint && <p className="text-[12px] text-slate-500">{hint}</p>
+        hint && <p className="sr-only">{hint}</p>
       )}
     </div>
   );
@@ -133,23 +133,7 @@ export default function ODSearch() {
       <div className="flex flex-col gap-3">
         {/* ---------------- Criteria ---------------- */}
         <form onSubmit={submit} noValidate className="rounded-lg border border-slate-200 bg-white" aria-label="Search criteria">
-          <div className="flex items-center justify-between gap-3 border-b border-slate-100 px-5 py-3">
-            <h2 className="text-[15px] font-semibold text-slate-900">Quick search</h2>
-            <button
-              type="button"
-              onClick={() => setAdvanced((v) => !v)}
-              aria-expanded={advanced}
-              aria-controls="advanced-fields"
-              className={`inline-flex h-9 items-center gap-1.5 rounded-lg border px-3 text-[13px] font-semibold transition ${
-                advanced ? "border-teal-700 bg-teal-50 text-teal-900" : "border-slate-300 text-slate-700 hover:bg-slate-50"
-              }`}
-            >
-              Advanced search
-              <ChevronDown className={`h-4 w-4 transition ${advanced ? "rotate-180" : ""}`} aria-hidden="true" />
-            </button>
-          </div>
-
-          <div className="grid grid-cols-1 gap-x-5 gap-y-4 px-5 py-4 sm:grid-cols-2 xl:grid-cols-4">
+          <div className="grid grid-cols-1 items-start gap-x-3 gap-y-3 px-4 py-3 sm:grid-cols-2 lg:grid-cols-[repeat(4,minmax(0,1fr))_auto]">
             {BASIC_FIELDS.map((f) => (
               <Field key={f.key} id={`s-${f.key}`} label={f.label} hint={f.hint} error={errors[f.key]}>
                 <input
@@ -165,50 +149,59 @@ export default function ODSearch() {
                 />
               </Field>
             ))}
+            {/* actions – level with the inputs */}
+            <div className="flex items-center gap-2 sm:col-span-2 lg:col-span-1 lg:pt-[22px]">
+              <button type="submit" className="inline-flex h-9 items-center justify-center gap-1.5 rounded-md bg-teal-700 px-4 text-[13px] font-semibold text-white hover:bg-teal-800 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-teal-700">
+                <Search className="h-4 w-4" aria-hidden="true" />
+                Search
+              </button>
+              <button type="button" onClick={clearAll} aria-label="Clear search" title="Clear" className="grid h-9 w-9 place-items-center rounded-md border border-slate-300 text-slate-600 hover:bg-slate-50 hover:text-slate-900">
+                <RotateCcw className="h-4 w-4" aria-hidden="true" />
+              </button>
+              <button
+                type="button"
+                onClick={() => setAdvanced((v) => !v)}
+                aria-expanded={advanced}
+                aria-controls="advanced-fields"
+                className={`inline-flex h-9 items-center gap-1 rounded-md border px-3 text-[13px] font-semibold transition ${
+                  advanced ? "border-teal-700 bg-teal-50 text-teal-900" : "border-slate-300 text-slate-700 hover:bg-slate-50"
+                }`}
+              >
+                Advanced
+                <ChevronDown className={`h-4 w-4 transition ${advanced ? "rotate-180" : ""}`} aria-hidden="true" />
+              </button>
+            </div>
           </div>
 
           {advanced && (
-            <div id="advanced-fields" className="border-t border-slate-100 bg-slate-50/60 px-5 py-4">
-              <h3 className="mb-3 text-[13px] font-semibold text-slate-900">Advanced search</h3>
-              <div className="grid grid-cols-1 gap-x-5 gap-y-4 sm:grid-cols-2 xl:grid-cols-4">
-                <Field id="s-name" label="Customer name">
-                  <input id="s-name" value={draft.name} onChange={(e) => set("name", e.target.value)} placeholder="Insured name" autoComplete="off" className={INPUT} />
-                </Field>
-                {select("garage", "Garage name", options.garage)}
-                {select("svType", "Surveyor type", options.svType)}
-                {select("svName", "Surveyor name", options.svName)}
-                {select("status", "Claim status", ["Open", "Closed"], "Open and closed")}
-                {select("loss", "Loss type", options.loss)}
-                <Field id="s-from" label="Registered from">
-                  <input id="s-from" type="date" value={draft.from} onChange={(e) => set("from", e.target.value)} className={INPUT} />
-                </Field>
-                <Field id="s-to" label="Registered to" error={errors.to}>
-                  <input id="s-to" type="date" value={draft.to} onChange={(e) => set("to", e.target.value)} aria-invalid={!!errors.to} aria-describedby={errors.to ? "s-to-err" : undefined} className={INPUT} />
-                </Field>
-              </div>
+            <div id="advanced-fields" className="grid grid-cols-1 gap-x-3 gap-y-3 border-t border-slate-100 bg-slate-50/60 px-4 py-3 sm:grid-cols-2 lg:grid-cols-4" role="group" aria-label="Advanced search">
+              <Field id="s-name" label="Customer name">
+                <input id="s-name" value={draft.name} onChange={(e) => set("name", e.target.value)} placeholder="Insured name" autoComplete="off" className={INPUT} />
+              </Field>
+              {select("garage", "Garage name", options.garage)}
+              {select("svType", "Surveyor type", options.svType)}
+              {select("svName", "Surveyor name", options.svName)}
+              {select("status", "Claim status", ["Open", "Closed"], "Open and closed")}
+              {select("loss", "Loss type", options.loss)}
+              <Field id="s-from" label="Registered from">
+                <input id="s-from" type="date" value={draft.from} onChange={(e) => set("from", e.target.value)} className={INPUT} />
+              </Field>
+              <Field id="s-to" label="Registered to" error={errors.to}>
+                <input id="s-to" type="date" value={draft.to} onChange={(e) => set("to", e.target.value)} aria-invalid={!!errors.to} aria-describedby={errors.to ? "s-to-err" : undefined} className={INPUT} />
+              </Field>
             </div>
           )}
 
-          <div className="flex flex-wrap items-center justify-end gap-3 border-t border-slate-100 px-5 py-3">
-            <p role="alert" aria-live="assertive" className={`mr-auto text-[12.5px] ${formError ? "text-red-700" : "text-slate-500"}`}>
-              {formError || "Fill any one field or more. Number fields match the full or part number."}
-            </p>
-            <button type="button" onClick={clearAll} className="inline-flex h-10 items-center gap-1.5 rounded-lg border border-slate-300 px-4 text-[13.5px] font-semibold text-slate-700 hover:bg-slate-50">
-              <RotateCcw className="h-4 w-4" aria-hidden="true" />
-              Clear
-            </button>
-            <button type="submit" className="inline-flex h-10 min-w-36 items-center justify-center gap-2 rounded-lg bg-teal-700 px-5 text-[13.5px] font-semibold text-white hover:bg-teal-800 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-teal-700">
-              <Search className="h-4 w-4" aria-hidden="true" />
-              Search
-            </button>
-          </div>
+          <p role="alert" aria-live="assertive" className={formError ? "border-t border-slate-100 px-4 py-2 text-[12.5px] text-red-700" : "sr-only"}>
+            {formError}
+          </p>
         </form>
 
         {/* ---------------- Results ---------------- */}
         {searched && (
           <section className="rounded-lg border border-slate-200 bg-white" aria-labelledby="results-title">
-            <div className="flex flex-wrap items-baseline justify-between gap-2 border-b border-slate-100 px-5 py-3">
-              <h2 id="results-title" className="text-[15px] font-semibold text-slate-900" aria-live="polite">
+            <div className="flex flex-wrap items-baseline justify-between gap-2 border-b border-slate-100 px-4 py-2.5">
+              <h2 id="results-title" className="text-[14px] font-semibold text-slate-900" aria-live="polite">
                 {results.length} {results.length === 1 ? "claim" : "claims"} found
               </h2>
               <p className="min-w-0 truncate text-[12.5px] text-slate-500" title={summary.join(" · ")}>
@@ -223,10 +216,9 @@ export default function ODSearch() {
               </div>
             ) : (
               <div className="overflow-x-auto">
-                <table className="w-full min-w-[980px] table-fixed text-left text-[13px]">
+                <table className="w-full min-w-[900px] table-fixed text-left text-[13px]">
                   <colgroup>
-                    <col className="w-[160px]" />
-                    <col className="w-[112px]" />
+                    <col className="w-[168px]" />
                     <col />
                     <col className="w-[200px]" />
                     <col className="w-[144px]" />
@@ -237,7 +229,7 @@ export default function ODSearch() {
                   </colgroup>
                   <thead>
                     <tr className="border-b border-slate-200 bg-slate-50 text-[12px] font-semibold text-slate-600">
-                      {["Claim number", "Vehicle number", "Insured · mobile", "Policy number", "Loss · registered", "Status", "Garage", "Surveyor"].map((h) => (
+                      {["Claim · vehicle", "Insured · mobile", "Policy number", "Loss · registered", "Status", "Garage", "Surveyor"].map((h) => (
                         <th key={h} scope="col" className="whitespace-nowrap px-3 py-2 first:pl-5">
                           {h}
                         </th>
@@ -251,11 +243,11 @@ export default function ODSearch() {
                     {rows.map((r) => (
                       <tr key={r.claimNo} className="border-b border-slate-100 last:border-0 hover:bg-slate-50/70">
                         <td className="whitespace-nowrap py-2 pl-5 pr-3">
-                          <button type="button" onClick={() => openClaim(r.claimNo)} className="font-mono text-[12.5px] font-semibold text-teal-700 hover:underline">
+                          <button type="button" onClick={() => openClaim(r.claimNo)} className="block font-mono text-[12.5px] font-semibold text-teal-700 hover:underline">
                             {r.claimNo}
                           </button>
+                          <span className="block text-[12px] text-slate-600">{r.regNo}</span>
                         </td>
-                        <td className="whitespace-nowrap px-3 py-2 text-slate-800">{r.regNo}</td>
                         <td className="px-3 py-2">
                           <span className="block truncate text-slate-800" title={r.insured}>
                             {r.insured}
@@ -271,7 +263,7 @@ export default function ODSearch() {
                           </span>
                           <span className="block text-[12px] text-slate-500">{fmtDate(r.regDate)}</span>
                         </td>
-                        <td className="truncate px-3 py-2">
+                        <td className="truncate px-3 py-2" title={r.status === "Open" ? `Open · ${r.stage} · ${r.sla.label}` : `Closed · ${r.closureType}`}>
                           {r.status === "Open" ? (
                             <span className="flex flex-col leading-tight">
                               <span className="font-medium text-slate-900">Open · {r.stage}</span>
@@ -296,7 +288,9 @@ export default function ODSearch() {
                               <span className="truncate text-[12px] text-slate-500">{r.svType}</span>
                             </span>
                           ) : (
-                            <span className="text-slate-500">Not appointed</span>
+                            <span className="text-slate-500" title="Surveyor not appointed yet">
+                              –
+                            </span>
                           )}
                         </td>
                         <td className="whitespace-nowrap py-2 pl-3 pr-5">
