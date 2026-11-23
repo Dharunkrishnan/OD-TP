@@ -5,7 +5,7 @@
 // assignment). Result = Claim registered, NBNR (Notified But Not Registered) or Duplicate.
 // Catalogue refs: FNOL 1–12, Claim Registration 13–17, Reserve 18, Policy & Coverage 22–29.
 
-import { useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { useNavigate, useSearchParams } from "react-router-dom";
 import {
   Search,
@@ -21,6 +21,8 @@ import {
   Pencil,
   Car,
   ShieldCheck,
+  Lightbulb,
+  PhoneCall,
   Inbox,
   Copy,
   CloudRain,
@@ -30,6 +32,7 @@ import {
   ClipboardList,
 } from "lucide-react";
 import ODShell from "../../components/layout/ODShell";
+import { PanelButtons, PinnedPanels } from "../../components/CardPanels";
 import { formatINR } from "../../auth";
 import LocationPicker from "../../components/LocationPicker";
 import { claimSlug } from "../../data/odClaimDetail";
@@ -130,6 +133,7 @@ function Card({ title, action, children, className = "" }) {
   );
 }
 
+
 // Label for the demo quick-pick chips – tells the tester what each vehicle will show
 function scenarioTag(p) {
   if (p.status !== "In force") return { label: "Expired", cls: "bg-red-50 text-red-700" };
@@ -144,7 +148,7 @@ function LockedInput({ value }) {
   return (
     <span className="relative">
       <input value={value} readOnly tabIndex={-1} aria-readonly="true" className={`${inputCls()} cursor-not-allowed bg-slate-50 pr-8 text-slate-600`} />
-      <Lock className="pointer-events-none absolute right-2.5 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-slate-400" aria-hidden="true" />
+      <Lock className="pointer-events-none absolute right-2.5 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-slate-500" aria-hidden="true" />
     </span>
   );
 }
@@ -153,7 +157,7 @@ function LockedInput({ value }) {
 function SectionHead({ n, title, divider }) {
   return (
     <div className={`flex items-center gap-2 ${divider ? "mt-1 border-t border-slate-100 pt-3" : ""}`}>
-      <span className="grid h-5 w-5 place-items-center rounded bg-teal-50 text-[11px] font-bold text-teal-800">{n}</span>
+      <span className="grid h-5 w-5 place-items-center rounded bg-teal-50 text-[12px] font-bold text-teal-800">{n}</span>
       <h3 className="text-[13px] font-semibold text-slate-900">{title}</h3>
     </div>
   );
@@ -168,16 +172,16 @@ function Field({ label, required, error, hint, children, className = "" }) {
       </span>
       {children}
       {error ? (
-        <span data-field-error className="text-[11.5px] text-red-700">{error}</span>
+        <span data-field-error className="text-[12px] text-red-700">{error}</span>
       ) : hint ? (
-        <span className="text-[11px] text-slate-500">{hint}</span>
+        <span className="text-[12px] text-slate-500">{hint}</span>
       ) : null}
     </label>
   );
 }
 
 const inputCls = (err) =>
-  `h-9 w-full rounded-md border bg-white px-2.5 text-[13px] text-slate-800 placeholder:text-slate-400 focus:outline-none focus:ring-4 disabled:bg-slate-50 disabled:text-slate-500 ${
+  `h-9 w-full rounded-md border bg-white px-2.5 text-[13px] text-slate-800 placeholder:text-slate-500 focus:outline-none focus:ring-4 disabled:bg-slate-50 disabled:text-slate-500 ${
     err ? "border-red-500 focus:border-red-600 focus:ring-red-600/15" : "border-slate-300 focus:border-teal-700 focus:ring-teal-700/15"
   }`;
 
@@ -229,7 +233,7 @@ function Check3({ ok, label, note }) {
       )}
       <span>
         <span className="text-slate-800">{label}</span>
-        {note && <span className={`block text-[11.5px] ${ok ? "text-slate-500" : "text-red-700"}`}>{note}</span>}
+        {note && <span className={`block text-[12px] ${ok ? "text-slate-500" : "text-red-700"}`}>{note}</span>}
       </span>
     </li>
   );
@@ -313,6 +317,26 @@ export default function ODIntimation() {
   const [results, setResults] = useState(initHits); // null = not searched
   const [result, setResult] = useState(null); // outcome after submit
   const [toast, setToast] = useState("");
+  // side panels pinned from the card header (peek on hover, pin on click) – kept for the session
+  const [pins, setPins] = useState(() => {
+    try { return JSON.parse(sessionStorage.getItem("smartclaims-intimation-pins")) || []; } catch { return []; }
+  });
+  const togglePin = useCallback((key) => {
+    setPins((cur) => {
+      const next = cur.includes(key) ? cur.filter((k) => k !== key) : [...cur, key];
+      try { sessionStorage.setItem("smartclaims-intimation-pins", JSON.stringify(next)); } catch { /* storage off */ }
+      return next;
+    });
+  }, []);
+  // Sample vehicles stay hidden until asked for (kept for demos and testing)
+  const [showSamples, setShowSamples] = useState(() => {
+    try { return sessionStorage.getItem("smartclaims-show-samples") === "1"; } catch { return false; }
+  });
+  const toggleSamples = () => {
+    const next = !showSamples;
+    setShowSamples(next);
+    try { sessionStorage.setItem("smartclaims-show-samples", next ? "1" : "0"); } catch { /* storage unavailable */ }
+  };
 
   const set = (patch) => setF((x) => ({ ...x, ...patch }));
 
@@ -335,7 +359,8 @@ export default function ODIntimation() {
   const brand = (f.policy?.vehicle || f.manualVehicle || "").split(" ")[0];
   const recommended = NETWORK_GARAGES.filter((g) => g.brands.includes(brand));
   const history = useMemo(() => claimHistory(f.policy?.regNo || (f.noPolicy ? f.manualRegNo : "")), [f.policy, f.noPolicy, f.manualRegNo]);
-  const recentIntimations = useMemo(() => [...WORK_QUEUE].sort((a, b) => (a.regDate < b.regDate ? 1 : -1)).slice(0, 6), []);
+  // all intimations of the last 7 days (same set as the "Intimated" count), newest first
+  const recentIntimations = useMemo(() => WORK_QUEUE.filter((r) => daysBetween(r.regDate, TODAY_ISO) <= 7).sort((a, b) => (a.regDate < b.regDate ? 1 : -1)), []);
   // "By cause of loss" card on the empty step – last 7 days
   const week = useMemo(() => {
     const rows = WORK_QUEUE.filter((r) => daysBetween(r.regDate, TODAY_ISO) <= 7);
@@ -444,7 +469,7 @@ export default function ODIntimation() {
                   ["Next step", result.surveyRoute],
                 ].map(([k, v]) => (
                   <div key={k}>
-                    <dt className="text-[10.5px] font-medium uppercase tracking-wide text-slate-500">{k}</dt>
+                    <dt className="text-[11px] font-medium uppercase tracking-wide text-slate-500">{k}</dt>
                     <dd className="text-slate-800">{v}</dd>
                   </div>
                 ))}
@@ -452,7 +477,7 @@ export default function ODIntimation() {
               {result.flags.length > 0 && (
                 <div className="flex flex-wrap gap-1.5 border-t border-slate-100 px-6 py-3">
                   {result.flags.map((fl) => (
-                    <span key={fl} className="rounded bg-amber-50 px-2 text-[11.5px] font-semibold leading-6 text-amber-900">
+                    <span key={fl} className="rounded bg-amber-50 px-2 text-[12px] font-semibold leading-6 text-amber-900">
                       {fl}
                     </span>
                   ))}
@@ -484,7 +509,7 @@ export default function ODIntimation() {
                     </li>
                   ))}
                 </ul>
-                <p className="mt-3 text-[11.5px] text-slate-500">
+                <p className="mt-3 text-[12px] text-slate-500">
                   Next: resolve from the NBNR bucket – convert to a claim once fixed (e.g. premium realised, correct policy found), or close with
                   reason.
                 </p>
@@ -512,7 +537,7 @@ export default function ODIntimation() {
                   <span className="text-[12px] text-slate-600">
                     {result.existing.stage} · loss {dt(result.existing.lossDate)}
                   </span>
-                  <ChevronRight className="h-4 w-4 text-slate-400" aria-hidden="true" />
+                  <ChevronRight className="h-4 w-4 text-slate-500" aria-hidden="true" />
                 </button>
               </div>
             </Card>
@@ -530,7 +555,7 @@ export default function ODIntimation() {
               Go to My Work Queue
             </button>
           </div>
-          <p className="text-center text-[11px] text-slate-500">Demo: new claims are not added to the demo work queue.</p>
+          <p className="text-center text-[12px] text-slate-500">Demo: new claims are not added to the demo work queue.</p>
         </div>
       </ODShell>
     );
@@ -541,6 +566,242 @@ export default function ODIntimation() {
   const err = Object.keys(errors).length ? validate(step, f) : {};
   const willBeNbnr = issues.some((i) => i.nbnr);
   const show = (sec) => STEP_SECTIONS[step].includes(sec);
+
+  // Side panels: buttons in the card header, the chosen panel opens inside the card on the right
+  const tools = [
+    {
+      key: "checks",
+      label: "Checks",
+      title: "Registration checks",
+      icon: ShieldCheck,
+      // the outcome so far – a dot on the rail icon, spelled out on hover / for screen readers
+      status:
+        !f.policy && !f.noPolicy
+          ? null
+          : duplicate
+            ? { tone: "red", text: "Duplicate" }
+            : willBeNbnr
+              ? { tone: "amber", text: "NBNR" }
+              : !f.lossDate
+                ? { tone: "slate", text: "Needs loss date" }
+                : { tone: "green", text: "Will register" },
+      content: (
+        <>
+              <div className="px-3 py-2">
+                {!f.policy && !f.noPolicy ? (
+                  <p className="text-[12px] text-slate-500">Select a policy to run the checks.</p>
+                ) : (
+                  <ul className="flex flex-col gap-1.5">
+                    <Check3 ok={!!f.policy} label="Policy found" note={f.policy ? f.policy.policyNo : "Not found in PAS"} />
+                    {f.policy && (
+                      <>
+                        <Check3 ok={f.policy.cover !== "TP"} label="Own Damage cover" note={f.policy.cover === "TP" ? "Liability only" : "Comprehensive"} />
+                        <Check3 ok={f.policy.premiumRealised} label="Premium realised" note={f.policy.premiumRealised ? "Yes" : "Cheque not cleared"} />
+                        <Check3
+                          ok={!f.lossDate || !issues.some((i) => i.code === "OUTSIDE_PERIOD")}
+                          label="Loss within policy period"
+                          note={f.lossDate ? dt(f.lossDate) : "Enter loss date"}
+                        />
+                      </>
+                    )}
+                    {f.lossDate && <Check3 ok={!duplicate} label="Duplicate check" note={duplicate ? `Matches ${duplicate.claimNo}` : "No duplicate found"} />}
+                    {f.lossDate && <Check3 ok={delay <= LATE_INTIMATION_DAYS} label={`Intimation within ${LATE_INTIMATION_DAYS} days`} note={`${delay} day(s) after loss`} />}
+                  </ul>
+                )}
+              </div>
+              {(f.policy || f.noPolicy) && (
+                <div
+                  className={`border-t px-3 py-2 text-[12px] font-semibold ${
+                    duplicate ? "border-red-100 bg-red-50 text-red-800" : willBeNbnr ? "border-amber-100 bg-amber-50 text-amber-900" : !f.lossDate ? "border-slate-100 bg-slate-50 text-slate-700" : "border-emerald-100 bg-emerald-50 text-emerald-800"
+                  }`}
+                >
+                  Expected outcome:{" "}
+                  {duplicate ? "Duplicate – not registered" : willBeNbnr ? "NBNR (parked with reason)" : !f.lossDate ? "decided once the loss date is entered (policy period check)" : "Claim will be registered"}
+                </div>
+              )}
+          {(f.catEvent || f.cause === "flood") && (
+            <div className="border-t border-slate-100">
+                <p className="flex items-start gap-2 px-3 py-2 text-[12px] text-slate-600">
+                  <CloudRain className="mt-0.5 h-4 w-4 flex-none text-sky-600" aria-hidden="true" />
+                  {f.catEvent ? `Tagged to ${f.catEvent} for bulk handling and reporting.` : "Not tagged to a CAT event."}
+                </p>
+            </div>
+          )}
+          {f.garage && f.garage !== "other" && (
+            <div className="border-t border-slate-100">
+                <p className="flex items-start gap-2 px-3 py-2 text-[12px] text-slate-600">
+                  <Wrench className="mt-0.5 h-4 w-4 flex-none text-slate-500" aria-hidden="true" />
+                  Network garage – cashless repair eligible.
+                </p>
+            </div>
+          )}
+        </>
+      ),
+    },
+    ...(!f.policy && !f.noPolicy
+      ? [
+          { key: "howto", label: "Search tips", title: "How to search", icon: Lightbulb, content: (<>
+                <ul className="flex list-disc flex-col gap-1 px-3 py-2 pl-7 text-[12px] text-slate-600">
+                  <li>Vehicle number, policy number, insured name or mobile.</li>
+                  <li>Partial values work – e.g. last 4 digits of the vehicle no.</li>
+                  <li>If the policy is not found, record it anyway – it is parked as NBNR (Notified But Not Registered).</li>
+                </ul>
+          </>) },
+          { key: "call", label: "Call guide", title: "Keep ready on the call", icon: PhoneCall, content: (<>
+                <ul className="flex flex-col gap-1.5 px-3 py-2 text-[12px] text-slate-700">
+                  {[
+                    ["Verify the caller", "Name + registered mobile or policy no before sharing details"],
+                    ["Date, time & place of loss", "Pin the place on the map in step 2"],
+                    ["How it happened", "Cause, damage seen, third party / injury"],
+                    ["Driver at the time", "Name and driving licence no (if being driven)"],
+                    ["Police / FIR", "Mandatory for theft, fire and injury"],
+                    ["Where the vehicle is now", "Garage, spot or residence – decides the survey"],
+                  ].map(([t, d], i) => (
+                    <li key={t} className="flex items-start gap-2">
+                      <span className="mt-px grid h-4 w-4 flex-none place-items-center rounded-full bg-slate-100 text-[11px] font-bold text-slate-600">{i + 1}</span>
+                      <span>
+                        <span className="block font-medium text-slate-800">{t}</span>
+                        <span className="block text-[12px] text-slate-500">{d}</span>
+                      </span>
+                    </li>
+                  ))}
+                </ul>
+          </>) },
+        ]
+      : []),
+    ...(f.policy
+      ? [{ key: "vehicle", label: "Vehicle", title: "Vehicle & cover", icon: Car, content: (<>
+                <div className="flex flex-col gap-2 px-3 py-2 text-[12.5px]">
+                  <div className="flex items-start gap-2">
+                    <Car className="mt-0.5 h-4 w-4 flex-none text-slate-500" aria-hidden="true" />
+                    <span className="min-w-0">
+                      <span className="block font-mono font-semibold text-slate-800">{f.policy.regNo}</span>
+                      <span className="block text-slate-600">{f.policy.vehicle}</span>
+                      <span className="block text-[12px] text-slate-500">
+                        {f.policy.insured} · {maskMobile(f.policy.mobile)}
+                      </span>
+                    </span>
+                  </div>
+                  <dl className="grid grid-cols-3 gap-2 border-t border-slate-100 pt-2">
+                    {[
+                      ["IDV", f.policy.idv ? formatINR(f.policy.idv) : "–"],
+                      ["NCB", f.policy.ncb],
+                      ["Policy ends", policyDaysLeft >= 0 ? `${policyDaysLeft} d` : "Expired"],
+                    ].map(([k, v]) => (
+                      <div key={k} className="min-w-0">
+                        <dt className="text-[11px] font-medium uppercase tracking-wide text-slate-500">{k}</dt>
+                        <dd className={`truncate font-semibold tabular-nums ${k === "Policy ends" && policyDaysLeft < 0 ? "text-red-700" : "text-slate-800"}`}>{v}</dd>
+                      </div>
+                    ))}
+                  </dl>
+                  {f.policy.addOns.length > 0 && (
+                    <div className="flex flex-wrap gap-1">
+                      {f.policy.addOns.map((a) => (
+                        <span
+                          key={a}
+                          className={`rounded px-1.5 py-0.5 text-[12px] font-medium ${a === "Zero depreciation" ? "bg-teal-50 text-teal-800 ring-1 ring-teal-200" : "bg-slate-100 text-slate-700"}`}
+                        >
+                          {a}
+                        </span>
+                      ))}
+                    </div>
+                  )}
+                  {f.policy.financier && <p className="text-[12px] text-slate-600">Hypothecated to {f.policy.financier}</p>}
+                </div>
+          </>) }]
+      : []),
+    ...(f.policy || f.noPolicy
+      ? [
+          { key: "history", label: "History", title: "Claim history (this vehicle)", icon: History, status: history.length ? { tone: history.some((h) => h.open) ? "amber" : "slate", text: String(history.length) } : null, content: (<>
+                <div className="px-3 py-2 text-[12px]">
+                  {history.length === 0 ? (
+                    <p className="flex items-start gap-2 text-slate-600">
+                      <History className="mt-0.5 h-4 w-4 flex-none text-slate-500" aria-hidden="true" />
+                      No previous claims on this vehicle.
+                    </p>
+                  ) : (
+                    <ul className="flex flex-col divide-y divide-slate-100">
+                      {history.map((h) => (
+                        <li key={h.claimNo} className="flex items-start justify-between gap-2 py-1.5 first:pt-0 last:pb-0">
+                          <span className="min-w-0">
+                            {h.open ? (
+                              <button type="button" onClick={() => navigate(`/od/claims/${claimSlug(h.claimNo)}`)} className="font-mono text-[12px] font-semibold text-teal-700 hover:underline">
+                                {h.claimNo}
+                              </button>
+                            ) : (
+                              <span className="block font-mono text-[12px] font-semibold text-slate-800">{h.claimNo}</span>
+                            )}
+                            <span className="block text-[12px] text-slate-500">
+                              {dt(h.lossDate)} · {h.lossType}
+                            </span>
+                          </span>
+                          <span className="flex-none text-right">
+                            <span className={`block text-[12px] font-medium ${h.open ? "text-amber-700" : "text-slate-600"}`}>{h.open ? "Open" : h.status}</span>
+                            <span className="block text-[12px] tabular-nums text-slate-700">{formatINR(h.amount)}</span>
+                          </span>
+                        </li>
+                      ))}
+                    </ul>
+                  )}
+                  {f.policy && f.policy.ncb && f.policy.ncb !== "0%" && f.policy.ncb !== "–" && (
+                    <p className="mt-2 rounded bg-amber-50 px-2 py-1.5 text-[12px] text-amber-900">
+                      NCB (No Claim Bonus) {f.policy.ncb} will be lost at renewal if this claim is paid – tell the customer.
+                    </p>
+                  )}
+                </div>
+          </>) },
+          { key: "docs", label: "Docs", title: "Documents to collect", icon: ClipboardList, status: { tone: "slate", text: String(docs.filter((d) => !d.advice).length) }, content: (<>
+                <ul className="flex flex-col gap-1 px-3 py-2 text-[12px]">
+                  {docs.map((d) => (
+                    <li key={d.name} className="flex items-start gap-2">
+                      {d.advice ? (
+                        <Info className="mt-0.5 h-3.5 w-3.5 flex-none text-sky-600" aria-hidden="true" />
+                      ) : (
+                        <ClipboardList className={`mt-0.5 h-3.5 w-3.5 flex-none ${d.auto ? "text-teal-600" : "text-slate-500"}`} aria-hidden="true" />
+                      )}
+                      <span className={d.advice ? "text-sky-800" : "text-slate-700"}>
+                        {d.name}
+                        {d.later && <span className="text-slate-500"> · at settlement</span>}
+                        {d.mandatory && !d.auto && !d.later && <span className="text-red-600"> *</span>}
+                      </span>
+                    </li>
+                  ))}
+                </ul>
+                <p className="border-t border-slate-100 px-3 py-1.5 text-[12px] text-slate-500">
+                  {f.cause ? "List is based on the cause of loss." : "Select the cause of loss to refine this list."} Request all documents in one go.
+                </p>
+          </>) },
+        ]
+      : []),
+  ];
+  // a pinned panel that no longer applies (e.g. "Search tips" once a policy is picked) is not shown
+  const pinnedTools = pins.map((k) => tools.find((t) => t.key === k)).filter(Boolean);
+  // "NBNR to resolve" card (step 1)
+  const nbnrCard = (
+    <div className="flex max-h-96 min-h-0 flex-1 flex-col overflow-hidden rounded-md border border-amber-200 xl:max-h-none">
+      <div className="flex flex-none items-center justify-between border-b border-amber-100 bg-amber-50 px-3 py-1.5">
+        <p className="text-[12.5px] font-semibold text-amber-900">NBNR to resolve</p>
+        <span className="rounded bg-white px-1.5 text-[12px] font-semibold text-amber-800">{nbnrOpen.length}</span>
+      </div>
+      <ul className="min-h-0 flex-1 divide-y divide-slate-100 overflow-y-auto">
+        {nbnrOpen.map((r) => (
+          <li key={r.claimNo}>
+            <button type="button" onClick={() => navigate(`/od/claims/${claimSlug(r.claimNo)}`)} className="flex w-full items-start justify-between gap-2 px-3 py-1.5 text-left hover:bg-slate-50">
+              <span className="min-w-0">
+                <span className="block truncate font-mono text-[12px] font-semibold text-slate-800">
+                  {r.claimNo} · {r.regNo}
+                </span>
+                <span className="block truncate text-[12px] text-slate-600">{r.nextAction}</span>
+              </span>
+              <span className={`flex-none rounded px-1.5 py-0.5 text-[11px] font-semibold ${r.sla.status === "breach" ? "bg-red-50 text-red-700" : r.sla.status === "risk" ? "bg-amber-50 text-amber-800" : "bg-slate-100 text-slate-600"}`}>
+                {r.sla.label}
+              </span>
+            </button>
+          </li>
+        ))}
+      </ul>
+    </div>
+  );
 
   return (
     <ODShell
@@ -567,16 +828,29 @@ export default function ODIntimation() {
       }}
     >
       <div className="flex flex-col gap-2">
-        <div className="grid grid-cols-[minmax(0,1fr)] items-start gap-2 lg:grid-cols-[minmax(0,1fr)_290px]">
+        {/* phones: the top-bar panels show here instead */}
+        <div className="grid grid-cols-[minmax(0,1fr)] items-start gap-2">
           {/* ---------- Step body (fills the screen height; Back / Next stay at the bottom) ---------- */}
           <Card className="flex flex-col lg:min-h-[calc(100vh-4.25rem)]">
-            <div className="flex items-center justify-between gap-2 border-b border-slate-100 px-3 py-2">
+            <div className="flex flex-wrap items-center justify-between gap-2 border-b border-slate-100 px-3 py-1.5">
               <p className="text-[14px] font-semibold text-slate-900">{STEPS[step]}</p>
-              <span className="text-[11.5px] font-medium text-slate-500">
-                Step {step + 1} of {STEPS.length}
-              </span>
+              <div className="flex flex-wrap items-center gap-3">
+                {/* side panels – hover to peek, click to pin over the form */}
+                <PanelButtons tools={tools} pinned={pinnedTools.map((t) => t.key)} onTogglePin={togglePin} />
+                <span className="text-[12px] font-medium text-slate-500">
+                  Step {step + 1} of {STEPS.length}
+                </span>
+              </div>
             </div>
-            <div className="flex flex-1 flex-col gap-3 p-3">
+            <div className="relative flex min-w-0 flex-1 flex-col gap-3 p-3">
+              {/* Pinned panels – float over the form (top right), stacked, kept in view while scrolling */}
+              {pinnedTools.length > 0 && (
+                <div className="z-20 lg:pointer-events-none lg:absolute lg:inset-y-3 lg:right-3 lg:w-[320px]">
+                  <div className="lg:pointer-events-auto lg:sticky lg:top-3">
+                    <PinnedPanels tools={pinnedTools} onUnpin={togglePin} />
+                  </div>
+                </div>
+              )}
               {/* ===== Step 1 · Policy Information – A. Policy & vehicle ===== */}
               {show(0) && <SectionHead n="A" title="Policy & vehicle details" />}
               {show(0) && (
@@ -587,7 +861,7 @@ export default function ODIntimation() {
                     </span>
                     <div className="flex flex-wrap items-center gap-2">
                       <span className="relative w-full max-w-[420px] sm:w-auto sm:flex-1">
-                        <Search className="pointer-events-none absolute left-2.5 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" aria-hidden="true" />
+                        <Search className="pointer-events-none absolute left-2.5 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-500" aria-hidden="true" />
                         <input
                           value={f.search}
                           onChange={(e) => set({ search: e.target.value })}
@@ -599,9 +873,16 @@ export default function ODIntimation() {
                       <button type="submit" className="h-9 rounded-md bg-teal-700 px-4 text-[13px] font-semibold text-white hover:bg-teal-800">
                         Search
                       </button>
-                      {/* Quick pick (demo) – same row as the search */}
-                      <label className="flex min-w-0 items-center gap-1.5 sm:ml-auto">
-                        <span className="whitespace-nowrap text-[11.5px] font-medium text-slate-500">Quick pick (demo)</span>
+                      {/* Sample vehicles – hidden behind a link so users don't see demo controls by default */}
+                      {!showSamples ? (
+                        <button type="button" onClick={toggleSamples} className="inline-flex h-7 items-center px-1 text-[12px] font-medium text-teal-700 underline-offset-2 hover:underline sm:ml-auto">
+                          Sample vehicles
+                        </button>
+                      ) : (
+                      <div className="flex min-w-0 items-center gap-1.5 sm:ml-auto">
+                        <button type="button" onClick={toggleSamples} className="whitespace-nowrap text-[12px] font-medium text-slate-500 hover:text-slate-700" title="Hide sample vehicles">
+                          Sample vehicles ✕
+                        </button>
                         <select
                           value=""
                           onChange={(e) => e.target.value && doSearch(null, e.target.value)}
@@ -615,9 +896,10 @@ export default function ODIntimation() {
                             </option>
                           ))}
                         </select>
-                      </label>
+                      </div>
+                      )}
                     </div>
-                    {err.policy && <span data-field-error className="text-[11.5px] text-red-700">{err.policy}</span>}
+                    {err.policy && <span data-field-error className="text-[12px] text-red-700">{err.policy}</span>}
                   </form>
 
                   {/* Before any search: latest work so the page is useful at the start of a call */}
@@ -626,8 +908,8 @@ export default function ODIntimation() {
                     {/* Compact one-line summary – last 7 days */}
                     <div className="flex flex-col gap-1.5 border-t border-slate-100 pt-2.5">
                       <div className="flex flex-wrap items-center justify-between gap-x-3 gap-y-1">
-                        <p className="text-[10.5px] font-semibold uppercase tracking-wider text-slate-400">Your intimations · last 7 days</p>
-                        <div className="flex flex-wrap items-center gap-1 text-[11px]">
+                        <p className="text-[11px] font-semibold uppercase tracking-wider text-slate-500">Your intimations · last 7 days</p>
+                        <div className="flex flex-wrap items-center gap-1 text-[12px]">
                           <span className="font-medium text-slate-500">By cause of loss:</span>
                           {week.byCause.map(([cause, n]) => (
                             <span key={cause} className="flex items-center gap-1 rounded-full bg-slate-100 px-1.5 py-px text-slate-700">
@@ -646,22 +928,26 @@ export default function ODIntimation() {
                         ].map(([k, v, cls, note]) => (
                           <div key={k} title={note} className="flex min-w-0 items-baseline gap-1.5 rounded-md border border-slate-200 px-2.5 py-1">
                             <dd className={`text-[15px] font-semibold tabular-nums ${cls}`}>{v}</dd>
-                            <dt className="truncate text-[11.5px] text-slate-600">{k}</dt>
+                            <dt className="truncate text-[12px] text-slate-600">{k}</dt>
                           </div>
                         ))}
                       </dl>
                     </div>
-                    <div className="grid grid-cols-1 items-start gap-3 xl:grid-cols-[minmax(0,3fr)_minmax(0,2fr)]">
-                      <div className="overflow-hidden rounded-md border border-slate-200">
-                        <div className="flex items-center justify-between border-b border-slate-100 bg-slate-50 px-3 py-1.5">
-                          <p className="text-[12.5px] font-semibold text-slate-800">Recent intimations</p>
-                          <button type="button" onClick={() => navigate("/od/worklist")} className="text-[11.5px] font-medium text-teal-700 hover:underline">
+                    {/* both lists fill the rest of the card and scroll inside – no empty space below */}
+                    <div className="grid grid-cols-1 gap-3 xl:min-h-[240px] xl:flex-1 xl:basis-0 xl:grid-cols-[minmax(0,3fr)_minmax(0,2fr)]">
+                      <div className="flex max-h-96 min-h-0 flex-col overflow-hidden rounded-md border border-slate-200 xl:max-h-none">
+                        <div className="flex flex-none items-center justify-between border-b border-slate-100 bg-slate-50 px-3 py-1.5">
+                          <p className="text-[12.5px] font-semibold text-slate-800">
+                            Recent intimations <span className="font-normal text-slate-500">· last 7 days · {recentIntimations.length}</span>
+                          </p>
+                          <button type="button" onClick={() => navigate("/od/worklist")} className="text-[12px] font-medium text-teal-700 hover:underline">
                             My Work Queue
                           </button>
                         </div>
+                        <div className="min-h-0 flex-1 overflow-y-auto">
                         <table className="w-full table-fixed text-left text-[12px]">
-                          <thead>
-                            <tr className="text-[10.5px] uppercase tracking-wide text-slate-500">
+                          <thead className="sticky top-0 bg-white shadow-[0_1px_0_#f1f5f9]">
+                            <tr className="text-[11px] uppercase tracking-wide text-slate-500">
                               <th className="w-[44%] px-3 py-1 font-semibold">Claim / vehicle</th>
                               <th className="px-2 py-1 font-semibold">Insured</th>
                               <th className="w-[19%] px-2 py-1 font-semibold">Intimated</th>
@@ -672,13 +958,15 @@ export default function ODIntimation() {
                             {recentIntimations.map((r) => (
                               <tr key={r.claimNo} onClick={() => navigate(`/od/claims/${claimSlug(r.claimNo)}`)} className="cursor-pointer hover:bg-slate-50">
                                 <td className="truncate px-3 py-1">
-                                  <span className="font-mono text-[11.5px] font-semibold text-teal-800">{r.claimNo}</span>
-                                  <span className="text-[11px] text-slate-500"> · {r.regNo}</span>
+                                  <button type="button" onClick={(e) => { e.stopPropagation(); navigate(`/od/claims/${claimSlug(r.claimNo)}`); }} className="font-mono text-[12px] font-semibold text-teal-800 hover:underline">
+                                    {r.claimNo}
+                                  </button>
+                                  <span className="text-[12px] text-slate-500"> · {r.regNo}</span>
                                 </td>
                                 <td className="truncate px-2 py-1 text-slate-700">{r.insured}</td>
                                 <td className="px-2 py-1 tabular-nums text-slate-600">{dt(r.regDate)}</td>
                                 <td className="px-3 py-1 text-right">
-                                  <span className={`rounded px-1.5 py-0.5 text-[10.5px] font-semibold ${r.stage === "NBNR" ? "bg-amber-50 text-amber-800" : "bg-emerald-50 text-emerald-800"}`}>
+                                  <span className={`rounded px-1.5 py-0.5 text-[11px] font-semibold ${r.stage === "NBNR" ? "bg-amber-50 text-amber-800" : "bg-emerald-50 text-emerald-800"}`}>
                                     {r.stage === "NBNR" ? "NBNR" : "Registered"}
                                   </span>
                                 </td>
@@ -686,32 +974,11 @@ export default function ODIntimation() {
                             ))}
                           </tbody>
                         </table>
+                        </div>
                       </div>
 
-                      <div className="flex flex-col gap-3">
-                      <div className="overflow-hidden rounded-md border border-amber-200">
-                        <div className="flex items-center justify-between border-b border-amber-100 bg-amber-50 px-3 py-1.5">
-                          <p className="text-[12.5px] font-semibold text-amber-900">NBNR to resolve</p>
-                          <span className="rounded bg-white px-1.5 text-[11px] font-semibold text-amber-800">{nbnrOpen.length}</span>
-                        </div>
-                        <ul className="divide-y divide-slate-100">
-                          {nbnrOpen.map((r) => (
-                            <li key={r.claimNo}>
-                              <button type="button" onClick={() => navigate(`/od/claims/${claimSlug(r.claimNo)}`)} className="flex w-full items-start justify-between gap-2 px-3 py-1.5 text-left hover:bg-slate-50">
-                                <span className="min-w-0">
-                                  <span className="block truncate font-mono text-[11.5px] font-semibold text-slate-800">
-                                    {r.claimNo} · {r.regNo}
-                                  </span>
-                                  <span className="block truncate text-[11.5px] text-slate-600">{r.nextAction}</span>
-                                </span>
-                                <span className={`flex-none rounded px-1.5 py-0.5 text-[10.5px] font-semibold ${r.sla.status === "breach" ? "bg-red-50 text-red-700" : r.sla.status === "risk" ? "bg-amber-50 text-amber-800" : "bg-slate-100 text-slate-600"}`}>
-                                  {r.sla.label}
-                                </span>
-                              </button>
-                            </li>
-                          ))}
-                        </ul>
-                      </div>
+                      <div className="flex min-h-0 flex-col gap-3">
+                      {nbnrCard}
 
                       </div>
                     </div>
@@ -739,7 +1006,7 @@ export default function ODIntimation() {
                       <div className="overflow-x-auto">
                         <table className="w-full min-w-[640px] text-left text-[12.5px]">
                           <thead>
-                            <tr className="bg-slate-50 text-[10.5px] uppercase tracking-wide text-slate-500">
+                            <tr className="bg-slate-50 text-[11px] uppercase tracking-wide text-slate-500">
                               <th scope="col" className="px-3 py-1.5 font-semibold">Insured</th>
                               <th scope="col" className="px-2 py-1.5 font-semibold">Vehicle no</th>
                               <th scope="col" className="px-2 py-1.5 font-semibold">Make / model</th>
@@ -774,14 +1041,14 @@ export default function ODIntimation() {
                                   <td className="whitespace-nowrap px-2 py-1.5 tabular-nums text-slate-700">{p.policyNo}</td>
                                   <td className="px-2 py-1.5">
                                     <span
-                                      className={`inline-flex h-5 items-center rounded px-1.5 text-[11px] font-semibold ${
+                                      className={`inline-flex h-5 items-center rounded px-1.5 text-[12px] font-semibold ${
                                         p.status === "In force" ? "bg-emerald-50 text-emerald-800" : "bg-red-50 text-red-800"
                                       }`}
                                     >
                                       {p.status}
                                     </span>
                                   </td>
-                                  <td className="px-3 py-1.5 text-[11.5px] text-slate-500">{matchedOn}</td>
+                                  <td className="px-3 py-1.5 text-[12px] text-slate-500">{matchedOn}</td>
                                 </tr>
                               );
                             })}
@@ -806,7 +1073,7 @@ export default function ODIntimation() {
 
                   {f.policy && (
                     <>
-                      <Card title="Policy" action={<span className={`rounded px-1.5 text-[11px] font-semibold leading-5 ${f.policy.status === "In force" ? "bg-emerald-50 text-emerald-800" : "bg-red-50 text-red-800"}`}>{f.policy.status}</span>}>
+                      <Card title="Policy" action={<span className={`rounded px-1.5 text-[12px] font-semibold leading-5 ${f.policy.status === "In force" ? "bg-emerald-50 text-emerald-800" : "bg-red-50 text-red-800"}`}>{f.policy.status}</span>}>
                         <dl className="grid grid-cols-2 gap-x-4 gap-y-2 px-3 py-2.5 text-[12.5px] lg:grid-cols-4">
                           {[
                             ["Policy no", f.policy.policyNo],
@@ -819,7 +1086,7 @@ export default function ODIntimation() {
                             ["Financier", f.policy.financier || "None"],
                           ].map(([k, v]) => (
                             <div key={k} className="min-w-0">
-                              <dt className="text-[10.5px] font-medium uppercase tracking-wide text-slate-500">{k}</dt>
+                              <dt className="text-[11px] font-medium uppercase tracking-wide text-slate-500">{k}</dt>
                               <dd className={`text-slate-800 tabular-nums ${k === "Policy no" ? "whitespace-nowrap" : ""}`}>{v}</dd>
                             </div>
                           ))}
@@ -834,7 +1101,7 @@ export default function ODIntimation() {
                             ["Chassis / engine", `${f.policy.chassis} / ${f.policy.engine}`],
                           ].map(([k, v]) => (
                             <div key={k} className="min-w-0">
-                              <dt className="text-[10.5px] font-medium uppercase tracking-wide text-slate-500">{k}</dt>
+                              <dt className="text-[11px] font-medium uppercase tracking-wide text-slate-500">{k}</dt>
                               <dd className="break-words text-slate-800">{v}</dd>
                             </div>
                           ))}
@@ -1262,7 +1529,7 @@ export default function ODIntimation() {
               >
                 <ChevronLeft className="h-4 w-4" aria-hidden="true" /> Back
               </button>
-              <span className="text-[11.5px] text-slate-500">
+              <span className="text-[12px] text-slate-500">
                 Step {step + 1} of {STEPS.length}
               </span>
               {step < STEPS.length - 1 ? (
@@ -1277,197 +1544,6 @@ export default function ODIntimation() {
               )}
             </div>
           </Card>
-
-          {/* ---------- Side panel: stays in view while the form scrolls ---------- */}
-          <div className="flex flex-col gap-2 lg:sticky lg:top-0 lg:max-h-[calc(100vh-4.25rem)] lg:overflow-y-auto lg:pr-0.5">
-            <Card title="Registration checks">
-              <div className="px-3 py-2">
-                {!f.policy && !f.noPolicy ? (
-                  <p className="text-[12px] text-slate-500">Select a policy to run the checks.</p>
-                ) : (
-                  <ul className="flex flex-col gap-1.5">
-                    <Check3 ok={!!f.policy} label="Policy found" note={f.policy ? f.policy.policyNo : "Not found in PAS"} />
-                    {f.policy && (
-                      <>
-                        <Check3 ok={f.policy.cover !== "TP"} label="Own Damage cover" note={f.policy.cover === "TP" ? "Liability only" : "Comprehensive"} />
-                        <Check3 ok={f.policy.premiumRealised} label="Premium realised" note={f.policy.premiumRealised ? "Yes" : "Cheque not cleared"} />
-                        <Check3
-                          ok={!f.lossDate || !issues.some((i) => i.code === "OUTSIDE_PERIOD")}
-                          label="Loss within policy period"
-                          note={f.lossDate ? dt(f.lossDate) : "Enter loss date"}
-                        />
-                      </>
-                    )}
-                    {f.lossDate && <Check3 ok={!duplicate} label="Duplicate check" note={duplicate ? `Matches ${duplicate.claimNo}` : "No duplicate found"} />}
-                    {f.lossDate && <Check3 ok={delay <= LATE_INTIMATION_DAYS} label={`Intimation within ${LATE_INTIMATION_DAYS} days`} note={`${delay} day(s) after loss`} />}
-                  </ul>
-                )}
-              </div>
-              {(f.policy || f.noPolicy) && (
-                <div className={`border-t px-3 py-2 text-[12px] font-semibold ${duplicate ? "border-red-100 bg-red-50 text-red-800" : willBeNbnr ? "border-amber-100 bg-amber-50 text-amber-900" : "border-emerald-100 bg-emerald-50 text-emerald-800"}`}>
-                  Expected outcome: {duplicate ? "Duplicate – not registered" : willBeNbnr ? "NBNR (parked with reason)" : "Claim will be registered"}
-                </div>
-              )}
-            </Card>
-
-            {!f.policy && !f.noPolicy && (
-              <Card title="How to search">
-                <ul className="flex list-disc flex-col gap-1 px-3 py-2 pl-7 text-[12px] text-slate-600">
-                  <li>Vehicle number, policy number, insured name or mobile.</li>
-                  <li>Partial values work – e.g. last 4 digits of the vehicle no.</li>
-                  <li>If the policy is not found, record it anyway – it is parked as NBNR (Notified But Not Registered).</li>
-                </ul>
-              </Card>
-            )}
-
-            {!f.policy && !f.noPolicy && (
-              <Card title="Keep ready on the call">
-                <ul className="flex flex-col gap-1.5 px-3 py-2 text-[12px] text-slate-700">
-                  {[
-                    ["Verify the caller", "Name + registered mobile or policy no before sharing details"],
-                    ["Date, time & place of loss", "Pin the place on the map in step 2"],
-                    ["How it happened", "Cause, damage seen, third party / injury"],
-                    ["Driver at the time", "Name and driving licence no (if being driven)"],
-                    ["Police / FIR", "Mandatory for theft, fire and injury"],
-                    ["Where the vehicle is now", "Garage, spot or residence – decides the survey"],
-                  ].map(([t, d], i) => (
-                    <li key={t} className="flex items-start gap-2">
-                      <span className="mt-px grid h-4 w-4 flex-none place-items-center rounded-full bg-slate-100 text-[10px] font-bold text-slate-600">{i + 1}</span>
-                      <span>
-                        <span className="block font-medium text-slate-800">{t}</span>
-                        <span className="block text-[11.5px] text-slate-500">{d}</span>
-                      </span>
-                    </li>
-                  ))}
-                </ul>
-              </Card>
-            )}
-
-            {f.policy && (
-              <Card title="Vehicle & cover">
-                <div className="flex flex-col gap-2 px-3 py-2 text-[12.5px]">
-                  <div className="flex items-start gap-2">
-                    <Car className="mt-0.5 h-4 w-4 flex-none text-slate-400" aria-hidden="true" />
-                    <span className="min-w-0">
-                      <span className="block font-mono font-semibold text-slate-800">{f.policy.regNo}</span>
-                      <span className="block text-slate-600">{f.policy.vehicle}</span>
-                      <span className="block text-[11.5px] text-slate-500">
-                        {f.policy.insured} · {maskMobile(f.policy.mobile)}
-                      </span>
-                    </span>
-                  </div>
-                  <dl className="grid grid-cols-3 gap-2 border-t border-slate-100 pt-2">
-                    {[
-                      ["IDV", f.policy.idv ? formatINR(f.policy.idv) : "–"],
-                      ["NCB", f.policy.ncb],
-                      ["Policy ends", policyDaysLeft >= 0 ? `${policyDaysLeft} d` : "Expired"],
-                    ].map(([k, v]) => (
-                      <div key={k} className="min-w-0">
-                        <dt className="text-[10.5px] font-medium uppercase tracking-wide text-slate-500">{k}</dt>
-                        <dd className={`truncate font-semibold tabular-nums ${k === "Policy ends" && policyDaysLeft < 0 ? "text-red-700" : "text-slate-800"}`}>{v}</dd>
-                      </div>
-                    ))}
-                  </dl>
-                  {f.policy.addOns.length > 0 && (
-                    <div className="flex flex-wrap gap-1">
-                      {f.policy.addOns.map((a) => (
-                        <span
-                          key={a}
-                          className={`rounded px-1.5 py-0.5 text-[11px] font-medium ${a === "Zero depreciation" ? "bg-teal-50 text-teal-800 ring-1 ring-teal-200" : "bg-slate-100 text-slate-700"}`}
-                        >
-                          {a}
-                        </span>
-                      ))}
-                    </div>
-                  )}
-                  {f.policy.financier && <p className="text-[11.5px] text-slate-600">Hypothecated to {f.policy.financier}</p>}
-                </div>
-              </Card>
-            )}
-
-            {(f.policy || f.noPolicy) && (
-              <Card title="Claim history (this vehicle)">
-                <div className="px-3 py-2 text-[12px]">
-                  {history.length === 0 ? (
-                    <p className="flex items-start gap-2 text-slate-600">
-                      <History className="mt-0.5 h-4 w-4 flex-none text-slate-400" aria-hidden="true" />
-                      No previous claims on this vehicle.
-                    </p>
-                  ) : (
-                    <ul className="flex flex-col divide-y divide-slate-100">
-                      {history.map((h) => (
-                        <li key={h.claimNo} className="flex items-start justify-between gap-2 py-1.5 first:pt-0 last:pb-0">
-                          <span className="min-w-0">
-                            {h.open ? (
-                              <button type="button" onClick={() => navigate(`/od/claims/${claimSlug(h.claimNo)}`)} className="font-mono text-[11.5px] font-semibold text-teal-700 hover:underline">
-                                {h.claimNo}
-                              </button>
-                            ) : (
-                              <span className="block font-mono text-[11.5px] font-semibold text-slate-800">{h.claimNo}</span>
-                            )}
-                            <span className="block text-[11.5px] text-slate-500">
-                              {dt(h.lossDate)} · {h.lossType}
-                            </span>
-                          </span>
-                          <span className="flex-none text-right">
-                            <span className={`block text-[11px] font-medium ${h.open ? "text-amber-700" : "text-slate-600"}`}>{h.open ? "Open" : h.status}</span>
-                            <span className="block text-[11.5px] tabular-nums text-slate-700">{formatINR(h.amount)}</span>
-                          </span>
-                        </li>
-                      ))}
-                    </ul>
-                  )}
-                  {f.policy && f.policy.ncb && f.policy.ncb !== "0%" && f.policy.ncb !== "–" && (
-                    <p className="mt-2 rounded bg-amber-50 px-2 py-1.5 text-[11.5px] text-amber-900">
-                      NCB (No Claim Bonus) {f.policy.ncb} will be lost at renewal if this claim is paid – tell the customer.
-                    </p>
-                  )}
-                </div>
-              </Card>
-            )}
-
-            {(f.policy || f.noPolicy) && (
-              <Card title="Documents to collect">
-                <ul className="flex flex-col gap-1 px-3 py-2 text-[12px]">
-                  {docs.map((d) => (
-                    <li key={d.name} className="flex items-start gap-2">
-                      {d.advice ? (
-                        <Info className="mt-0.5 h-3.5 w-3.5 flex-none text-sky-600" aria-hidden="true" />
-                      ) : (
-                        <ClipboardList className={`mt-0.5 h-3.5 w-3.5 flex-none ${d.auto ? "text-teal-600" : "text-slate-400"}`} aria-hidden="true" />
-                      )}
-                      <span className={d.advice ? "text-sky-800" : "text-slate-700"}>
-                        {d.name}
-                        {d.later && <span className="text-slate-400"> · at settlement</span>}
-                        {d.mandatory && !d.auto && !d.later && <span className="text-red-600"> *</span>}
-                      </span>
-                    </li>
-                  ))}
-                </ul>
-                <p className="border-t border-slate-100 px-3 py-1.5 text-[11px] text-slate-500">
-                  {f.cause ? "List is based on the cause of loss." : "Select the cause of loss to refine this list."} Request all documents in one go.
-                </p>
-              </Card>
-            )}
-
-            {(f.catEvent || f.cause === "flood") && (
-              <Card title="Catastrophe">
-                <p className="flex items-start gap-2 px-3 py-2 text-[12px] text-slate-600">
-                  <CloudRain className="mt-0.5 h-4 w-4 flex-none text-sky-600" aria-hidden="true" />
-                  {f.catEvent ? `Tagged to ${f.catEvent} for bulk handling and reporting.` : "Not tagged to a CAT event."}
-                </p>
-              </Card>
-            )}
-
-            {f.garage && f.garage !== "other" && (
-              <Card title="Repair">
-                <p className="flex items-start gap-2 px-3 py-2 text-[12px] text-slate-600">
-                  <Wrench className="mt-0.5 h-4 w-4 flex-none text-slate-400" aria-hidden="true" />
-                  Network garage – cashless repair eligible.
-                </p>
-              </Card>
-            )}
-          </div>
         </div>
       </div>
 
