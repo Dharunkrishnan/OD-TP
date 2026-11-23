@@ -542,7 +542,7 @@ export default function ODShell({ active = "dashboard", title, subtitle, headerS
               title="Search claims"
               aria-current={active === "search" ? "page" : undefined}
               className={`grid h-9 w-9 place-items-center rounded-lg transition ${
-                active === "search" ? "bg-teal-50 text-teal-800 ring-1 ring-inset ring-teal-200" : "text-slate-600 hover:bg-slate-100 hover:text-slate-900"
+                active === "search" ? "bg-slate-100 text-slate-900" : "text-slate-600 hover:bg-slate-100 hover:text-slate-900"
               }`}
             >
               <Search className="h-5 w-5" aria-hidden="true" />

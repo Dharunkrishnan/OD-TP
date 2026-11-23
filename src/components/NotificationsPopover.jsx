@@ -73,11 +73,11 @@ export default function NotificationsPopover({ items, onOpenClaim, onNavigate, o
         onClick={() => setOpen((v) => !v)}
         aria-label={unread ? `Notifications, ${unread} unread` : "Notifications"}
         aria-expanded={open}
-        className={`relative grid h-9 w-9 place-items-center rounded-lg transition-colors ${open ? "bg-teal-50 text-teal-800" : "text-slate-600 hover:bg-slate-100"}`}
+        className={`relative grid h-9 w-9 place-items-center rounded-lg transition-colors ${open ? "bg-slate-100 text-slate-900" : "text-slate-600 hover:bg-slate-100 hover:text-slate-900"}`}
       >
         <Bell className="h-5 w-5" aria-hidden="true" />
         {unread > 0 && (
-          <span className="absolute -right-0.5 -top-0.5 grid h-[18px] min-w-[18px] place-items-center rounded-full bg-red-600 px-1 text-[10px] font-bold leading-none text-white ring-2 ring-white">
+          <span className="absolute -right-0.5 -top-0.5 grid h-[18px] min-w-[18px] place-items-center rounded-full bg-red-600 px-1 text-[11px] font-bold leading-none text-white ring-2 ring-white">
             {unread}
           </span>
         )}
@@ -94,7 +94,7 @@ export default function NotificationsPopover({ items, onOpenClaim, onNavigate, o
             <p className="flex items-center gap-2 text-[14px] font-semibold text-slate-900">
               <Bell className="h-[18px] w-[18px] flex-none text-teal-700" aria-hidden="true" />
               Notifications
-              {unread > 0 && <span className="rounded-full bg-red-50 px-2 py-0.5 text-[11px] font-semibold text-red-700 ring-1 ring-inset ring-red-200">{unread} new</span>}
+              {unread > 0 && <span className="rounded-full bg-red-50 px-2 py-0.5 text-[12px] font-semibold text-red-700 ring-1 ring-inset ring-red-200">{unread} new</span>}
             </p>
             <div className="flex items-center gap-1">
             <button
@@ -123,7 +123,7 @@ export default function NotificationsPopover({ items, onOpenClaim, onNavigate, o
             {groups.length === 0 && <p className="px-3 py-8 text-center text-[13px] text-slate-500">You're all caught up.</p>}
             {groups.map((g) => (
               <div key={g.label} className="pt-2">
-                <p className="flex items-center justify-between px-2 pb-1 text-[10.5px] font-semibold uppercase tracking-wider text-slate-400">
+                <p className="flex items-center justify-between px-2 pb-1 text-[11px] font-semibold uppercase tracking-wider text-slate-500">
                   {g.label}
                   <span className="font-medium normal-case tracking-normal text-slate-300">{g.list.length}</span>
                 </p>
@@ -152,10 +152,10 @@ export default function NotificationsPopover({ items, onOpenClaim, onNavigate, o
                           <span className="min-w-0 flex-1">
                             <span className="flex items-baseline justify-between gap-2">
                               <span className={`truncate text-[13px] leading-tight ${un ? "font-semibold text-slate-900" : "font-medium text-slate-700"}`}>{n.title}</span>
-                              <span className="flex-none text-[10.5px] text-slate-400">{n.time}</span>
+                              <span className="flex-none text-[11px] text-slate-500">{n.time}</span>
                             </span>
-                            <span className="mt-0.5 block text-[11.5px] leading-snug text-slate-500">{n.text}</span>
-                            <span className="mt-0.5 block font-mono text-[11px] font-semibold text-teal-700">{n.claimNo || n.ref}</span>
+                            <span className="mt-0.5 block text-[12px] leading-snug text-slate-500">{n.text}</span>
+                            <span className="mt-0.5 block font-mono text-[12px] font-semibold text-teal-700">{n.claimNo || n.ref}</span>
                           </span>
                           <span className="mt-1 flex w-2 flex-none justify-center">
                             {un && <span className="h-2 w-2 rounded-full bg-teal-600" aria-label="Unread" />}
