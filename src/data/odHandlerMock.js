@@ -102,7 +102,9 @@ const RAW_QUEUE = [
 // Claims Handler and Surveyor are ONE persona: the handler surveys and assesses their own claims
 // (catalogue 33, 42, 55, 60 list the handler on survey / assessment work). An external surveyor (IPS)
 // is appointed only as an exception – CAT events, theft and total loss (catalogue 48, 194).
-const needsIps = (r) => r.flags.includes("CAT event") || /theft|total/i.test(r.lossType);
+export const needsIps = (r) => (r.flags || []).includes("CAT event") || /theft|total/i.test(r.lossType);
+// The handler is the in-house surveyor for every claim that does not need an external surveyor (IPS)
+export const HANDLER_AS_SURVEYOR = { name: "Karthik Subramanian", licence: "IRDAI/SLA/15873", type: "Claims handler (in-house surveyor)" };
 const OWN_SURVEY_ACTION = {
   "Appoint surveyor – overdue": "Inspect vehicle – overdue",
   "Appoint surveyor – spot survey": "Spot survey at accident location",

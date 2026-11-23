@@ -6,7 +6,7 @@
 //
 // All people, policy numbers and amounts are fictional.
 
-import { WORK_QUEUE } from "./odHandlerMock";
+import { WORK_QUEUE, needsIps, HANDLER_AS_SURVEYOR } from "./odHandlerMock";
 import { CLOSED_CLAIMS } from "./odClosedClaims";
 
 /* ---------------- URL helpers: claim no has "/" so use "-" in URLs ---------------- */
@@ -82,6 +82,13 @@ const addDays = (iso, d) => {
 };
 const daysBetween = (a, b) => Math.round((new Date(b + "T00:00:00") - new Date(a + "T00:00:00")) / 86400000);
 
+// External surveyors (IPS) on the panel – used only for CAT, theft and total-loss claims
+const IPS_SURVEYORS = [
+  { name: "Er. S. Balasubramanian", licence: "IRDAI/SLA/14982", type: "External surveyor (IPS)" },
+  { name: "Er. M. Karpagam", licence: "IRDAI/SLA/16247", type: "External surveyor (IPS)" },
+  { name: "Er. V. Lakshmi Narayanan", licence: "IRDAI/SLA/18815", type: "External surveyor (IPS)" },
+];
+// Legacy list – still drawn from so every other demo value stays the same (see survey section)
 const SURVEYORS = [
   { name: "R. Senthil Kumar", licence: "SLA-87654", type: "In-house surveyor" },
   { name: "M. Farook", licence: "SLA-91230", type: "In-house surveyor" },
@@ -203,7 +210,11 @@ export function getClaimDetail(claimNo) {
   const garage = lossIsTheft ? null : GARAGES.find((g) => g.name === loss.vehicleLocation) || pick(r, GARAGES);
 
   /* ---- survey & assessment ---- */
-  const surveyor = step >= 2 ? pick(r, SURVEYORS) : null;
+  if (step >= 2) pick(r, SURVEYORS); // keeps the demo random sequence unchanged
+  // Handler = surveyor (one persona): allocated at registration. CAT / theft / total loss go to an
+  // external surveyor (IPS), appointed by the handler once the claim is registered.
+  const ips = needsIps(row);
+  const surveyor = isNbnr || step < 1 ? null : ips ? (step >= 2 ? IPS_SURVEYORS[seedOf(claimNo + "|ips") % IPS_SURVEYORS.length] : null) : HANDLER_AS_SURVEYOR;
   const estimate = round(row.reserve * (1.12 + r() * 0.2));
   const assessed = step >= 3 && step !== 4 ? row.reserve : step >= 4 ? row.reserve : null;
   const depreciation = assessed == null ? null : zeroDep ? 0 : round(assessed * (0.06 + r() * 0.08));
@@ -314,7 +325,8 @@ export function getClaimDetail(claimNo) {
     push(0, "21:11", "Claim registered", "System (auto)", `Claim no ${row.claimNo} · initial reserve ₹${initialReserve.toLocaleString("en-IN")}`);
     push(0, "21:12", "Assigned to handler", "System (auto)", "Karthik Subramanian · Chennai");
   }
-  if (step >= 2 && surveyor) push(1, "10:05", "Surveyor appointed", "Karthik Subramanian", `${surveyor.name} (${surveyor.licence})`);
+  if (surveyor && !ips) push(0, "10:05", "Allocated for survey", "System", `${surveyor.name} – claims handler and in-house surveyor (${surveyor.licence})`);
+  if (step >= 2 && surveyor && ips) push(1, "10:05", "Surveyor appointed", "Karthik Subramanian", `${surveyor.name} (${surveyor.licence}) – external surveyor (IPS)`);
   if (step >= 3 && surveyor) push(3, "15:30", "Survey completed", surveyor.name, `Estimate ₹${estimate.toLocaleString("en-IN")} · photos uploaded`);
   if (step >= 3) push(3, "16:10", "Reserve revised", surveyor ? surveyor.name : "Karthik Subramanian", `₹${row.reserve.toLocaleString("en-IN")}`);
   documents

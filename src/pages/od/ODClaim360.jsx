@@ -33,7 +33,7 @@ import {
   CircleDot,
 } from "lucide-react";
 import ODShell from "../../components/layout/ODShell";
-import { TAT_STAGES } from "../../data/odHandlerMock";
+import { TAT_STAGES, needsIps } from "../../data/odHandlerMock";
 import { getClaimDetail, claimFromSlug, LIFECYCLE, STAGE_TO_STEP } from "../../data/odClaimDetail";
 import { ClaimStatusBanner, ClaimActionsMenu, ClaimStatusDialog } from "../../components/ClaimStatusActions";
 import { useClaimStatus, effectiveState } from "../../data/claimStatus";
@@ -94,7 +94,7 @@ function Facts({ items, cols = "sm:grid-cols-2 xl:grid-cols-3" }) {
         .filter(Boolean)
         .map(([k, v, opts = {}]) => (
           <div key={k} className="min-w-0">
-            <dt className="text-[10.5px] font-medium uppercase tracking-wide text-slate-500">{k}</dt>
+            <dt className="text-[11px] font-medium uppercase tracking-wide text-slate-500">{k}</dt>
             <dd className={`text-[12.5px] text-slate-800 ${opts.mono ? "font-mono" : ""} ${opts.strong ? "font-semibold" : ""}`}>
               {v ?? "–"}
             </dd>
@@ -105,7 +105,7 @@ function Facts({ items, cols = "sm:grid-cols-2 xl:grid-cols-3" }) {
 }
 
 /** All header chips share one height and baseline. */
-const CHIP = "inline-flex h-6 items-center gap-1 whitespace-nowrap rounded-md px-2 text-[11.5px] font-semibold leading-none";
+const CHIP = "inline-flex h-6 items-center gap-1 whitespace-nowrap rounded-md px-2 text-[12px] font-semibold leading-none";
 
 function SlaChip({ sla }) {
   const map = {
@@ -132,7 +132,7 @@ function DocStatus({ status }) {
   };
   const { cls, Icon, label } = map[status] || map.Pending;
   return (
-    <span className={`inline-flex items-center gap-1 whitespace-nowrap rounded px-1.5 text-[11px] font-semibold leading-5 ${cls}`}>
+    <span className={`inline-flex items-center gap-1 whitespace-nowrap rounded px-1.5 text-[12px] font-semibold leading-5 ${cls}`}>
       <Icon className="h-3 w-3" aria-hidden="true" />
       {label || status}
     </span>
@@ -140,14 +140,18 @@ function DocStatus({ status }) {
 }
 
 // compact: icon only on screens below 1536 px (name shows on hover), full label on wide screens
-function ActionButton({ icon: Icon, children, onClick, primary, danger, compact }) {
+// soon = action planned for a later build step: shown greyed with a hover note, click does nothing
+function ActionButton({ icon: Icon, children, onClick, primary, danger, compact, soon }) {
   return (
     <button
       type="button"
-      onClick={onClick}
-      title={compact ? children : undefined}
+      onClick={soon ? undefined : onClick}
+      aria-disabled={soon || undefined}
+      title={soon ? `${children} – available in a later build step` : compact ? children : undefined}
       className={`flex h-7 items-center gap-1.5 rounded-md text-[12px] font-semibold transition ${compact ? "px-2 2xl:px-2.5" : "px-2.5"} ${
-        primary
+        soon
+          ? "cursor-not-allowed border border-dashed border-slate-300 bg-slate-50 text-slate-500"
+          : primary
           ? "bg-teal-700 text-white hover:bg-teal-800"
           : danger
           ? "border border-red-200 bg-white text-red-700 hover:bg-red-50"
@@ -344,12 +348,12 @@ function StageView({ c, index, label, documents, timeline, onBack }) {
                 <li key={k} className="px-3 py-2">
                   <p className="flex items-baseline justify-between gap-2 text-[12.5px] font-semibold text-slate-800">
                     {e.event}
-                    <span className="flex-none text-[11px] font-normal text-slate-500">
+                    <span className="flex-none text-[12px] font-normal text-slate-500">
                       {dt(e.date)} {e.time}
                     </span>
                   </p>
-                  <p className="text-[11.5px] text-slate-600">{e.detail}</p>
-                  <p className="text-[11px] text-slate-400">by {e.by}</p>
+                  <p className="text-[12px] text-slate-600">{e.detail}</p>
+                  <p className="text-[12px] text-slate-500">by {e.by}</p>
                 </li>
               ))}
             </ol>
@@ -470,7 +474,7 @@ export default function ODClaim360() {
             reserveHistory: [...base.reserveHistory, ...work.revisions],
           }),
           ...(converted && {
-            nextAction: "Appoint surveyor",
+            nextAction: needsIps(base) ? "Appoint surveyor (IPS)" : "Schedule inspection with garage",
             policy: { ...base.policy, status: "In force" },
             checks: base.checks.map((k) =>
               k.label === "Policy in force on loss date" ? { ...k, ok: true, note: "Yes · confirmed with PAS" } : k
@@ -755,9 +759,15 @@ export default function ODClaim360() {
                 <ActionButton icon={Upload} onClick={() => setWorkDialog("upload")} compact>
                   Upload
                 </ActionButton>
-                {c.stage === "Registered" && (
+                {/* Handler = surveyor: only CAT / theft / total-loss claims need an external surveyor (IPS) */}
+                {c.stage === "Registered" && needsIps(c) && (
                   <ActionButton icon={UserCheck} onClick={() => setSurveyDialog(true)} primary>
-                    Appoint surveyor
+                    Appoint surveyor (IPS)
+                  </ActionButton>
+                )}
+                {c.stage === "Registered" && !needsIps(c) && (
+                  <ActionButton icon={UserCheck} soon>
+                    Schedule inspection
                   </ActionButton>
                 )}
                 {c.stage === "NBNR" && (
@@ -766,11 +776,11 @@ export default function ODClaim360() {
                   </ActionButton>
                 )}
                 {(c.stage === "Assessment" || c.stage === "Documents pending") && (
-                  <ActionButton icon={Send} onClick={() => notBuilt("Send for approval")} primary>
+                  <ActionButton icon={Send} soon>
                     Send for approval
                   </ActionButton>
                 )}
-                <ActionButton icon={ShieldAlert} onClick={() => notBuilt("Refer to SIU")} danger>
+                <ActionButton icon={ShieldAlert} soon>
                   Refer to SIU
                 </ActionButton>
                   </>
@@ -778,7 +788,7 @@ export default function ODClaim360() {
                 <ClaimActionsMenu
                   stage={c.stage}
                   rec={statusNow}
-                  canChangeSurveyor={c.stage === "Survey pending" && !!c.survey.surveyor}
+                  canChangeSurveyor={c.stage === "Survey pending" && !!c.survey.surveyor && needsIps(c)}
                   onPick={(k) => (k === "surveyor" ? setSurveyDialog(true) : setStatusAction(k))}
                 />
                   <span className="mx-0.5 h-5 w-px bg-slate-200" aria-hidden="true" />
@@ -808,7 +818,7 @@ export default function ODClaim360() {
               ["Age", `${c.ageDays} days`],
             ].map(([k, v, strong]) => (
               <div key={k} className="flex-none">
-                <dt className="whitespace-nowrap text-[10.5px] font-medium uppercase leading-4 tracking-wide text-slate-500">{k}</dt>
+                <dt className="whitespace-nowrap text-[11px] font-medium uppercase leading-4 tracking-wide text-slate-500">{k}</dt>
                 <dd
                   className={`mt-0.5 whitespace-nowrap text-[13px] leading-5 tabular-nums ${strong ? "font-semibold text-slate-900" : "text-slate-800"}`}
                   title={String(v)}
@@ -861,12 +871,12 @@ export default function ODClaim360() {
                 >
                   {t.label}
                   {t.key === "docs" && pendingDocs.length + toVerify.length > 0 && (
-                    <span className={`rounded px-1.5 text-[10.5px] font-semibold ${tab === t.key ? "bg-white/15" : "bg-amber-100 text-amber-900"}`}>
+                    <span className={`rounded px-1.5 text-[11px] font-semibold ${tab === t.key ? "bg-white/15" : "bg-amber-100 text-amber-900"}`}>
                       {pendingDocs.length + toVerify.length}
                     </span>
                   )}
                   {t.key === "queries" && openQueries.length > 0 && (
-                    <span className={`rounded px-1.5 text-[10.5px] font-semibold ${tab === t.key ? "bg-white/15" : "bg-amber-100 text-amber-900"}`}>
+                    <span className={`rounded px-1.5 text-[11px] font-semibold ${tab === t.key ? "bg-white/15" : "bg-amber-100 text-amber-900"}`}>
                       {openQueries.length}
                     </span>
                   )}
@@ -963,7 +973,7 @@ export default function ODClaim360() {
                       {pendingDocs.map((d) => (
                         <li key={d.name} className="flex items-center justify-between gap-2 px-3 py-1.5 text-[12.5px]">
                           <span className="text-slate-800">{d.name}</span>
-                          <span className="text-[11px] text-slate-500">
+                          <span className="text-[12px] text-slate-500">
                             {d.status === "Rejected" ? `Rejected – ${d.rejectReason}` : `Requested ${dt(d.requestedOn)} · ${d.reminders || 0} reminder(s)`}
                           </span>
                         </li>
@@ -984,11 +994,11 @@ export default function ODClaim360() {
                       <li key={i} className="px-3 py-1.5 text-[12px]">
                         <div className="flex justify-between gap-2">
                           <span className="font-semibold text-slate-800">{e.event}</span>
-                          <span className="flex-none text-[11px] text-slate-500">
+                          <span className="flex-none text-[12px] text-slate-500">
                             {dt(e.date)} {e.time}
                           </span>
                         </div>
-                        <div className="truncate text-[11.5px] text-slate-600" title={e.detail}>
+                        <div className="truncate text-[12px] text-slate-600" title={e.detail}>
                           {e.detail}
                         </div>
                       </li>
@@ -1120,7 +1130,7 @@ export default function ODClaim360() {
                 )}
                 <table className="w-full min-w-[620px] text-left text-[12.5px]">
                   <thead>
-                    <tr className="bg-slate-50 text-[10.5px] uppercase tracking-wide text-slate-500">
+                    <tr className="bg-slate-50 text-[11px] uppercase tracking-wide text-slate-500">
                       <th scope="col" className="px-3 py-1.5 font-semibold">Document</th>
                       <th scope="col" className="px-2 py-1.5 font-semibold">Status</th>
                       <th scope="col" className="px-2 py-1.5 font-semibold">Received / requested</th>
@@ -1133,7 +1143,7 @@ export default function ODClaim360() {
                       <tr key={d.name} className="border-t border-slate-100">
                         <td className="px-3 py-1.5">
                           <span className="flex items-center gap-1.5 text-slate-800">
-                            <FileText className="h-3.5 w-3.5 text-slate-400" aria-hidden="true" />
+                            <FileText className="h-3.5 w-3.5 text-slate-500" aria-hidden="true" />
                             {d.name}
                           </span>
                         </td>
@@ -1151,7 +1161,7 @@ export default function ODClaim360() {
                         <td className="whitespace-nowrap px-3 py-1.5 text-right">
                           <span className="inline-flex gap-2.5">
                             {(d.status === "Received" || d.status === "Verified") && (
-                              <button type="button" onClick={() => notBuilt(`View ${d.name}`)} className="text-[12px] font-medium text-teal-700 hover:underline">
+                              <button type="button" aria-disabled="true" title="Document viewer – available in a later build step" className="cursor-not-allowed text-[12px] font-medium text-slate-500">
                                 View
                               </button>
                             )}
@@ -1222,7 +1232,7 @@ export default function ODClaim360() {
                 >
                   <table className="w-full text-left text-[12.5px]">
                     <thead>
-                      <tr className="text-[10.5px] uppercase tracking-wide text-slate-500">
+                      <tr className="text-[11px] uppercase tracking-wide text-slate-500">
                         <th scope="col" className="px-3 py-1.5 font-semibold">Date</th>
                         <th scope="col" className="px-2 py-1.5 font-semibold">Type</th>
                         <th scope="col" className="px-2 py-1.5 text-right font-semibold">Amount</th>
@@ -1256,7 +1266,7 @@ export default function ODClaim360() {
                             <td className="px-2 py-1.5">{p.mode}</td>
                             <td className="px-2 py-1.5 text-right font-semibold tabular-nums">{inr(p.amount)}</td>
                             <td className="px-3 py-1.5">
-                              <span className={`rounded px-1.5 text-[11px] font-semibold leading-5 ${p.status.startsWith("Paid") ? "bg-emerald-50 text-emerald-800" : "bg-amber-50 text-amber-900"}`}>{p.status}</span>
+                              <span className={`rounded px-1.5 text-[12px] font-semibold leading-5 ${p.status.startsWith("Paid") ? "bg-emerald-50 text-emerald-800" : "bg-amber-50 text-amber-900"}`}>{p.status}</span>
                             </td>
                           </tr>
                         ))}
@@ -1275,12 +1285,12 @@ export default function ODClaim360() {
                     <span className="absolute -left-[7px] top-1 h-3 w-3 rounded-full border-2 border-white bg-teal-700" aria-hidden="true" />
                     <div className="flex flex-wrap items-baseline justify-between gap-x-3">
                       <span className="text-[12.5px] font-semibold text-slate-800">{e.event}</span>
-                      <span className="text-[11px] tabular-nums text-slate-500">
+                      <span className="text-[12px] tabular-nums text-slate-500">
                         {dt(e.date)} · {e.time}
                       </span>
                     </div>
                     <div className="text-[12px] text-slate-600">{e.detail}</div>
-                    <div className="text-[11px] text-slate-500">
+                    <div className="text-[12px] text-slate-500">
                       by {e.by}
                       {e.visibility && <span className="ml-1.5 rounded bg-slate-100 px-1.5 py-px font-medium text-slate-600">Visible to: {e.visibility}</span>}
                     </div>
@@ -1310,10 +1320,10 @@ export default function ODClaim360() {
                   <div className="text-slate-600">{tat.stage}</div>
                   <div className="mt-1 flex items-center justify-between">
                     <SlaChip sla={c.sla} />
-                    <span className="text-[11px] text-slate-500">Target {tat.target} d · avg {tat.actual} d</span>
+                    <span className="text-[12px] text-slate-500">Target {tat.target} d · avg {tat.actual} d</span>
                   </div>
                   {c.pendingWith === "Insured" && (
-                    <p className="mt-1.5 text-[11px] text-slate-500">
+                    <p className="mt-1.5 text-[12px] text-slate-500">
                       Settlement SLA clock is paused while documents are with the insured. This stage&apos;s follow-up SLA still applies.
                     </p>
                   )}
@@ -1327,12 +1337,12 @@ export default function ODClaim360() {
                   <li key={k.label} className="flex items-start gap-2 py-1 text-[12px]">
                     {k.ok === true && <CheckCircle2 className="mt-px h-3.5 w-3.5 flex-none text-emerald-600" aria-label="Passed" />}
                     {k.ok === false && <XCircle className="mt-px h-3.5 w-3.5 flex-none text-red-600" aria-label="Failed" />}
-                    {k.ok === null && <MinusCircle className="mt-px h-3.5 w-3.5 flex-none text-slate-400" aria-label="Not applicable" />}
+                    {k.ok === null && <MinusCircle className="mt-px h-3.5 w-3.5 flex-none text-slate-500" aria-label="Not applicable" />}
                     {k.ok === "pending" && <Clock className="mt-px h-3.5 w-3.5 flex-none text-amber-600" aria-label="Pending" />}
                     <span className="min-w-0">
                       <span className="block text-slate-800">{k.label}</span>
                       <span
-                        className={`block text-[11px] ${k.ok === false ? "text-red-700" : k.ok === "pending" ? "text-amber-800" : "text-slate-500"}`}
+                        className={`block text-[12px] ${k.ok === false ? "text-red-700" : k.ok === "pending" ? "text-amber-800" : "text-slate-500"}`}
                       >
                         {k.note}
                       </span>
@@ -1345,11 +1355,11 @@ export default function ODClaim360() {
             <Card title="Contacts">
               <ul className="flex flex-col divide-y divide-slate-50 text-[12px]">
                 <li className="flex items-start gap-2 px-3 py-1.5">
-                  <Car className="mt-0.5 h-3.5 w-3.5 flex-none text-slate-400" aria-hidden="true" />
+                  <Car className="mt-0.5 h-3.5 w-3.5 flex-none text-slate-500" aria-hidden="true" />
                   <span className="min-w-0">
                     <span className="block font-semibold text-slate-800">{c.insured}</span>
-                    <span className="block text-[11px] text-slate-500">Insured</span>
-                    <span className="mt-0.5 flex flex-wrap gap-x-3 text-[11px] text-slate-600">
+                    <span className="block text-[12px] text-slate-500">Insured</span>
+                    <span className="mt-0.5 flex flex-wrap gap-x-3 text-[12px] text-slate-600">
                       <span className="flex items-center gap-1"><Phone className="h-3 w-3" aria-hidden="true" />{c.contact.mobile}</span>
                       <span className="flex items-center gap-1"><Mail className="h-3 w-3" aria-hidden="true" />{c.contact.email}</span>
                     </span>
@@ -1357,24 +1367,24 @@ export default function ODClaim360() {
                 </li>
                 {c.survey.surveyor && (
                   <li className="flex items-start gap-2 px-3 py-1.5">
-                    <UserCheck className="mt-0.5 h-3.5 w-3.5 flex-none text-slate-400" aria-hidden="true" />
+                    <UserCheck className="mt-0.5 h-3.5 w-3.5 flex-none text-slate-500" aria-hidden="true" />
                     <span>
                       <span className="block font-semibold text-slate-800">{c.survey.surveyor.name}</span>
-                      <span className="block text-[11px] text-slate-500">Surveyor · {c.survey.surveyor.licence}</span>
+                      <span className="block text-[12px] text-slate-500">Surveyor · {c.survey.surveyor.licence}</span>
                     </span>
                   </li>
                 )}
                 {c.garage && (
                   <li className="flex items-start gap-2 px-3 py-1.5">
-                    <Wrench className="mt-0.5 h-3.5 w-3.5 flex-none text-slate-400" aria-hidden="true" />
+                    <Wrench className="mt-0.5 h-3.5 w-3.5 flex-none text-slate-500" aria-hidden="true" />
                     <span>
                       <span className="block font-semibold text-slate-800">{c.garage.name}</span>
-                      <span className="block text-[11px] text-slate-500">{c.garage.type}</span>
+                      <span className="block text-[12px] text-slate-500">{c.garage.type}</span>
                     </span>
                   </li>
                 )}
               </ul>
-              <p className="border-t border-slate-100 px-3 py-1.5 text-[10.5px] text-slate-500">Mobile and email are masked for privacy.</p>
+              <p className="border-t border-slate-100 px-3 py-1.5 text-[11px] text-slate-500">Mobile and email are masked for privacy.</p>
             </Card>
           </div>
         </div>
@@ -1442,7 +1452,7 @@ export default function ODClaim360() {
                   <label key={v.key} className="flex items-center gap-2 text-[12.5px] text-slate-800">
                     <input type="radio" name="note-vis" checked={noteVis === v.key} onChange={() => setNoteVis(v.key)} className="h-4 w-4 accent-teal-700" />
                     <b className="font-semibold">{v.label}</b>
-                    <span className="text-[11.5px] text-slate-500">{v.hint}</span>
+                    <span className="text-[12px] text-slate-500">{v.hint}</span>
                   </label>
                 ))}
               </div>
@@ -1482,7 +1492,7 @@ export default function ODClaim360() {
                 ))}
               </fieldset>
             )}
-            <p className="rounded-md bg-slate-50 px-2.5 py-2 text-[11.5px] text-slate-600">
+            <p className="rounded-md bg-slate-50 px-2.5 py-2 text-[12px] text-slate-600">
               The insured gets an SMS and email with the list. The request is logged on the claim timeline.
             </p>
             <div className="flex justify-end gap-2">
