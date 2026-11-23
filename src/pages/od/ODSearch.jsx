@@ -10,6 +10,7 @@ import { useMemo, useState } from "react";
 import { useNavigate, useSearchParams } from "react-router-dom";
 import { Search, ChevronDown, Eye, Pencil, RotateCcw, ChevronLeft, ChevronRight } from "lucide-react";
 import ODShell from "../../components/layout/ODShell";
+import { useAuth, getRole } from "../../auth";
 import { claimSlug } from "../../data/odClaimDetail";
 import { BASIC_FIELDS, ADVANCED_KEYS, SEARCH_KEYS, searchIndex, searchOptions, runSearch, hasCriteria } from "../../data/claimSearch";
 
@@ -55,7 +56,14 @@ function validate(c) {
 export default function ODSearch() {
   const navigate = useNavigate();
   const [params, setParams] = useSearchParams();
-  const applied = useMemo(() => ({ ...EMPTY, ...Object.fromEntries(SEARCH_KEYS.map((k) => [k, params.get(k) || ""])) }), [params]);
+  // The handler is the surveyor, so searching by surveyor name is for the Claims Manager (team view)
+  const { user } = useAuth();
+  const isManager = getRole(user, "OD")?.role === "CLAIMS_MANAGER";
+  // a surveyor-name filter only counts for the manager (the handler has no such field)
+  const applied = useMemo(
+    () => ({ ...EMPTY, ...Object.fromEntries(SEARCH_KEYS.filter((k) => isManager || k !== "svName").map((k) => [k, params.get(k) || ""])) }),
+    [params, isManager]
+  );
   const searched = hasCriteria(applied);
 
   const [draft, setDraft] = useState(applied);
@@ -180,7 +188,7 @@ export default function ODSearch() {
               </Field>
               {select("garage", "Garage name", options.garage)}
               {select("svType", "Surveyor type", options.svType)}
-              {select("svName", "Surveyor name", options.svName)}
+              {isManager && select("svName", "Surveyor name", options.svName)}
               {select("status", "Claim status", ["Open", "Closed"], "Open and closed")}
               {select("loss", "Loss type", options.loss)}
               <Field id="s-from" label="Registered from">
