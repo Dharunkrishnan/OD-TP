@@ -911,39 +911,42 @@ export default function ODHandlerDashboard() {
   ];
 
 
+  // My Day · Performance switch – shown in the header in place of the page title
+  const viewTabs = (
+    <div className="flex min-w-0 items-center gap-3">
+      <div role="tablist" aria-label="Dashboard view" className="inline-flex flex-none rounded-lg bg-slate-200/70 p-0.5">
+        {[
+          { key: "myday", label: "My Day", Icon: ListTodo },
+          { key: "performance", label: "Performance", Icon: BarChart3 },
+        ].map((t) => (
+          <button
+            key={t.key}
+            type="button"
+            role="tab"
+            aria-selected={view === t.key}
+            onClick={() => setView(t.key)}
+            className={`inline-flex h-8 items-center gap-1.5 rounded-md px-3 text-[13px] font-semibold transition ${
+              view === t.key ? "bg-white text-[#0B1F3A] shadow-sm" : "text-slate-600 hover:text-slate-900"
+            }`}
+          >
+            <t.Icon className="h-4 w-4" aria-hidden="true" />
+            {t.label}
+          </button>
+        ))}
+      </div>
+      <span className="hidden truncate text-[12px] text-slate-500 md:inline">
+        {view === "myday" ? "What needs your action today" : "Your SLA, TAT, ageing and pending position"}
+      </span>
+    </div>
+  );
+
   return (
     <ODShell
       active="dashboard"
       title="My Dashboard"
+      headerSlot={viewTabs}
       onNavigateMissing={notBuilt}
     >
-      {/* ---------------- View switch: My Day · Performance ---------------- */}
-      <div className="mb-2 flex flex-wrap items-center gap-3">
-        <div role="tablist" aria-label="Dashboard view" className="inline-flex rounded-lg bg-slate-200/70 p-0.5">
-          {[
-            { key: "myday", label: "My Day", Icon: ListTodo },
-            { key: "performance", label: "Performance", Icon: BarChart3 },
-          ].map((t) => (
-            <button
-              key={t.key}
-              type="button"
-              role="tab"
-              aria-selected={view === t.key}
-              onClick={() => setView(t.key)}
-              className={`inline-flex h-8 items-center gap-1.5 rounded-md px-3 text-[13px] font-semibold transition ${
-                view === t.key ? "bg-white text-[#0B1F3A] shadow-sm" : "text-slate-600 hover:text-slate-900"
-              }`}
-            >
-              <t.Icon className="h-4 w-4" aria-hidden="true" />
-              {t.label}
-            </button>
-          ))}
-        </div>
-        <span className="text-[12px] text-slate-500">
-          {view === "myday" ? "What needs your action today" : "Your SLA, TAT, ageing and pending position"}
-        </span>
-      </div>
-
       {view === "myday" ? (
         <HandlerMyDay />
       ) : (

@@ -108,7 +108,7 @@ function Tip({ show, children }) {
   );
 }
 
-export default function ODShell({ active = "dashboard", title, subtitle, children, onNavigateMissing, claimNav }) {
+export default function ODShell({ active = "dashboard", title, subtitle, headerSlot, children, onNavigateMissing, claimNav }) {
   const navigate = useNavigate();
 
   // Suggestions for the header search panel
@@ -560,10 +560,18 @@ export default function ODShell({ active = "dashboard", title, subtitle, childre
             </span>
           )}
 
-          <div className="min-w-0 flex-1">
-            <h1 className="truncate text-[15px] font-semibold leading-tight text-[#0B1F3A]">{title}</h1>
-            {subtitle && <p className="truncate text-[12px] text-slate-500">{subtitle}</p>}
-          </div>
+          {headerSlot ? (
+            // a page can put its own control (e.g. view tabs) where the title sits; the title stays for screen readers
+            <div className="flex min-w-0 flex-1 items-center">
+              <h1 className="sr-only">{title}</h1>
+              {headerSlot}
+            </div>
+          ) : (
+            <div className="min-w-0 flex-1">
+              <h1 className="truncate text-[15px] font-semibold leading-tight text-[#0B1F3A]">{title}</h1>
+              {subtitle && <p className="truncate text-[12px] text-slate-500">{subtitle}</p>}
+            </div>
+          )}
 
           <div className="ml-auto flex items-center gap-2">
             {/* Global search – icon only; opens a panel with suggestions */}
