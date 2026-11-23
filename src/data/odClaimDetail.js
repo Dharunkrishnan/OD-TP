@@ -119,9 +119,11 @@ const CAUSES = {
 };
 const CHANNELS = ["Call centre", "Customer portal", "Network garage", "Agent / intermediary", "Branch walk-in"];
 
-function maskMobile(r) {
-  const tail = String(1000 + Math.floor(r() * 9000));
-  return `98XXXXX${tail.slice(0, 3)}`;
+// Mobile shown masked on screen (privacy); the full number is kept for Universal Search (catalogue 178)
+function mobileOf(r, claimNo) {
+  const tail = String(1000 + Math.floor(r() * 9000)).slice(0, 3);
+  const mid = String(10000 + (seedOf(claimNo + "|mobile") % 90000));
+  return { masked: `98XXXXX${tail}`, full: `98${mid}${tail}` };
 }
 
 /* ---------------- main builder ---------------- */
@@ -353,7 +355,10 @@ export function getClaimDetail(claimNo) {
     ...row,
     step, // detailed internal step
     lifecycle: STAGE_TO_STEP[row.stage] ?? { step: 0, note: "" }, // 5-stage stepper position
-    contact: { mobile: maskMobile(r), email: `${row.insured.split(" ").pop().toLowerCase()}.***@gmail.com` },
+    contact: (() => {
+      const m = mobileOf(r, claimNo); // drawn here so every other demo value stays the same
+      return { mobile: m.masked, mobileFull: m.full, email: `${row.insured.split(" ").pop().toLowerCase()}.***@gmail.com` };
+    })(),
     policy,
     vehicle,
     driver,

@@ -19,6 +19,7 @@ import { AuthProvider, useAuth, hasAccess, resolveDashboardPath } from "./auth";
 import Login from "./pages/Login";
 import ODHome from "./pages/od/ODHome";
 import ODWorkQueue from "./pages/od/ODWorkQueue";
+import ODSearch from "./pages/od/ODSearch";
 import ODClaim360 from "./pages/od/ODClaim360";
 import ODIntimation from "./pages/od/ODIntimation";
 import ODApprovals from "./pages/od/ODApprovals";
@@ -148,6 +149,17 @@ export default function App() {
               <RequireAuth>
                 <RequirePermission permission="OD">
                   <ODWorkQueue />
+                </RequirePermission>
+              </RequireAuth>
+            }
+          />
+
+          <Route
+            path="/od/search"
+            element={
+              <RequireAuth>
+                <RequirePermission permission="OD">
+                  <ODSearch />
                 </RequirePermission>
               </RequireAuth>
             }

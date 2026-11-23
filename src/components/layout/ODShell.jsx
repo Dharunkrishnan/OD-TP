@@ -19,18 +19,17 @@
 //                 onBack     – runs instead of navigating to backTo (e.g. to confirm leaving)
 //                 step.onClick / step.disabled – makes a step clickable; step.selected – highlights it
 
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useNavigate } from "react-router-dom";
-import SearchPopover from "../SearchPopover";
 import NotificationsPopover from "../NotificationsPopover";
 import { NOTIFICATIONS } from "../../data/notifications";
 import { managerBadges, managerNotifications } from "../../data/odManagerData";
 import { DIARY } from "../../data/odHandlerMock";
 import { handlerSummary } from "../../data/claimLists";
 import { claimSlug } from "../../data/odClaimDetail";
-import { searchClaims, dueTodayClaims, searchPolicies, slaTone } from "../../data/searchIndex";
 import {
   ShieldCheck,
+  Search,
   LayoutDashboard,
   ListChecks,
   FilePlus2,
@@ -45,7 +44,6 @@ import {
   PanelLeftOpen,
   ArrowLeft,
   Check,
-  FileText,
   UsersRound,
   ClipboardCheck,
   AlertOctagon,
@@ -111,45 +109,6 @@ function Tip({ show, children }) {
 export default function ODShell({ active = "dashboard", title, subtitle, headerSlot, children, onNavigateMissing, claimNav }) {
   const navigate = useNavigate();
 
-  // Suggestions for the header search panel
-  const globalSuggest = useCallback(
-    (q) => {
-      const claimItem = (r) => ({
-        id: r.claimNo,
-        icon: FileText,
-        title: `${r.claimNo} · ${r.regNo}`,
-        subtitle: `${r.insured} · ${r.stage}`,
-        meta: r.sla.label,
-        metaTone: slaTone(r.sla.status),
-        onSelect: () => navigate(`/od/claims/${claimSlug(r.claimNo)}`),
-      });
-      if (!q) {
-        return [
-          { group: "Due today", items: dueTodayClaims().map(claimItem) },
-          {
-            group: "Quick actions",
-            items: [{ id: "new-fnol", icon: FilePlus2, title: "New claim intimation", subtitle: "Register a new Motor OD claim", onSelect: () => navigate("/od/intimation") }],
-          },
-        ];
-      }
-      return [
-        { group: "Claims", items: searchClaims(q).map(claimItem) },
-        {
-          group: "Policies – start an intimation",
-          items: searchPolicies(q).map((p) => ({
-            id: p.policyNo,
-            icon: ShieldCheck,
-            title: `${p.regNo} · ${p.insured}`,
-            subtitle: `${p.policyNo} · ${p.vehicle}`,
-            meta: p.status,
-            metaTone: p.status === "In force" ? "teal" : "red",
-            onSelect: () => navigate(`/od/intimation?q=${encodeURIComponent(p.regNo)}`),
-          })),
-        },
-      ];
-    },
-    [navigate]
-  );
   const { user, logout } = useAuth();
   const [mobileNav, setMobileNav] = useState(false);
   const [menuCollapsed, setMenuCollapsed] = useState(readCollapsed);
@@ -575,12 +534,19 @@ export default function ODShell({ active = "dashboard", title, subtitle, headerS
 
           <div className="ml-auto flex items-center gap-2">
             {/* Global search – icon only; opens a panel with suggestions */}
-            <SearchPopover
-              label="Search claims and policies"
-              placeholder="Claim no, vehicle no, policy no or insured name"
-              suggest={globalSuggest}
-              openEvent="smartclaims:open-search"
-            />
+            {/* Search opens the Search Claims page (Universal Claim Search, catalogue 178) */}
+            <button
+              type="button"
+              onClick={() => navigate("/od/search")}
+              aria-label="Search claims"
+              title="Search claims"
+              aria-current={active === "search" ? "page" : undefined}
+              className={`grid h-9 w-9 place-items-center rounded-lg transition ${
+                active === "search" ? "bg-teal-50 text-teal-800 ring-1 ring-inset ring-teal-200" : "text-slate-600 hover:bg-slate-100 hover:text-slate-900"
+              }`}
+            >
+              <Search className="h-5 w-5" aria-hidden="true" />
+            </button>
             {isDualAccess(user) && (
               <span className="hidden rounded-md bg-teal-50 px-2 py-1 text-xs font-semibold text-teal-800 sm:inline">
                 OD workspace
