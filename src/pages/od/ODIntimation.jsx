@@ -1273,11 +1273,14 @@ export default function ODIntimation() {
                       </Field>
                     )}
                     <Field label="Third party involved?">
-                      <Segmented name="Third party" value={f.tpInvolved} onChange={(v) => set({ tpInvolved: v })} options={[{ value: "no", label: "No" }, { value: "yes", label: "Yes" }]} />
+                      {/* no third party → no injury question; switching back to No clears the injury answer */}
+                      <Segmented name="Third party" value={f.tpInvolved} onChange={(v) => set(v === "yes" ? { tpInvolved: v } : { tpInvolved: v, injury: "no" })} options={[{ value: "no", label: "No" }, { value: "yes", label: "Yes" }]} />
                     </Field>
-                    <Field label="Anyone injured?">
-                      <Segmented name="Injury" value={f.injury} onChange={(v) => set({ injury: v })} options={[{ value: "no", label: "No" }, { value: "yes", label: "Yes" }]} />
-                    </Field>
+                    {f.tpInvolved === "yes" && (
+                      <Field label="Anyone injured?">
+                        <Segmented name="Injury" value={f.injury} onChange={(v) => set({ injury: v })} options={[{ value: "no", label: "No" }, { value: "yes", label: "Yes" }]} />
+                      </Field>
+                    )}
                     <Field label="Reported to police?">
                       <Segmented name="Police" value={f.policeReported} onChange={(v) => set({ policeReported: v })} options={[{ value: "no", label: "No" }, { value: "yes", label: "Yes" }]} />
                     </Field>
@@ -1463,7 +1466,7 @@ export default function ODIntimation() {
                         ["Place", `${f.place}, ${f.city}${f.pincode ? ` – ${f.pincode}` : ""}`],
                         ["GPS location", f.lossLat ? `${f.lossLat.toFixed(5)}, ${f.lossLng.toFixed(5)} (pinned on map)` : "Not pinned – typed manually"],
                         ["Description", f.description],
-                        ["Third party / injury / police", `${f.tpInvolved === "yes" ? `TP ${f.tpVehicleNo}` : "No TP"} · ${f.injury === "yes" ? "Injury" : "No injury"} · ${f.firNo ? `FIR ${f.firNo}` : "No FIR"}`],
+                        ["Third party / injury / police", `${f.tpInvolved === "yes" ? `TP ${f.tpVehicleNo} · ${f.injury === "yes" ? "Injury" : "No injury"}` : "No TP"} · ${f.firNo ? `FIR ${f.firNo}` : "No FIR"}`],
                         driverNeeded(f) && ["Driver", `${f.driverSameAsInsured ? f.policy?.insured : f.driverName} · DL ${f.dlNo} valid till ${dt(f.dlValidTill)}`],
                         f.catEvent && ["CAT event", f.catEvent],
                         f.lateReason && ["Late intimation reason", f.lateReason],
