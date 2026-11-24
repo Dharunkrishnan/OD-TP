@@ -115,6 +115,25 @@ const EMPTY = {
   declaration: false,
 };
 
+// Draft kept in sessionStorage so a refresh resumes the same step (attachments keep their names only)
+const DRAFT_KEY = "smartclaims-intimation-draft";
+const isStarted = (x) => !!(x && (x.policy || x.noPolicy || x.search.trim()));
+function readDraft() {
+  try {
+    const d = JSON.parse(sessionStorage.getItem(DRAFT_KEY));
+    return d && d.f ? d : null;
+  } catch {
+    return null;
+  }
+}
+function clearDraft() {
+  try {
+    sessionStorage.removeItem(DRAFT_KEY);
+  } catch {
+    /* storage off */
+  }
+}
+
 /* ------------------------------------------------------------------ */
 /* Small UI blocks                                                     */
 /* ------------------------------------------------------------------ */
@@ -307,15 +326,36 @@ export default function ODIntimation() {
   const initQ = params.get("q") || "";
   const initHits = initQ ? searchPolicy(initQ) : null;
   const initPolicy = initHits?.length === 1 ? initHits[0].policy : null;
+  // Work in progress survives a page refresh: the draft is kept for the browser session and
+  // restored on load (unless a new search was opened from the header with ?q=)
+  const [draft] = useState(() => (initQ ? null : readDraft()));
   const [f, setF] = useState(() =>
-    initQ ? { ...EMPTY, search: initQ, policy: initPolicy, mobile: initPolicy?.mobile || "", email: initPolicy?.email || "" } : EMPTY
+    draft
+      ? { ...EMPTY, ...draft.f }
+      : initQ
+        ? { ...EMPTY, search: initQ, policy: initPolicy, mobile: initPolicy?.mobile || "", email: initPolicy?.email || "" }
+        : EMPTY
   );
-  const [step, setStep] = useState(0);
-  const [maxStep, setMaxStep] = useState(0);
+  const [step, setStep] = useState(draft?.step || 0);
+  const [maxStep, setMaxStep] = useState(draft?.maxStep || 0);
   const [errors, setErrors] = useState({});
-  const [results, setResults] = useState(initHits); // null = not searched
-  const [result, setResult] = useState(null); // outcome after submit
-  const [toast, setToast] = useState("");
+  const [results, setResults] = useState(draft ? draft.results : initHits); // null = not searched
+  const [result, setResult] = useState(draft?.result || null); // outcome after submit
+  const [toast, setToast] = useState(draft && !draft.result && isStarted(draft.f) ? "Your intimation in progress was restored." : "");
+  useEffect(() => {
+    if (!toast) return undefined;
+    const t = window.setTimeout(() => setToast(""), 2600);
+    return () => window.clearTimeout(t);
+  }, [toast]);
+  // save after every change; nothing worth keeping (blank form) → no draft
+  useEffect(() => {
+    try {
+      if (!result && !isStarted(f)) sessionStorage.removeItem(DRAFT_KEY);
+      else sessionStorage.setItem(DRAFT_KEY, JSON.stringify({ f, step, maxStep, results, result }));
+    } catch {
+      /* storage off or full – the form still works, it just won't survive a refresh */
+    }
+  }, [f, step, maxStep, results, result]);
   // side panels pinned from the card header (peek on hover, pin on click) – kept for the session
   const [pins, setPins] = useState(() => {
     try { return JSON.parse(sessionStorage.getItem("smartclaims-intimation-pins")) || []; } catch { return []; }
@@ -421,8 +461,10 @@ export default function ODIntimation() {
   }
   // Leaving mid-way loses the typed details – confirm first
   function exitIntimation() {
-    const started = f.policy || f.noPolicy || f.search.trim();
-    if (!started || window.confirm("Leave this intimation? The details entered will be lost.")) navigate("/od/worklist");
+    if (!isStarted(f) || window.confirm("Leave this intimation? The details entered will be lost.")) {
+      clearDraft();
+      navigate("/od/worklist");
+    }
   }
   function submit() {
     const e = validate(STEPS.length - 1, f);
@@ -431,6 +473,7 @@ export default function ODIntimation() {
     setResult(submitIntimation(f));
   }
   function reset() {
+    clearDraft();
     setF(EMPTY);
     setStep(0);
     setMaxStep(0);
