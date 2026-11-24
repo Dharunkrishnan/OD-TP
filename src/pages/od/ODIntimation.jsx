@@ -97,7 +97,6 @@ const EMPTY = {
   altMobile: "",
   email: "",
   altEmail: "",
-  language: "Tamil",
   intimatedBy: "Insured",
   channel: "Call centre",
   callerName: "",
@@ -1151,13 +1150,6 @@ export default function ODIntimation() {
                     </Field>
                     <Field label="Alternate email" error={err.altEmail} hint="Optional">
                       <input type="email" value={f.altEmail} onChange={(e) => set({ altEmail: e.target.value.trim() })} className={inputCls(err.altEmail)} placeholder="name@example.com" />
-                    </Field>
-                    <Field label="Preferred language">
-                      <select value={f.language} onChange={(e) => set({ language: e.target.value })} className={inputCls()}>
-                        {["Tamil", "English", "Hindi", "Telugu", "Kannada", "Malayalam"].map((l) => (
-                          <option key={l}>{l}</option>
-                        ))}
-                      </select>
                     </Field>
                   </div>
 
