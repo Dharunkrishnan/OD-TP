@@ -115,6 +115,10 @@ const EMPTY = {
   declaration: false,
 };
 
+// A new intimation starts with the loss date and time set to now – the handler changes them to when
+// the loss happened. Neither can be moved into the future (see onLossDate / onLossTime in the page).
+const freshForm = () => ({ ...EMPTY, lossDate: TODAY_ISO, lossTime: nowHHMM() });
+
 // Draft kept in sessionStorage so a refresh resumes the same step (attachments keep their names only)
 const DRAFT_KEY = "smartclaims-intimation-draft";
 const isStarted = (x) => !!(x && (x.policy || x.noPolicy || x.search.trim()));
@@ -333,8 +337,8 @@ export default function ODIntimation() {
     draft
       ? { ...EMPTY, ...draft.f }
       : initQ
-        ? { ...EMPTY, search: initQ, policy: initPolicy, mobile: initPolicy?.mobile || "", email: initPolicy?.email || "" }
-        : EMPTY
+        ? { ...freshForm(), search: initQ, policy: initPolicy, mobile: initPolicy?.mobile || "", email: initPolicy?.email || "" }
+        : freshForm()
   );
   const [step, setStep] = useState(draft?.step || 0);
   const [maxStep, setMaxStep] = useState(draft?.maxStep || 0);
@@ -387,6 +391,26 @@ export default function ODIntimation() {
     setToast(msg);
     window.clearTimeout(flash.t);
     flash.t = window.setTimeout(() => setToast(""), 2600);
+  }
+  // Loss date / time: no future values. The pickers stop them (max); a typed future value is
+  // pulled back to now with a message.
+  function onLossDate(v) {
+    if (v && v > TODAY_ISO) {
+      flash("Loss date cannot be in the future – set to today.");
+      v = TODAY_ISO;
+    }
+    const now = nowHHMM();
+    const patch = { lossDate: v, catEvent: null };
+    if (v === TODAY_ISO && f.lossTime > now) patch.lossTime = now; // today + later time → now
+    set(patch);
+  }
+  function onLossTime(v) {
+    const now = nowHHMM();
+    if (v && f.lossDate === TODAY_ISO && v > now) {
+      flash("Loss time cannot be later than now – set to the current time.");
+      v = now;
+    }
+    set({ lossTime: v });
   }
   const notBuilt = (what) => flash(`${what} – this page comes in a later build step.`);
 
@@ -474,7 +498,7 @@ export default function ODIntimation() {
   }
   function reset() {
     clearDraft();
-    setF(EMPTY);
+    setF(freshForm());
     setStep(0);
     setMaxStep(0);
     setErrors({});
@@ -1226,11 +1250,11 @@ export default function ODIntimation() {
               {show(2) && (
                 <>
                   <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
-                    <Field label="Date of loss" required error={err.lossDate}>
-                      <input type="date" max={TODAY_ISO} value={f.lossDate} onChange={(e) => set({ lossDate: e.target.value, catEvent: null })} className={inputCls(err.lossDate)} />
+                    <Field label="Date of loss" required error={err.lossDate} hint={f.lossDate === TODAY_ISO ? "Today – change if the loss was earlier" : undefined}>
+                      <input type="date" max={TODAY_ISO} value={f.lossDate} onChange={(e) => onLossDate(e.target.value)} className={inputCls(err.lossDate)} />
                     </Field>
-                    <Field label="Time of loss (approx.)" required error={err.lossTime}>
-                      <input type="time" value={f.lossTime} onChange={(e) => set({ lossTime: e.target.value })} className={inputCls(err.lossTime)} />
+                    <Field label="Time of loss (approx.)" required error={err.lossTime} hint={f.lossDate === TODAY_ISO ? "No later than now" : undefined}>
+                      <input type="time" max={f.lossDate === TODAY_ISO ? nowHHMM() : undefined} value={f.lossTime} onChange={(e) => onLossTime(e.target.value)} className={inputCls(err.lossTime)} />
                     </Field>
                     <Field label="Cause of loss" required error={err.cause}>
                       <select value={f.cause} onChange={(e) => set({ cause: e.target.value, catEvent: null })} className={inputCls(err.cause)}>
