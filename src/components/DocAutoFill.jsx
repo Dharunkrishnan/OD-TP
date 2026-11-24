@@ -1,15 +1,15 @@
 // src/components/DocAutoFill.jsx
 // "Upload to auto-fill" tiles (e.g. Driving licence, RC on Claim Intimation). Pick a photo / PDF →
 // the tile shows "Reading…" while the document is read (OCR), then calls onRead(key, fileName) so
-// the page can fill its fields. A read tile shows what was filled, with Replace.
+// the page can fill its fields. A read tile shows what was filled, with View (eye) and Replace.
 // items: [{ key, title, hint, icon, done }] – done: null, or { summary, fileName }
 
 import { useEffect, useRef, useState } from "react";
-import { CheckCircle2, Loader2, Upload } from "lucide-react";
+import { CheckCircle2, Eye, Loader2, Upload } from "lucide-react";
 
 const READ_MS = 1200; // demo: time the "OCR" takes
 
-export default function DocAutoFill({ items, onRead }) {
+export default function DocAutoFill({ items, onRead, onView }) {
   const [reading, setReading] = useState(null);
   const timer = useRef(null);
   const inputs = useRef({});
@@ -23,7 +23,7 @@ export default function DocAutoFill({ items, onRead }) {
     clearTimeout(timer.current);
     timer.current = setTimeout(() => {
       setReading(null);
-      onRead(key, file.name);
+      onRead(key, file.name, file);
     }, READ_MS);
   }
 
@@ -64,6 +64,18 @@ export default function DocAutoFill({ items, onRead }) {
               aria-hidden="true"
               onChange={(e) => pick(it.key, e)}
             />
+            {done && onView && (
+              <button
+                type="button"
+                onClick={() => onView(it.key)}
+                aria-label={`View ${it.title}`}
+                title={`View ${it.title}`}
+                className="inline-flex h-8 flex-none items-center gap-1.5 rounded-md px-2.5 text-[12px] font-semibold text-teal-800 hover:bg-white"
+              >
+                <Eye className="h-4 w-4" aria-hidden="true" />
+                View
+              </button>
+            )}
             <button
               type="button"
               disabled={!!reading}

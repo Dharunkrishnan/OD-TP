@@ -31,12 +31,15 @@ import {
   History,
   ClipboardList,
   IdCard,
+  Eye,
 } from "lucide-react";
 import ODShell from "../../components/layout/ODShell";
 import { PanelButtons, PinnedPanels } from "../../components/CardPanels";
 import { formatINR } from "../../auth";
 import LocationPicker from "../../components/LocationPicker";
 import DocAutoFill from "../../components/DocAutoFill";
+import DocViewer from "../../components/DocViewer";
+import { putDoc, removeDoc, clearDocs } from "../../data/docStore";
 import { readDL, readRC } from "../../data/docReader";
 import { claimSlug } from "../../data/odClaimDetail";
 import { WORK_QUEUE, TAT_STAGES } from "../../data/odHandlerMock";
@@ -359,6 +362,8 @@ export default function ODIntimation() {
   const [errors, setErrors] = useState({});
   const [results, setResults] = useState(draft ? draft.results : initHits); // null = not searched
   const [result, setResult] = useState(draft?.result || null); // outcome after submit
+  const [viewDoc, setViewDoc] = useState(null); // { name, title, details } – document open in the viewer
+  const closeViewer = useCallback(() => setViewDoc(null), []);
   const [toast, setToast] = useState(draft && !draft.result && isStarted(draft.f) ? "Your intimation in progress was restored." : "");
   useEffect(() => {
     if (!toast) return undefined;
@@ -435,8 +440,10 @@ export default function ODIntimation() {
     });
   }
   // DL / RC uploaded on Incident Details → read (OCR) → fill the fields that need it
-  function onDocRead(kind, fileName) {
+  function onDocRead(kind, fileName, file) {
     const tag = kind === "dl" ? "DL" : "RC";
+    f.files.filter((n) => n.startsWith(`${tag} – `)).forEach(removeDoc); // replaced document
+    putDoc(`${tag} – ${fileName}`, file);
     const files = [...f.files.filter((n) => !n.startsWith(`${tag} – `)), `${tag} – ${fileName}`];
     if (kind === "dl") {
       const d = readDL(f);
@@ -468,6 +475,28 @@ export default function ODIntimation() {
       set(patch);
       flash(r.checks.some((c) => c.ok === false) ? "RC read – some details do not match the policy." : "RC read – vehicle details checked.");
     }
+  }
+  // eye icon: open an uploaded file; a DL / RC opens with the details read from it alongside
+  function openDoc(name) {
+    const dl = f.dlRead && name === `DL – ${f.dlRead.fileName}` ? f.dlRead : null;
+    const rc = f.rcRead && name === `RC – ${f.rcRead.fileName}` ? f.rcRead : null;
+    setViewDoc({
+      name,
+      title: dl ? "Driving licence" : rc ? "Registration certificate (RC)" : "Attachment",
+      details: dl
+        ? {
+            title: `Read from DL · ${dl.confidence}% confidence`,
+            rows: [["Holder", `${dl.holder}${dl.relation !== "Self" ? ` (${dl.relation.toLowerCase()})` : ""}`], ["DL no", dl.dlNo], ["Date of birth", dt(dl.dob)], ["Valid till (non-transport)", dt(dl.validTill)], ["Class of vehicle", dl.dlClass], ["Issued by", dl.rto]],
+            note: "Check these against the licence on the left. Edit the driver fields if anything was read wrongly.",
+          }
+        : rc
+          ? {
+              title: `Read from RC · ${rc.confidence}% confidence`,
+              rows: [["Registration no", rc.regNo], ["Owner", rc.owner], ["Make / model", rc.vehicle], ["Fuel", rc.fuel], ["Chassis no", rc.chassis], ["Engine no", rc.engine], ["Registered on", dt(rc.regDate)], ["Valid till", dt(rc.validTill)], ["Hypothecation", rc.hypothecation]],
+              note: rc.checks.map((c) => `${c.ok === false ? "✗" : c.ok ? "✓" : "•"} ${c.label}`).join("  ·  "),
+            }
+          : null,
+    });
   }
   const notBuilt = (what) => flash(`${what} – this page comes in a later build step.`);
 
@@ -544,6 +573,7 @@ export default function ODIntimation() {
   function exitIntimation() {
     if (!isStarted(f) || window.confirm("Leave this intimation? The details entered will be lost.")) {
       clearDraft();
+      clearDocs();
       navigate("/od/worklist");
     }
   }
@@ -555,6 +585,7 @@ export default function ODIntimation() {
   }
   function reset() {
     clearDraft();
+    clearDocs();
     setF(freshForm());
     setStep(0);
     setMaxStep(0);
@@ -1439,6 +1470,7 @@ export default function ODIntimation() {
                     </div>
                     <DocAutoFill
                       onRead={onDocRead}
+                      onView={(k) => openDoc(k === "dl" ? `DL – ${f.dlRead.fileName}` : `RC – ${f.rcRead.fileName}`)}
                       items={[
                         ...(driverNeeded(f)
                           ? [{
@@ -1609,7 +1641,12 @@ export default function ODIntimation() {
                         type="file"
                         multiple
                         className="sr-only"
-                        onChange={(e) => set({ files: [...f.files, ...Array.from(e.target.files || []).map((x) => x.name)] })}
+                        onChange={(e) => {
+                          const picked = Array.from(e.target.files || []).filter((x) => !f.files.includes(x.name));
+                          picked.forEach((x) => putDoc(x.name, x));
+                          e.target.value = "";
+                          set({ files: [...f.files, ...picked.map((x) => x.name)] });
+                        }}
                       />
                     </label>
                   </Field>
@@ -1619,7 +1656,23 @@ export default function ODIntimation() {
                         <li key={n + i} className="flex items-center gap-1 rounded bg-slate-100 px-2 py-1 text-[12px] text-slate-700">
                           <FileText className="h-3.5 w-3.5" aria-hidden="true" />
                           {n}
-                          <button type="button" aria-label={`Remove ${n}`} onClick={() => set({ files: f.files.filter((_, j) => j !== i) })} className="ml-0.5 text-slate-500 hover:text-red-600">
+                          <button type="button" aria-label={`View ${n}`} title="View" onClick={() => openDoc(n)} className="ml-1 text-teal-700 hover:text-teal-900">
+                            <Eye className="h-3.5 w-3.5" />
+                          </button>
+                          <button
+                            type="button"
+                            aria-label={`Remove ${n}`}
+                            onClick={() => {
+                              removeDoc(n);
+                              // removing the DL / RC also drops what was read from it (the typed fields stay)
+                              set({
+                                files: f.files.filter((_, j) => j !== i),
+                                ...(f.dlRead && n === `DL – ${f.dlRead.fileName}` ? { dlRead: null } : {}),
+                                ...(f.rcRead && n === `RC – ${f.rcRead.fileName}` ? { rcRead: null } : {}),
+                              });
+                            }}
+                            className="ml-0.5 text-slate-500 hover:text-red-600"
+                          >
                             <X className="h-3.5 w-3.5" />
                           </button>
                         </li>
@@ -1745,6 +1798,7 @@ export default function ODIntimation() {
         </div>
       </div>
 
+      {viewDoc && <DocViewer name={viewDoc.name} title={viewDoc.title} details={viewDoc.details} onClose={closeViewer} />}
       {toast && (
         <div role="status" className="fixed bottom-5 left-1/2 z-50 -translate-x-1/2 rounded-lg bg-[#0B1F3A] px-4 py-2.5 text-sm text-white shadow-lg">
           {toast}
