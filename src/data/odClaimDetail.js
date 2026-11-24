@@ -363,9 +363,77 @@ export function getClaimDetail(claimNo) {
     { label: "Fraud rules", ok: !row.flags.includes("Fraud flag"), note: row.flags.includes("Fraud flag") ? "Red flag – referred to SIU" : "No red flags" },
   ];
 
+  /* ---- Claim 360 profile: extra fields for the sectioned claim view ----
+     Drawn from a separate seed so every other demo value above stays exactly the same. */
+  const x = rng(seedOf(claimNo + "|360"));
+  const hhmm = (h0, span) => `${String(h0 + Math.floor(x() * span)).padStart(2, "0")}:${String(Math.floor(x() * 60)).padStart(2, "0")}`;
+  const rollover = x() > 0.3;
+  const breakIn = !rollover && x() > 0.5;
+  const [make, ...modelParts] = row.vehicle.split(" ");
+  const regYear = Math.min(year + (x() > 0.6 ? 1 : 0), 2026);
+  const firstEvent = t[t.length - 1];
+  const tpInvolved = loss.tpInvolved;
+  const profile = {
+    policy: {
+      startTime: rollover ? "00:00" : hhmm(9, 9), // fresh / break-in policies start at issue time
+      endTime: "23:59",
+      ncbStatus: policy.ncb === "0%" ? "Not applicable" : "Applicable",
+      sec64VB: isNbnr ? "Pending" : "Confirmed", // premium received before risk – Section 64VB, Insurance Act
+      rollover: rollover ? "Yes" : "No",
+      breakIn: breakIn ? "Yes" : "No",
+      vir: breakIn, // break-in → vehicle inspection report (VIR) before cover
+      uwDocsMissing: breakIn && x() > 0.4,
+    },
+    insured: {
+      nameAsPerDoc: row.insured.toUpperCase(),
+      city: "Chennai",
+      kyc: x() > 0.25 ? "Verified" : "Not verified",
+    },
+    vehicle: {
+      make,
+      model: modelParts.join(" "),
+      regDate: `${regYear}-${String(1 + Math.floor(x() * 12)).padStart(2, "0")}-${String(1 + Math.floor(x() * 28)).padStart(2, "0")}`,
+      owners: x() > 0.8 ? 2 : 1,
+    },
+    loss: {
+      intimationTime: firstEvent?.time || "10:00",
+      parked: driver ? "No" : "Yes",
+    },
+    driver: driver
+      ? {
+          dob: `${1965 + Math.floor(x() * 35)}-${String(1 + Math.floor(x() * 12)).padStart(2, "0")}-${String(1 + Math.floor(x() * 28)).padStart(2, "0")}`,
+        }
+      : null,
+    tp: {
+      policeMode: loss.policeReport === "FIR registered" ? "FIR" : tpInvolved ? "GD entry (general diary)" : "Not reported",
+      firAvailable: loss.policeReport === "FIR registered" ? "Yes" : "No",
+      subrogation: tpInvolved && x() > 0.4 ? "Yes – TP vehicle at fault" : "No",
+    },
+    survey: surveyor
+      ? {
+          type: step >= 3 ? "Final" : ips ? "Spot" : "Final",
+          allottedTime: hhmm(10, 7),
+          surveyTime: step >= 3 ? hhmm(10, 7) : null,
+          reportOn: step >= 3 ? addDays(row.regDate, 3) : null,
+          reportTime: step >= 3 ? hhmm(15, 4) : null,
+        }
+      : null,
+    repairer: garage
+      ? {
+          code: `GAR-CHN-${String(100 + Math.floor(x() * 900))}`,
+          state: "Tamil Nadu",
+          type: garage.type.startsWith("Dealer") ? "Dealer" : "Multi-brand",
+          network: garage.type.includes("network") ? "Network (cashless)" : "Non-network",
+          gstin: `33AAB${"CFHJK"[Math.floor(x() * 5)]}${String(1000 + Math.floor(x() * 8999))}R1Z${Math.floor(x() * 9)}`,
+          eInvoice: x() > 0.3 ? "Yes" : "No",
+        }
+      : null,
+  };
+
   return {
     ...row,
     step, // detailed internal step
+    profile,
     lifecycle: STAGE_TO_STEP[row.stage] ?? { step: 0, note: "" }, // 5-stage stepper position
     contact: (() => {
       const m = mobileOf(r, claimNo); // drawn here so every other demo value stays the same

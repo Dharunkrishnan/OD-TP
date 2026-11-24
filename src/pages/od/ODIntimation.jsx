@@ -335,7 +335,8 @@ export default function ODIntimation() {
   const [draft] = useState(() => (initQ ? null : readDraft()));
   const [f, setF] = useState(() =>
     draft
-      ? { ...EMPTY, ...draft.f }
+      ? // a draft saved before the date / time were filled (or before they defaulted to now) gets now
+        { ...freshForm(), ...draft.f, lossDate: draft.f.lossDate || TODAY_ISO, lossTime: draft.f.lossTime || nowHHMM() }
       : initQ
         ? { ...freshForm(), search: initQ, policy: initPolicy, mobile: initPolicy?.mobile || "", email: initPolicy?.email || "" }
         : freshForm()

@@ -36,6 +36,7 @@ import ODShell from "../../components/layout/ODShell";
 import { TAT_STAGES, needsIps } from "../../data/odHandlerMock";
 import { getClaimDetail, claimFromSlug, LIFECYCLE, STAGE_TO_STEP } from "../../data/odClaimDetail";
 import { ClaimStatusBanner, ClaimActionsMenu, ClaimStatusDialog } from "../../components/ClaimStatusActions";
+import ClaimDetailSections from "../../components/ClaimDetailSections";
 import { useClaimStatus, effectiveState } from "../../data/claimStatus";
 import { useClaimWork, reserveVariance, newId, isoToday, nowStamp, HANDLER, MANAGER, NOTE_VISIBILITY } from "../../data/claimWork";
 import SettlementPanel, { InvoiceDialog, PayeeDialog, ConsentDialog, DeliveryDialog, WorkingSheetDialog } from "../../components/SettlementPanel";
@@ -60,9 +61,7 @@ const STAGE_TAT = {
 };
 
 const TABS = [
-  { key: "overview", label: "Overview" },
-  { key: "policy", label: "Policy & vehicle" },
-  { key: "loss", label: "Loss & survey" },
+  { key: "details", label: "Claim details" },
   { key: "docs", label: "Documents" },
   { key: "queries", label: "Queries" },
   { key: "reserve", label: "Reserve & payments" },
@@ -387,7 +386,7 @@ export default function ODClaim360() {
   const [params] = useSearchParams();
   const editMode = params.get("mode") === "edit";
 
-  const [tab, setTab] = useState("overview");
+  const [tab, setTab] = useState("details");
   const [viewStage, setViewStage] = useState(null); // index of a completed lifecycle stage being viewed, or null
   const [toast, setToast] = useState("");
   const [modal, setModal] = useState(null); // "note" | "docs"
@@ -884,16 +883,16 @@ export default function ODClaim360() {
               ))}
             </div>
 
-            {/* ===== Overview ===== */}
-            {tab === "overview" && (
-              <div className="grid grid-cols-[minmax(0,1fr)] gap-2 p-2 xl:grid-cols-2">
+            {/* ===== Claim details – the whole claim, section by section ===== */}
+            {tab === "details" && (
+              <div className="flex flex-col gap-3 p-3">
                 {variance?.alert && (
-                  <div className="xl:col-span-2">
+                  <div>
                     <VarianceBanner v={variance} reserve={c.reserve} pending={reservePending} canRevise={editMode} onRevise={() => setWorkDialog("reserve")} />
                   </div>
                 )}
                 {settle && (
-                  <div className="xl:col-span-2">
+                  <div>
                     <SettlementPanel
                       s={settle}
                       canAct={editMode && active}
@@ -909,209 +908,7 @@ export default function ODClaim360() {
                     />
                   </div>
                 )}
-                <Card title="Loss summary">
-                  <Facts
-                    cols="grid-cols-2"
-                    items={[
-                      ["Date / time", `${dt(c.loss.date)} · ${c.loss.time}`],
-                      ["Place", c.loss.place],
-                      ["Cause", c.loss.cause],
-                      ["Police", c.loss.policeReport],
-                      ["Intimated via", c.loss.intimationChannel],
-                      ["Intimation delay", `${c.loss.intimationDelayDays} day(s)`],
-                    ]}
-                  />
-                </Card>
-                <Card title="Assessment summary">
-                  {c.survey.assessed == null ? (
-                    <p className="px-3 py-3 text-[12.5px] text-slate-500">
-                      {c.survey.estimate ? `Garage estimate ${inr(c.survey.estimate)} received. ` : ""}Assessment not done yet.
-                    </p>
-                  ) : (
-                    <table className="w-full text-[12.5px]">
-                      <tbody>
-                        {[
-                          ["Garage estimate", c.survey.estimate],
-                          ["Assessed loss", c.survey.assessed],
-                          [`Less depreciation${c.survey.zeroDep ? " (zero dep)" : ""}`, -c.survey.depreciation],
-                          ["Less salvage", -c.survey.salvage],
-                          ["Less deductible (compulsory + voluntary)", -c.survey.deductible],
-                        ].map(([k, v]) => (
-                          <tr key={k} className="border-b border-slate-50">
-                            <td className="px-3 py-1 text-slate-600">{k}</td>
-                            <td className="px-3 py-1 text-right tabular-nums text-slate-800">{v == null ? "–" : v === 0 ? "Nil" : v < 0 ? `– ${inr(-v)}` : inr(v)}</td>
-                          </tr>
-                        ))}
-                        <tr className="bg-slate-50 font-semibold">
-                          <td className="px-3 py-1.5 text-slate-800">Net liability (approx.)</td>
-                          <td className="px-3 py-1.5 text-right tabular-nums text-slate-900">{inr(c.survey.netLiability)}</td>
-                        </tr>
-                      </tbody>
-                    </table>
-                  )}
-                </Card>
-                <Card
-                  title="Pending documents"
-                  action={
-                    <button type="button" onClick={() => setTab("docs")} className="text-[12px] font-medium text-teal-700 hover:underline">
-                      All documents
-                    </button>
-                  }
-                >
-                  {toVerify.length > 0 && (
-                    <p className="border-b border-slate-50 px-3 py-1.5 text-[12px] text-sky-800">
-                      {toVerify.length} received – to verify:{" "}
-                      {toVerify.map((d) => d.name).join(", ")}
-                    </p>
-                  )}
-                  {pendingDocs.length === 0 ? (
-                    <p className="flex items-center gap-1.5 px-3 py-3 text-[12.5px] text-emerald-700">
-                      <CheckCircle2 className="h-4 w-4" aria-hidden="true" /> Nothing pending right now.
-                    </p>
-                  ) : (
-                    <ul className="divide-y divide-slate-50">
-                      {pendingDocs.map((d) => (
-                        <li key={d.name} className="flex items-center justify-between gap-2 px-3 py-1.5 text-[12.5px]">
-                          <span className="text-slate-800">{d.name}</span>
-                          <span className="text-[12px] text-slate-500">
-                            {d.status === "Rejected" ? `Rejected – ${d.rejectReason}` : `Requested ${dt(d.requestedOn)} · ${d.reminders || 0} reminder(s)`}
-                          </span>
-                        </li>
-                      ))}
-                    </ul>
-                  )}
-                </Card>
-                <Card
-                  title="Recent activity"
-                  action={
-                    <button type="button" onClick={() => setTab("timeline")} className="text-[12px] font-medium text-teal-700 hover:underline">
-                      Full timeline
-                    </button>
-                  }
-                >
-                  <ul className="divide-y divide-slate-50">
-                    {timeline.slice(0, 4).map((e, i) => (
-                      <li key={i} className="px-3 py-1.5 text-[12px]">
-                        <div className="flex justify-between gap-2">
-                          <span className="font-semibold text-slate-800">{e.event}</span>
-                          <span className="flex-none text-[12px] text-slate-500">
-                            {dt(e.date)} {e.time}
-                          </span>
-                        </div>
-                        <div className="truncate text-[12px] text-slate-600" title={e.detail}>
-                          {e.detail}
-                        </div>
-                      </li>
-                    ))}
-                  </ul>
-                </Card>
-              </div>
-            )}
-
-            {/* ===== Policy & vehicle ===== */}
-            {tab === "policy" && (
-              <div className="flex flex-col gap-2 p-2">
-                <Card title="Policy">
-                  <Facts
-                    items={[
-                      ["Policy no", c.policy.policyNo, { mono: true }],
-                      ["Product", c.policy.product],
-                      ["Status", c.policy.status],
-                      ["Period", `${dt(c.policy.periodFrom)} – ${dt(c.policy.periodTo)}`],
-                      ["Premium realised", c.policy.premiumRealised],
-                      ["Channel", c.policy.channel],
-                      ["IDV", inr(c.policy.idv), { strong: true }],
-                      ["NCB", c.policy.ncb],
-                      ["Deductibles", `Compulsory ${inr(c.policy.compulsoryDeductible)} · Voluntary ${inr(c.policy.voluntaryDeductible)}`],
-                      ["Add-on covers", c.policy.addOns.join(", ")],
-                      ["Financier (hypothecation)", c.policy.financier ?? "None"],
-                      ["Previous claims on vehicle", c.policy.previousClaims],
-                    ]}
-                  />
-                </Card>
-                <Card title="Vehicle">
-                  <Facts
-                    items={[
-                      ["Registration no", c.vehicle.regNo, { mono: true }],
-                      ["Make / model", c.vehicle.makeModel],
-                      ["Year of manufacture", c.vehicle.yearOfMfg],
-                      ["Fuel · cc", `${c.vehicle.fuel} · ${c.vehicle.cc} cc`],
-                      ["Chassis no", c.vehicle.chassis, { mono: true }],
-                      ["Engine no", c.vehicle.engine, { mono: true }],
-                      ["Usage", c.vehicle.usage],
-                      ["Odometer", `${c.vehicle.odometer.toLocaleString("en-IN")} km`],
-                    ]}
-                  />
-                </Card>
-                <Card title="Driver at time of loss">
-                  {c.driver ? (
-                    <Facts
-                      items={[
-                        ["Name", c.driver.name],
-                        ["DL no", c.driver.dlNo, { mono: true }],
-                        ["DL class", c.driver.dlClass],
-                        ["Valid till", dt(c.driver.dlValidTill)],
-                      ]}
-                    />
-                  ) : (
-                    <p className="px-3 py-3 text-[12.5px] text-slate-500">Not applicable – vehicle was parked / not being driven.</p>
-                  )}
-                </Card>
-              </div>
-            )}
-
-            {/* ===== Loss & survey ===== */}
-            {tab === "loss" && (
-              <div className="flex flex-col gap-2 p-2">
-                <Card title="Loss details">
-                  <Facts
-                    items={[
-                      ["Loss date / time", `${dt(c.loss.date)} · ${c.loss.time}`],
-                      ["Place of loss", c.loss.place],
-                      ["Loss type", c.lossType],
-                      ["Cause / description", c.loss.cause],
-                      ["Third party involved", c.loss.tpInvolved ? "Yes – TP claim intimation passed to TP system" : "No"],
-                      ["Police", c.loss.policeReport],
-                      ["Vehicle location", c.loss.vehicleLocation],
-                      ["Intimated on / via", `${dt(c.loss.intimatedOn)} · ${c.loss.intimationChannel}`],
-                      c.loss.catEvent && ["Catastrophe event", c.loss.catEvent],
-                    ]}
-                  />
-                </Card>
-                <Card title="Survey">
-                  {c.survey.surveyor ? (
-                    <Facts
-                      items={[
-                        ["Surveyor", `${c.survey.surveyor.name} · ${c.survey.surveyor.type}`],
-                        ["Licence no", c.survey.surveyor.licence, { mono: true }],
-                        ["Survey type", c.survey.surveyType],
-                        ["Appointed on", dt(c.survey.appointedOn)],
-                        c.survey.visitDate && ["Visit date / place", `${dt(c.survey.visitDate)} · ${c.survey.location}`],
-                        c.survey.reportDue && ["Report due", `${dt(c.survey.reportDue)} (15 days from appointment)`],
-                        ["Survey done on", c.survey.surveyDoneOn ? dt(c.survey.surveyDoneOn) : "Pending"],
-                        ["Garage", c.garage ? `${c.garage.name} (${c.garage.type})` : "–"],
-                      ]}
-                    />
-                  ) : (
-                    <p className="px-3 py-3 text-[12.5px] text-slate-500">
-                      {c.stage === "NBNR" ? "Survey starts after the claim is registered." : "Surveyor not appointed yet."}
-                    </p>
-                  )}
-                </Card>
-                {c.survey.assessed != null && (
-                  <Card title="Assessment">
-                    <Facts
-                      items={[
-                        ["Garage estimate", inr(c.survey.estimate)],
-                        ["Assessed loss", inr(c.survey.assessed), { strong: true }],
-                        ["Depreciation", c.survey.zeroDep ? "Nil – zero depreciation add-on" : inr(c.survey.depreciation)],
-                        ["Salvage value", inr(c.survey.salvage)],
-                        ["Deductible", inr(c.survey.deductible)],
-                        ["Net liability (approx.)", inr(c.survey.netLiability), { strong: true }],
-                      ]}
-                    />
-                  </Card>
-                )}
+                <ClaimDetailSections c={c} editMode={editMode} onSoon={notBuilt} />
               </div>
             )}
 
