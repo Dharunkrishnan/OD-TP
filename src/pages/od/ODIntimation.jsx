@@ -30,11 +30,14 @@ import {
   Lock,
   History,
   ClipboardList,
+  IdCard,
 } from "lucide-react";
 import ODShell from "../../components/layout/ODShell";
 import { PanelButtons, PinnedPanels } from "../../components/CardPanels";
 import { formatINR } from "../../auth";
 import LocationPicker from "../../components/LocationPicker";
+import DocAutoFill from "../../components/DocAutoFill";
+import { readDL, readRC } from "../../data/docReader";
 import { claimSlug } from "../../data/odClaimDetail";
 import { WORK_QUEUE, TAT_STAGES } from "../../data/odHandlerMock";
 import {
@@ -104,6 +107,12 @@ const EMPTY = {
   driverName: "",
   dlNo: "",
   dlValidTill: "",
+  driverDob: "",
+  dlClass: "",
+  // documents read on Incident Details (DL / RC) and which fields they filled
+  dlRead: null,
+  rcRead: null,
+  autoFill: {},
   // step 4
   vehicleLocation: "garage",
   garage: "",
@@ -185,12 +194,16 @@ function SectionHead({ n, title, divider }) {
   );
 }
 
-function Field({ label, required, error, hint, children, className = "" }) {
+function Field({ label, required, error, hint, children, className = "", auto }) {
   return (
     <label className={`flex min-w-0 flex-col gap-1 ${className}`}>
-      <span className="text-[12px] font-medium text-slate-700">
-        {label}
-        {required && <span className="text-red-600"> *</span>}
+      <span className="flex items-center gap-1.5 text-[12px] font-medium text-slate-700">
+        <span>
+          {label}
+          {required && <span className="text-red-600"> *</span>}
+        </span>
+        {/* filled from an uploaded document (DL / RC) – goes away once the user edits the field */}
+        {auto && <span className="rounded bg-teal-50 px-1 text-[10.5px] font-semibold leading-4 text-teal-800 ring-1 ring-teal-200">From {auto}</span>}
       </span>
       {children}
       {error ? (
@@ -412,6 +425,49 @@ export default function ODIntimation() {
       v = now;
     }
     set({ lossTime: v });
+  }
+  // a field typed by the user is no longer "from DL / RC"
+  function setTyped(key, value) {
+    setF((x) => {
+      const autoFill = { ...x.autoFill };
+      delete autoFill[key];
+      return { ...x, [key]: value, autoFill };
+    });
+  }
+  // DL / RC uploaded on Incident Details → read (OCR) → fill the fields that need it
+  function onDocRead(kind, fileName) {
+    const tag = kind === "dl" ? "DL" : "RC";
+    const files = [...f.files.filter((n) => !n.startsWith(`${tag} – `)), `${tag} – ${fileName}`];
+    if (kind === "dl") {
+      const d = readDL(f);
+      const self = !!f.policy && d.holder === f.policy.insured;
+      const autoFill = { ...f.autoFill, dlNo: "DL", dlValidTill: "DL", driverDob: "DL", dlClass: "DL" };
+      if (self) delete autoFill.driverName;
+      else autoFill.driverName = "DL";
+      set({
+        dlRead: { ...d, fileName },
+        dlNo: d.dlNo,
+        dlValidTill: d.validTill,
+        driverDob: d.dob,
+        dlClass: d.dlClass,
+        driverSameAsInsured: self,
+        driverName: self ? f.driverName : d.holder,
+        autoFill,
+        files,
+      });
+      flash(self ? "Driving licence read – driver details filled." : `Driving licence is in the name of ${d.holder} – driver details filled.`);
+    } else {
+      const r = readRC(f);
+      const patch = { rcRead: { ...r, fileName }, files };
+      // no policy found → the RC gives the vehicle details asked for on step 1
+      if (f.noPolicy) {
+        patch.manualRegNo = f.manualRegNo || r.regNo;
+        patch.manualVehicle = f.manualVehicle || r.vehicle;
+        patch.autoFill = { ...f.autoFill, ...(f.manualRegNo ? {} : { manualRegNo: "RC" }), ...(f.manualVehicle ? {} : { manualVehicle: "RC" }) };
+      }
+      set(patch);
+      flash(r.checks.some((c) => c.ok === false) ? "RC read – some details do not match the policy." : "RC read – vehicle details checked.");
+    }
   }
   const notBuilt = (what) => flash(`${what} – this page comes in a later build step.`);
 
@@ -1128,11 +1184,11 @@ export default function ODIntimation() {
                   {f.noPolicy && (
                     <Card title="Vehicle (policy not found)" action={<button type="button" onClick={() => set({ noPolicy: false })} className="text-[12px] font-medium text-teal-700 hover:underline">Search again</button>}>
                       <div className="grid grid-cols-1 gap-3 p-3 sm:grid-cols-2">
-                        <Field label="Vehicle registration no" required error={err.manualRegNo}>
-                          <input value={f.manualRegNo} onChange={(e) => set({ manualRegNo: e.target.value.toUpperCase() })} className={inputCls(err.manualRegNo)} placeholder="TN 09 AB 1234" />
+                        <Field label="Vehicle registration no" required error={err.manualRegNo} auto={f.autoFill.manualRegNo}>
+                          <input value={f.manualRegNo} onChange={(e) => setTyped("manualRegNo", e.target.value.toUpperCase())} className={inputCls(err.manualRegNo)} placeholder="TN 09 AB 1234" />
                         </Field>
-                        <Field label="Make / model">
-                          <input value={f.manualVehicle} onChange={(e) => set({ manualVehicle: e.target.value })} className={inputCls()} placeholder="e.g. Maruti Swift VXi" />
+                        <Field label="Make / model" auto={f.autoFill.manualVehicle}>
+                          <input value={f.manualVehicle} onChange={(e) => setTyped("manualVehicle", e.target.value)} className={inputCls()} placeholder="e.g. Maruti Swift VXi" />
                         </Field>
                       </div>
                     </Card>
@@ -1373,30 +1429,108 @@ export default function ODIntimation() {
                       )}
                     </div>
                   )}
+                  {/* Upload DL / RC → read (OCR) → fills the driver details and checks the vehicle against the policy */}
+                  <div className="flex flex-col gap-2 border-t border-slate-100 pt-2.5">
+                    <div className="flex flex-wrap items-baseline justify-between gap-x-3">
+                      <p className="text-[12.5px] font-semibold text-[#0B1F3A]">
+                        Upload to auto-fill <span className="font-normal text-slate-500">– optional, fields below fill from the document</span>
+                      </p>
+                      <span className="text-[11.5px] text-slate-500">Photo or PDF · read details can still be edited</span>
+                    </div>
+                    <DocAutoFill
+                      onRead={onDocRead}
+                      items={[
+                        ...(driverNeeded(f)
+                          ? [{
+                              key: "dl",
+                              title: "Driving licence",
+                              icon: IdCard,
+                              hint: "Fills driver name, DL no, validity, date of birth and class",
+                              done: f.dlRead && { fileName: f.dlRead.fileName, summary: `${f.dlRead.holder} · ${f.dlRead.dlNo} · valid till ${dt(f.dlRead.validTill)}` },
+                            }]
+                          : []),
+                        {
+                          key: "rc",
+                          title: "RC",
+                          icon: FileText,
+                          hint: f.noPolicy ? "Fills vehicle no and make / model, reads chassis and engine no" : "Checks reg no, chassis, engine and owner against the policy",
+                          done: f.rcRead && { fileName: f.rcRead.fileName, summary: `${f.rcRead.regNo} · ${f.rcRead.vehicle} · owner ${f.rcRead.owner}` },
+                        },
+                      ]}
+                    />
+                    {f.rcRead && (
+                      <div className="rounded-md border border-slate-200">
+                        <p className="border-b border-slate-100 bg-slate-50 px-3 py-1 text-[12px] font-semibold text-slate-700">
+                          Read from RC <span className="font-normal text-slate-500">· {f.rcRead.confidence}% confidence</span>
+                        </p>
+                        <dl className="grid grid-cols-2 gap-x-4 gap-y-1.5 px-3 py-2 text-[12px] sm:grid-cols-4">
+                          {[
+                            ["Registration no", f.rcRead.regNo],
+                            ["Owner", f.rcRead.owner],
+                            ["Make / model", f.rcRead.vehicle],
+                            ["Fuel", f.rcRead.fuel],
+                            ["Chassis no", f.rcRead.chassis],
+                            ["Engine no", f.rcRead.engine],
+                            ["Registered on", dt(f.rcRead.regDate)],
+                            ["Hypothecation", f.rcRead.hypothecation],
+                          ].map(([k, v]) => (
+                            <div key={k} className="min-w-0">
+                              <dt className="text-[11px] text-slate-500">{k}</dt>
+                              <dd className="truncate font-medium text-slate-800" title={v}>
+                                {v}
+                              </dd>
+                            </div>
+                          ))}
+                        </dl>
+                        <ul className="flex flex-wrap gap-x-4 gap-y-1 border-t border-slate-100 px-3 py-1.5 text-[12px]">
+                          {f.rcRead.checks.map((c) => (
+                            <li key={c.label} className={`flex items-center gap-1 ${c.ok === false ? "text-red-700" : c.ok ? "text-emerald-700" : "text-slate-600"}`}>
+                              {c.ok === false ? <XCircle className="h-3.5 w-3.5" aria-hidden="true" /> : c.ok ? <CheckCircle2 className="h-3.5 w-3.5" aria-hidden="true" /> : <Info className="h-3.5 w-3.5" aria-hidden="true" />}
+                              {c.label}
+                              {c.ok === false && <span className="sr-only"> – does not match</span>}
+                            </li>
+                          ))}
+                        </ul>
+                      </div>
+                    )}
+                  </div>
+
                   {driverNeeded(f) ? (
                     <div className="flex flex-col gap-2 border-t border-slate-100 pt-2.5">
                       <div className="flex items-center justify-between">
                         <p className="text-[12.5px] font-semibold text-[#0B1F3A]">Driver at the time of loss</p>
                         <label className="flex items-center gap-2 text-[12.5px] text-slate-700">
-                          <input type="checkbox" checked={f.driverSameAsInsured} onChange={(e) => set({ driverSameAsInsured: e.target.checked })} className="h-4 w-4 accent-teal-700" />
+                          <input type="checkbox" checked={f.driverSameAsInsured} onChange={(e) => setF((x) => ({ ...x, driverSameAsInsured: e.target.checked, autoFill: { ...x.autoFill, driverName: undefined } }))} className="h-4 w-4 accent-teal-700" />
                           Driver is the insured
                         </label>
                       </div>
                       <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
-                        <Field label="Driver name" required={!f.driverSameAsInsured} error={err.driverName}>
-                          <input value={f.driverSameAsInsured ? f.policy?.insured || "" : f.driverName} disabled={f.driverSameAsInsured} onChange={(e) => set({ driverName: e.target.value })} className={inputCls(err.driverName)} />
+                        <Field label="Driver name" required={!f.driverSameAsInsured} error={err.driverName} auto={!f.driverSameAsInsured && f.autoFill.driverName}>
+                          <input value={f.driverSameAsInsured ? f.policy?.insured || "" : f.driverName} disabled={f.driverSameAsInsured} onChange={(e) => setTyped("driverName", e.target.value)} className={inputCls(err.driverName)} />
                         </Field>
-                        <Field label="Driving licence no" required error={err.dlNo}>
-                          <input value={f.dlNo} onChange={(e) => set({ dlNo: e.target.value.toUpperCase() })} className={inputCls(err.dlNo)} placeholder="TN09 20150012345" />
+                        <Field label="Driving licence no" required error={err.dlNo} auto={f.autoFill.dlNo}>
+                          <input value={f.dlNo} onChange={(e) => setTyped("dlNo", e.target.value.toUpperCase())} className={inputCls(err.dlNo)} placeholder="TN09 20150012345" />
                         </Field>
-                        <Field
-                          label="DL valid till"
-                          required
-                          error={err.dlValidTill}
-                        >
-                          <input type="date" value={f.dlValidTill} onChange={(e) => set({ dlValidTill: e.target.value })} className={inputCls(err.dlValidTill)} />
+                        <Field label="DL valid till (non-transport)" required error={err.dlValidTill} auto={f.autoFill.dlValidTill}>
+                          <input type="date" value={f.dlValidTill} onChange={(e) => setTyped("dlValidTill", e.target.value)} className={inputCls(err.dlValidTill)} />
+                        </Field>
+                        <Field label="Driver date of birth" error={err.driverDob} auto={f.autoFill.driverDob}>
+                          <input type="date" max={TODAY_ISO} value={f.driverDob} onChange={(e) => setTyped("driverDob", e.target.value)} className={inputCls(err.driverDob)} />
+                        </Field>
+                        <Field label="Class of vehicle (on DL)" auto={f.autoFill.dlClass} hint="A car needs LMV">
+                          <input value={f.dlClass} onChange={(e) => setTyped("dlClass", e.target.value.toUpperCase())} className={inputCls()} placeholder="e.g. LMV, MCWG" />
                         </Field>
                       </div>
+                      {f.dlRead && !f.driverSameAsInsured && f.dlRead.holder === f.driverName && (
+                        <Banner kind="info" title={`Driver was ${f.dlRead.holder} (${f.dlRead.relation.toLowerCase()}), not the insured`}>
+                          Taken from the uploaded licence. Untick only if this is wrong – a driver other than the insured is allowed if they hold a valid licence.
+                        </Banner>
+                      )}
+                      {f.dlClass && !/\bLMV\b/.test(f.dlClass) && (
+                        <Banner kind="warn" title="Licence class does not cover a private car (LMV)">
+                          The claim can be intimated, but it will be flagged for admissibility review.
+                        </Banner>
+                      )}
                       {f.dlValidTill && f.lossDate && f.dlValidTill < f.lossDate && (
                         <Banner kind="warn" title="Driving licence had expired on the loss date">
                           The claim can be intimated, but it will be flagged for admissibility review (invalid DL is a policy exclusion).
@@ -1535,7 +1669,8 @@ export default function ODIntimation() {
                         ["GPS location", f.lossLat ? `${f.lossLat.toFixed(5)}, ${f.lossLng.toFixed(5)} (pinned on map)` : "Not pinned – typed manually"],
                         ["Description", f.description],
                         ["Third party / injury / police", `${f.tpInvolved === "yes" ? `TP ${f.tpVehicleNo} · ${f.injury === "yes" ? "Injury" : "No injury"}` : "No TP"} · ${f.firNo ? `FIR ${f.firNo}` : "No FIR"}`],
-                        driverNeeded(f) && ["Driver", `${f.driverSameAsInsured ? f.policy?.insured : f.driverName} · DL ${f.dlNo} valid till ${dt(f.dlValidTill)}`],
+                        driverNeeded(f) && ["Driver", `${f.driverSameAsInsured ? f.policy?.insured : f.driverName} · DL ${f.dlNo} valid till ${dt(f.dlValidTill)}${f.dlClass ? ` · ${f.dlClass}` : ""}${f.driverDob ? ` · born ${dt(f.driverDob)}` : ""}`],
+                        (f.dlRead || f.rcRead) && ["Documents read", [f.dlRead && "Driving licence", f.rcRead && `RC${f.rcRead.checks.some((c) => c.ok === false) ? " (mismatch with policy)" : f.policy ? " (matches policy)" : ""}`].filter(Boolean).join(" · ")],
                         f.catEvent && ["CAT event", f.catEvent],
                         f.lateReason && ["Late intimation reason", f.lateReason],
                       ].filter(Boolean),
