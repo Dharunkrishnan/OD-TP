@@ -76,6 +76,14 @@ export default function DocViewer({ name, title, details, onClose }) {
                 ))}
               </dl>
               {details.note && <p className="px-3 py-2 text-[11.5px] text-slate-500">{details.note}</p>}
+              {details.raw != null && (
+                <details className="border-t border-slate-100 px-3 py-2 text-[12px]">
+                  <summary className="cursor-pointer font-medium text-teal-800">Text read from the document</summary>
+                  <pre className="mt-1.5 max-h-48 overflow-auto whitespace-pre-wrap rounded bg-slate-50 p-2 font-mono text-[11px] leading-4 text-slate-700">
+                    {details.raw.trim() || "(no text found)"}
+                  </pre>
+                </details>
+              )}
             </div>
           )}
         </div>

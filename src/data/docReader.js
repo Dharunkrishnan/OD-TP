@@ -1,81 +1,269 @@
 // src/data/docReader.js
-// Demo "document reading" (OCR / document intelligence) for Claim Intimation:
-//   readDL – driving licence → holder, DL no, DOB, non-transport validity, class of vehicle, RTO
-//   readRC – registration certificate → reg no, owner, make / model, chassis, engine, reg date,
-//            validity, hypothecation – and checks it against the policy
-// In production this calls an OCR / document-AI service (and Sarathi / VAHAN for verification);
-// here the values are made up deterministically from the vehicle, so the same vehicle always reads
-// the same way. All names and numbers are fictional.
+// Reads an uploaded Driving licence / RC and pulls out the fields Claim Intimation needs.
+//   1. extractText(file)  – a PDF with a text layer (e.g. DigiLocker) is read directly; a photo
+//                           or scanned PDF goes through OCR (Tesseract, runs in the browser).
+//   2. parseDL(text)      – holder, DL no, DOB, validity (non-transport), class of vehicle, issue date
+//      parseRC(text, pol) – reg no, owner, maker / model, fuel, chassis, engine, reg date, validity,
+//                           financier – and checks them against the policy
+// Only what is actually found on the document is returned; anything else is listed as missing.
+// The OCR engine and the English language data (~3 MB, cached by the browser) load from the
+// jsDelivr CDN the first time a document is read. In production this is replaced by a document-AI
+// service plus Sarathi (DL) / VAHAN (RC) verification.
 
-function seedOf(str) {
-  let h = 2166136261;
-  for (let i = 0; i < str.length; i++) h = Math.imul(h ^ str.charCodeAt(i), 16777619);
-  return h >>> 0;
+/* ------------------------------------------------------------------ */
+/* 1. Text extraction                                                  */
+/* ------------------------------------------------------------------ */
+let workerPromise = null;
+let progressCb = null;
+
+async function ocrWorker() {
+  if (!workerPromise) {
+    workerPromise = import("tesseract.js").then(({ createWorker }) =>
+      createWorker("eng", 1, {
+        logger: (m) => {
+          if (!progressCb) return;
+          if (m.status === "recognizing text") progressCb(`Reading text… ${Math.round(m.progress * 100)}%`);
+          else if (/loading|initializ/.test(m.status)) progressCb("Preparing the reader (first time only)…");
+        },
+      })
+    );
+    workerPromise.catch(() => (workerPromise = null)); // let a later upload retry
+  }
+  return workerPromise;
 }
-const pad = (n, l = 2) => String(n).padStart(l, "0");
-const norm = (s) => String(s || "").replace(/[\s-]/g, "").toUpperCase();
 
-function dlValidYear(h, issueYear) {
-  const now = new Date().getFullYear();
-  if ((h >>> 17) % 8 === 0) return now - 1; // lapsed
-  const due = issueYear + 20;
-  return due > now ? due : now + 1 + ((h >>> 15) % 8); // renewed
+async function ocr(image) {
+  const worker = await ocrWorker();
+  const { data } = await worker.recognize(image);
+  return { text: data.text || "", confidence: Math.round(data.confidence || 0) };
 }
 
-/** Driving licence. One vehicle in four was being driven by someone other than the insured. */
-export function readDL({ policy, manualRegNo }) {
-  const key = policy?.regNo || manualRegNo || "walk-in";
-  const h = seedOf("dl|" + key);
-  const other = h % 4 === 0;
-  const holder = other ? ["S. Arun", "K. Ravi", "M. Latha", "P. Vignesh"][(h >>> 3) % 4] : policy?.insured || "R. Senthil";
-  const issueYear = 2006 + (h % 14);
-  const birthYear = 1968 + ((h >>> 5) % 30);
-  const mm = pad(1 + ((h >>> 9) % 12));
-  const dd = pad(1 + ((h >>> 13) % 28));
+async function pdfText(file, onProgress) {
+  const pdfjs = await import("pdfjs-dist");
+  const { default: workerUrl } = await import("pdfjs-dist/build/pdf.worker.min.mjs?url");
+  pdfjs.GlobalWorkerOptions.workerSrc = workerUrl;
+  const doc = await pdfjs.getDocument({ data: await file.arrayBuffer() }).promise;
+  // text layer first (DigiLocker / e-RC PDFs have one) – exact, no OCR needed
+  let text = "";
+  for (let i = 1; i <= Math.min(doc.numPages, 2); i++) {
+    const page = await doc.getPage(i);
+    const tc = await page.getTextContent();
+    let lastY = null;
+    for (const it of tc.items) {
+      const y = Math.round(it.transform[5]);
+      text += lastY !== null && Math.abs(y - lastY) > 2 ? "\n" : " ";
+      text += it.str;
+      lastY = y;
+    }
+    text += "\n";
+  }
+  if (text.replace(/\s/g, "").length > 40) return { text, confidence: 100, source: "PDF text" };
+  // scanned PDF → render page 1 and OCR it
+  onProgress?.("Scanned PDF – converting to image…");
+  const page = await doc.getPage(1);
+  const viewport = page.getViewport({ scale: 2.5 });
+  const canvas = document.createElement("canvas");
+  canvas.width = viewport.width;
+  canvas.height = viewport.height;
+  await page.render({ canvasContext: canvas.getContext("2d"), viewport }).promise;
+  return { ...(await ocr(canvas)), source: "OCR (scanned PDF)" };
+}
+
+/** { text, confidence (0–100), source } */
+export async function extractText(file, onProgress) {
+  progressCb = onProgress || null;
+  try {
+    const isPdf = file.type === "application/pdf" || /\.pdf$/i.test(file.name);
+    if (isPdf) return await pdfText(file, onProgress);
+    if (!file.type.startsWith("image/") && !/\.(jpe?g|png|webp|bmp|gif|tiff?)$/i.test(file.name)) {
+      return { text: "", confidence: 0, source: "unsupported" };
+    }
+    onProgress?.("Preparing the reader…");
+    return { ...(await ocr(file)), source: "OCR" };
+  } finally {
+    progressCb = null;
+  }
+}
+
+/* ------------------------------------------------------------------ */
+/* 2. Parsing helpers                                                  */
+/* ------------------------------------------------------------------ */
+const MONTHS = { jan: 1, feb: 2, mar: 3, apr: 4, may: 5, jun: 6, jul: 7, aug: 8, sep: 9, sept: 9, oct: 10, nov: 11, dec: 12 };
+const pad = (n) => String(n).padStart(2, "0");
+const DATE_RE = /(\d{1,2})[-/.\s](\d{1,2}|[A-Za-z]{3,4})[-/.\s](\d{4})/g;
+
+/** every date in a string, as ISO yyyy-mm-dd (dd-mm-yyyy, dd/mm/yyyy, dd.mm.yyyy, 19-Oct-1995) */
+function datesIn(s) {
+  const out = [];
+  for (const m of String(s).matchAll(DATE_RE)) {
+    const d = +m[1];
+    const mo = /\d/.test(m[2]) ? +m[2] : MONTHS[m[2].toLowerCase()];
+    const y = +m[3];
+    if (d >= 1 && d <= 31 && mo >= 1 && mo <= 12 && y > 1930 && y < 2100) out.push(`${y}-${pad(mo)}-${pad(d)}`);
+  }
+  return out;
+}
+const lines = (text) =>
+  String(text)
+    .split(/\r?\n/)
+    .map((l) => l.replace(/[|_~`]+/g, " ").replace(/\s+/g, " ").trim())
+    .filter(Boolean);
+
+/** value on the line of a label (after ":" / "-"), or on the next line when the label stands alone */
+function valueAfter(ls, labelRe, { skip } = {}) {
+  for (let i = 0; i < ls.length; i++) {
+    const m = ls[i].match(labelRe);
+    if (!m || (skip && skip.test(ls[i]))) continue;
+    const rest = ls[i].slice(m.index + m[0].length).replace(/^[\s:.\-–=]+/, "").trim();
+    if (rest) return rest;
+    if (ls[i + 1]) return ls[i + 1];
+  }
+  return "";
+}
+function dateAfter(ls, labelRe) {
+  for (let i = 0; i < ls.length; i++) {
+    const m = ls[i].match(labelRe);
+    if (!m) continue;
+    const d = datesIn(ls[i].slice(m.index)) [0] || datesIn(ls[i + 1] || "")[0];
+    if (d) return d;
+  }
+  return "";
+}
+const cleanName = (s) =>
+  String(s)
+    .replace(/[^A-Za-z .]/g, " ") // OCR noise: apostrophes, digits, symbols
+    .replace(/\s+/g, " ")
+    .trim()
+    .replace(/\b([A-Za-z])\b(?!\.)/g, "$1.") // "R ARUN" → "R. ARUN"
+    .replace(/\.\./g, ".")
+    .toUpperCase();
+const tokens = (s) => String(s).toUpperCase().replace(/[^A-Z ]/g, " ").split(/\s+/).filter((t) => t.length > 1);
+/** same person? – every 2+ letter word of the shorter name appears in the other ("R. Arun Kumar" = "ARUN KUMAR R") */
+export function sameName(a, b) {
+  const [x, y] = [tokens(a), tokens(b)].sort((p, q) => p.length - q.length);
+  return x.length > 0 && x.every((t) => y.includes(t));
+}
+const compact = (s) => String(s || "").replace(/[\s-]/g, "").toUpperCase();
+
+/* ------------------------------------------------------------------ */
+/* 3. Driving licence                                                  */
+/* ------------------------------------------------------------------ */
+// DL no: state (2 letters) + RTO (2 digits) + year (4) + 7 digits, e.g. TN09 20150012345 / KA-01-2014-0012345
+const DL_NO_RE = /\b([A-Z]{2})[\s-]?(\d{2})[\s-]?((?:19|20)\d{2})[\s-]?(\d{7})\b/;
+const COV_RE = /\b(LMV(?:-NT|-TR)?|MCWG|MCWOG|MCW|LMV-TR|HMV|HGMV|HPMV|TRANS|TRCTOR|E-RIKSHAW|INVCRG|LDRXCV|ADPVEH)\b/g;
+
+export function parseDL(text) {
+  const raw = String(text || "");
+  const ls = lines(raw);
+  const up = raw.toUpperCase();
+  const out = {};
+
+  const dl = up.replace(/[O](?=\d)/g, "0").match(DL_NO_RE);
+  if (dl) out.dlNo = `${dl[1]}${dl[2]} ${dl[3]}${dl[4]}`;
+
+  const name = valueAfter(ls, /\b(holder'?s?\s+name|name)\b/i, { skip: /father|husband|s\/o|d\/o|w\/o|son of|daughter|wife|s\/d\/w/i });
+  if (name && tokens(name).length) out.holder = cleanName(name.split(/\s{2,}|\b(?:s\/o|d\/o|w\/o|dob|date)\b/i)[0]);
+
+  out.dob = dateAfter(ls, /\b(d\.?\s?o\.?\s?b|date of birth|birth)\b/i) || undefined;
+  out.issueDate = dateAfter(ls, /\b(d\.?\s?o\.?\s?i|date of issue|issue date|issued on|doi)\b/i) || undefined;
+  // non-transport validity first; "Valid Till" / "Validity" otherwise
+  out.validTill =
+    dateAfter(ls, /\b(non[\s-]?transport|validity\s*\(?\s*nt|\bnt\b)/i) ||
+    dateAfter(ls, /\b(valid\s*(till|upto|up to)|validity)\b/i) ||
+    undefined;
+
+  // no labels read (poor photo)? fall back to the dates themselves: oldest = DOB, latest = validity
+  const all = [...new Set(datesIn(raw))].sort();
+  if (!out.dob && all.length >= 2 && +all[0].slice(0, 4) < new Date().getFullYear() - 16) out.dob = all[0];
+  if (!out.validTill && all.length >= 2 && all[all.length - 1] !== out.dob) out.validTill = all[all.length - 1];
+
+  const cov = [...new Set((up.match(COV_RE) || []).map((c) => c.replace("LMV-NT", "LMV")))];
+  if (cov.length) out.dlClass = cov.join(", ");
+
+  const rto = valueAfter(ls, /\b(issuing authority|licensing authority)\b/i) || valueAfter(ls, /\b(rto|issued by)\b/i);
+  if (rto) out.rto = rto.slice(0, 40);
+
+  const FIELDS = { holder: "Name", dlNo: "DL no", dob: "Date of birth", validTill: "Valid till", dlClass: "Class of vehicle" };
   return {
-    holder,
-    relation: other ? ["Son", "Driver (employed)", "Spouse", "Friend"][(h >>> 3) % 4] : "Self",
-    dlNo: `TN${pad(1 + ((h >>> 2) % 22))} ${issueYear}${pad(h % 10000000, 7)}`,
-    dob: `${birthYear}-${mm}-${dd}`,
-    // non-transport licence: 20 years from issue, then renewed. Most demo licences are current;
-    // about one in eight has lapsed, to show the "DL expired on the loss date" warning.
-    validTill: `${dlValidYear(h, issueYear)}-${mm}-${dd}`,
-    dlClass: "LMV, MCWG",
-    rto: ["RTO Chennai (South)", "RTO Chennai (West)", "RTO Tambaram", "RTO Poonamallee"][(h >>> 7) % 4],
-    confidence: 94 + ((h >>> 11) % 6),
+    ...Object.fromEntries(Object.entries(out).filter(([, v]) => v)),
+    found: Object.keys(FIELDS).filter((k) => out[k]),
+    missing: Object.keys(FIELDS).filter((k) => !out[k]).map((k) => FIELDS[k]),
+    raw,
   };
 }
 
-/** Registration certificate, checked against the policy (when there is one). */
-export function readRC({ policy, manualRegNo, manualVehicle }) {
-  const key = policy?.regNo || manualRegNo || "walk-in";
-  const h = seedOf("rc|" + key);
-  const digits = (n) => pad(h % 10 ** n, n);
-  const regNo = policy?.regNo || (manualRegNo ? manualRegNo.toUpperCase() : `TN 09 AB ${digits(4)}`);
-  const vehicle = policy?.vehicle || manualVehicle || ["Maruti Swift VXi", "Hyundai i20 Asta", "Tata Nexon XZ+", "Honda City ZX"][h % 4];
-  const year = policy?.yearOfMfg || 2016 + (h % 8);
-  const regDate = `${year}-${pad(1 + ((h >>> 4) % 12))}-${pad(1 + ((h >>> 8) % 28))}`;
-  // policy chassis / engine are masked ("…XXXXX"); the RC shows them in full
-  const fill = (masked, fallback) => (masked ? masked.replace(/X+$/, (m) => digits(m.length)) : fallback);
-  const rc = {
-    regNo,
-    owner: policy?.insured || "R. Senthil",
-    vehicle,
-    fuel: /diesel/i.test(vehicle) ? "Diesel" : /cng/i.test(vehicle) ? "CNG" : "Petrol",
-    chassis: fill(policy?.chassis, `MA3E${digits(13)}`),
-    engine: fill(policy?.engine, `K12M${digits(6)}`),
-    regDate,
-    validTill: `${year + 15}-${regDate.slice(5)}`, // private car registration: 15 years
-    hypothecation: policy?.financier || "None",
-    confidence: 93 + ((h >>> 6) % 7),
-  };
+/* ------------------------------------------------------------------ */
+/* 4. Registration certificate                                         */
+/* ------------------------------------------------------------------ */
+// Reg no: TN 09 DX 4410, KA01AB1234, DL 3C AB 1234, 22 BH 1234 AA (BH series)
+const REG_RE = /\b([A-Z]{2})[\s-]?(\d{1,2}[A-Z]?)[\s-]?([A-Z]{0,3})[\s-]?(\d{3,4})\b/;
+const BH_RE = /\b(\d{2})[\s-]?BH[\s-]?(\d{4})[\s-]?([A-Z]{1,2})\b/;
+const VIN_RE = /\b([A-HJ-NPR-Z0-9]{17})\b/;
+
+export function parseRC(text, policy) {
+  const raw = String(text || "");
+  const ls = lines(raw);
+  const up = raw.toUpperCase();
+  const out = {};
+
+  const regLine = valueAfter(ls, /\b(regn?\.?\s*(no|number)|registration\s*(no|number)|vehicle\s*(no|number))\b/i);
+  const reg = (regLine.toUpperCase().match(REG_RE) || up.match(REG_RE));
+  const bh = up.match(BH_RE);
+  if (bh) out.regNo = `${bh[1]} BH ${bh[2]} ${bh[3]}`;
+  else if (reg) out.regNo = [reg[1], reg[2], reg[3], reg[4]].filter(Boolean).join(" ");
+
+  const owner = valueAfter(ls, /\b(owner'?s?\s*name|registered owner|owner)\b/i, { skip: /serial|sr\.?\s*no|no\.\s*of|number of/i });
+  if (owner && tokens(owner).length) out.owner = cleanName(owner.split(/\b(?:s\/o|d\/o|w\/o|son|address)\b/i)[0]);
+
+  const chassisLine = valueAfter(ls, /\b(chassis|ch\.?\s*no|vin)\b/i);
+  const vin = (chassisLine.toUpperCase().replace(/\s/g, "").match(/[A-Z0-9]{10,17}/) || up.match(VIN_RE) || [])[0];
+  if (vin) out.chassis = vin;
+  const engineLine = valueAfter(ls, /\b(engine|eng\.?|motor)\s*(no|number)?\b/i, { skip: /capacity|cubic|\bcc\b|type/i });
+  const eng = (engineLine.toUpperCase().replace(/\s/g, "").match(/[A-Z0-9]{5,15}/) || [])[0];
+  if (eng && eng !== out.chassis) out.engine = eng;
+
+  const maker = valueAfter(ls, /\b(maker'?s?\s*name|manufacturer|maker|make)\b/i);
+  const model = valueAfter(ls, /\b(model\s*name|model)\b/i, { skip: /maker/i });
+  const v = [maker, model].map((s) => s.replace(/\b(ltd|limited|pvt|private|india|co\.?)\b/gi, "").replace(/\s+/g, " ").trim()).filter(Boolean);
+  if (v.length)
+    out.vehicle = [...new Set(v)]
+      .join(" ")
+      .replace(/\bMOTORS?\b/gi, "")
+      .replace(/\(0\)/g, "(O)") // OCR reads the letter O in "(O)" as zero
+      .replace(/\s+/g, " ")
+      .trim()
+      .slice(0, 60);
+
+  const fuel = up.match(/\b(PETROL\s*\/?\s*CNG|PETROL|DIESEL|CNG|LPG|ELECTRIC|EV|HYBRID)\b/);
+  if (fuel) out.fuel = fuel[1].replace(/\s+/g, "").replace("PETROL/CNG", "Petrol / CNG").replace(/^(\w)(\w*)$/, (_, a, b) => a + b.toLowerCase());
+
+  out.regDate = dateAfter(ls, /\b(date of regn|regn\.?\s*date|registration date|date of registration|reg\.?\s*date)\b/i) || undefined;
+  out.validTill = dateAfter(ls, /\b(regn\.?\s*validity|valid\s*(till|upto|up to)|validity|fitness\s*(upto|valid))\b/i) || undefined;
+  const fin = valueAfter(ls, /\b(financier|hypothecat\w*|hp\s*with|lease)\b/i);
+  if (fin) out.hypothecation = fin.slice(0, 50);
+
+  const has = (k) => !!out[k];
   const checks = policy
     ? [
-        { label: "Registration no matches policy", ok: norm(rc.regNo) === norm(policy.regNo) },
-        { label: "Chassis no matches policy", ok: !policy.chassis || rc.chassis.startsWith(policy.chassis.replace(/X+$/, "")) },
-        { label: "Engine no matches policy", ok: !policy.engine || rc.engine.startsWith(policy.engine.replace(/X+$/, "")) },
-        { label: "RC owner matches insured", ok: rc.owner === policy.insured },
+        { label: has("regNo") ? "Registration no matches policy" : "Registration no not found on RC", ok: has("regNo") ? compact(out.regNo) === compact(policy.regNo) : null },
+        {
+          label: has("chassis") ? "Chassis no matches policy" : "Chassis no not found on RC",
+          ok: has("chassis") ? !policy.chassis || compact(out.chassis).startsWith(compact(policy.chassis).replace(/X+$/, "")) : null,
+        },
+        {
+          label: has("engine") ? "Engine no matches policy" : "Engine no not found on RC",
+          ok: has("engine") ? !policy.engine || compact(out.engine).startsWith(compact(policy.engine).replace(/X+$/, "")) : null,
+        },
+        { label: has("owner") ? "RC owner matches insured" : "Owner not found on RC", ok: has("owner") ? sameName(out.owner, policy.insured) : null },
       ]
-    : [{ label: "No policy to compare – details taken from the RC", ok: null }];
-  return { ...rc, checks };
+    : [{ label: "No policy to compare – vehicle details taken from the RC", ok: null }];
+
+  const FIELDS = { regNo: "Registration no", owner: "Owner", vehicle: "Make / model", chassis: "Chassis no", engine: "Engine no", regDate: "Registration date" };
+  return {
+    ...Object.fromEntries(Object.entries(out).filter(([, x]) => x)),
+    checks,
+    found: Object.keys(FIELDS).filter((k) => out[k]),
+    missing: Object.keys(FIELDS).filter((k) => !out[k]).map((k) => FIELDS[k]),
+    raw,
+  };
 }

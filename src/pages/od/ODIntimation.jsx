@@ -5,7 +5,7 @@
 // assignment). Result = Claim registered, NBNR (Notified But Not Registered) or Duplicate.
 // Catalogue refs: FNOL 1–12, Claim Registration 13–17, Reserve 18, Policy & Coverage 22–29.
 
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useNavigate, useSearchParams } from "react-router-dom";
 import {
   Search,
@@ -40,7 +40,7 @@ import LocationPicker from "../../components/LocationPicker";
 import DocAutoFill from "../../components/DocAutoFill";
 import DocViewer from "../../components/DocViewer";
 import { putDoc, removeDoc, clearDocs } from "../../data/docStore";
-import { readDL, readRC } from "../../data/docReader";
+import { extractText, parseDL, parseRC, sameName } from "../../data/docReader";
 import { claimSlug } from "../../data/odClaimDetail";
 import { WORK_QUEUE, TAT_STAGES } from "../../data/odHandlerMock";
 import {
@@ -70,6 +70,7 @@ const STEP_SECTIONS = [[0, 1], [2, 3], [4]];
 const inr = (n) => (n == null ? "–" : "₹" + Number(n).toLocaleString("en-IN"));
 const dt = (iso) =>
   iso ? new Date(iso + "T00:00:00").toLocaleDateString("en-IN", { day: "2-digit", month: "short", year: "numeric" }) : "–";
+const titleCase = (s) => String(s || "").toLowerCase().replace(/(^|[\s.'])([a-z])/g, (_, a, b) => a + b.toUpperCase());
 const maskMobile = (m) => (m && m.length === 10 ? `${m.slice(0, 2)}XXXXX${m.slice(7)}` : m || "–");
 
 const EMPTY = {
@@ -352,7 +353,15 @@ export default function ODIntimation() {
   const [f, setF] = useState(() =>
     draft
       ? // a draft saved before the date / time were filled (or before they defaulted to now) gets now
-        { ...freshForm(), ...draft.f, lossDate: draft.f.lossDate || TODAY_ISO, lossTime: draft.f.lossTime || nowHHMM() }
+        {
+          ...freshForm(),
+          ...draft.f,
+          lossDate: draft.f.lossDate || TODAY_ISO,
+          lossTime: draft.f.lossTime || nowHHMM(),
+          // results saved by the earlier demo reader (no found / missing lists) are dropped
+          dlRead: draft.f.dlRead?.found ? draft.f.dlRead : null,
+          rcRead: draft.f.rcRead?.found ? draft.f.rcRead : null,
+        }
       : initQ
         ? { ...freshForm(), search: initQ, policy: initPolicy, mobile: initPolicy?.mobile || "", email: initPolicy?.email || "" }
         : freshForm()
@@ -401,6 +410,8 @@ export default function ODIntimation() {
   };
 
   const set = (patch) => setF((x) => ({ ...x, ...patch }));
+  const fRef = useRef(f);
+  fRef.current = f;
 
   // Each step opens at the top of the page
   useEffect(() => {
@@ -439,61 +450,87 @@ export default function ODIntimation() {
       return { ...x, [key]: value, autoFill };
     });
   }
-  // DL / RC uploaded on Incident Details → read (OCR) → fill the fields that need it
-  function onDocRead(kind, fileName, file) {
+  // DL / RC uploaded on Incident Details → text extracted (OCR / PDF text) → the fields found on the
+  // document fill the form; nothing is made up – what could not be read stays for the handler to type
+  async function onDocRead(kind, file, onProgress) {
     const tag = kind === "dl" ? "DL" : "RC";
-    f.files.filter((n) => n.startsWith(`${tag} – `)).forEach(removeDoc); // replaced document
-    putDoc(`${tag} – ${fileName}`, file);
-    const files = [...f.files.filter((n) => !n.startsWith(`${tag} – `)), `${tag} – ${fileName}`];
+    const name = `${tag} – ${file.name}`;
+    let res;
+    try {
+      res = await extractText(file, onProgress);
+    } catch {
+      res = { text: "", confidence: 0, source: "failed" };
+    }
+    const cur = fRef.current; // the form as it is now (the user may have typed while it was reading)
+    cur.files.filter((n) => n.startsWith(`${tag} – `) && n !== name).forEach(removeDoc); // replaced document
+    putDoc(name, file);
+    const files = [...cur.files.filter((n) => !n.startsWith(`${tag} – `)), name];
+    const meta = { fileName: file.name, confidence: res.confidence, source: res.source };
+    const autoFill = { ...cur.autoFill };
+    const patch = { files, autoFill };
+
     if (kind === "dl") {
-      const d = readDL(f);
-      const self = !!f.policy && d.holder === f.policy.insured;
-      const autoFill = { ...f.autoFill, dlNo: "DL", dlValidTill: "DL", driverDob: "DL", dlClass: "DL" };
-      if (self) delete autoFill.driverName;
-      else autoFill.driverName = "DL";
-      set({
-        dlRead: { ...d, fileName },
-        dlNo: d.dlNo,
-        dlValidTill: d.validTill,
-        driverDob: d.dob,
-        dlClass: d.dlClass,
-        driverSameAsInsured: self,
-        driverName: self ? f.driverName : d.holder,
-        autoFill,
-        files,
-      });
-      flash(self ? "Driving licence read – driver details filled." : `Driving licence is in the name of ${d.holder} – driver details filled.`);
-    } else {
-      const r = readRC(f);
-      const patch = { rcRead: { ...r, fileName }, files };
-      // no policy found → the RC gives the vehicle details asked for on step 1
-      if (f.noPolicy) {
-        patch.manualRegNo = f.manualRegNo || r.regNo;
-        patch.manualVehicle = f.manualVehicle || r.vehicle;
-        patch.autoFill = { ...f.autoFill, ...(f.manualRegNo ? {} : { manualRegNo: "RC" }), ...(f.manualVehicle ? {} : { manualVehicle: "RC" }) };
+      const d = parseDL(res.text);
+      patch.dlRead = { ...d, ...meta };
+      for (const [from, to] of [["dlNo", "dlNo"], ["validTill", "dlValidTill"], ["dob", "driverDob"], ["dlClass", "dlClass"]]) {
+        if (d[from]) {
+          patch[to] = d[from];
+          autoFill[to] = "DL";
+        }
       }
-      set(patch);
-      flash(r.checks.some((c) => c.ok === false) ? "RC read – some details do not match the policy." : "RC read – vehicle details checked.");
+      if (d.holder) {
+        const self = !!cur.policy && sameName(d.holder, cur.policy.insured);
+        patch.driverSameAsInsured = self;
+        if (self) delete autoFill.driverName;
+        else {
+          patch.driverName = titleCase(d.holder);
+          autoFill.driverName = "DL";
+        }
+      }
+      setF((x) => ({ ...x, ...patch }));
+      if (!d.found.length) flash(res.source === "failed" ? "Could not read the licence – check the internet connection, or type the details." : "Nothing readable on this licence – try a clearer, straight photo, or type the details.");
+      else flash(`Licence read – ${d.found.length} of 5 details filled${d.missing.length ? `; not found: ${d.missing.join(", ").toLowerCase()}` : ""}.`);
+    } else {
+      const r = parseRC(res.text, cur.policy);
+      patch.rcRead = { ...r, ...meta };
+      // no policy found → the RC gives the vehicle details asked for on step 1
+      if (cur.noPolicy) {
+        if (r.regNo && !cur.manualRegNo) {
+          patch.manualRegNo = r.regNo;
+          autoFill.manualRegNo = "RC";
+        }
+        if (r.vehicle && !cur.manualVehicle) {
+          patch.manualVehicle = r.vehicle;
+          autoFill.manualVehicle = "RC";
+        }
+      }
+      setF((x) => ({ ...x, ...patch }));
+      if (!r.found.length) flash(res.source === "failed" ? "Could not read the RC – check the internet connection." : "Nothing readable on this RC – try a clearer, straight photo.");
+      else flash(r.checks.some((c) => c.ok === false) ? "RC read – some details do not match the policy." : `RC read – ${r.found.length} of 6 details found.`);
     }
   }
   // eye icon: open an uploaded file; a DL / RC opens with the details read from it alongside
   function openDoc(name) {
     const dl = f.dlRead && name === `DL – ${f.dlRead.fileName}` ? f.dlRead : null;
     const rc = f.rcRead && name === `RC – ${f.rcRead.fileName}` ? f.rcRead : null;
+    const nf = (v) => v || "Not found";
+    const how = (r) => (r.source === "PDF text" ? "read from PDF text" : `${r.source} · ${r.confidence}% confidence`);
     setViewDoc({
       name,
       title: dl ? "Driving licence" : rc ? "Registration certificate (RC)" : "Attachment",
       details: dl
         ? {
-            title: `Read from DL · ${dl.confidence}% confidence`,
-            rows: [["Holder", `${dl.holder}${dl.relation !== "Self" ? ` (${dl.relation.toLowerCase()})` : ""}`], ["DL no", dl.dlNo], ["Date of birth", dt(dl.dob)], ["Valid till (non-transport)", dt(dl.validTill)], ["Class of vehicle", dl.dlClass], ["Issued by", dl.rto]],
+            title: `Read from DL · ${how(dl)}`,
+            rows: [["Holder", nf(dl.holder && titleCase(dl.holder))], ["DL no", nf(dl.dlNo)], ["Date of birth", dl.dob ? dt(dl.dob) : "Not found"], ["Valid till (non-transport)", dl.validTill ? dt(dl.validTill) : "Not found"], ["Class of vehicle", nf(dl.dlClass)], ...(dl.rto ? [["Issued by", dl.rto]] : [])],
             note: "Check these against the licence on the left. Edit the driver fields if anything was read wrongly.",
+            raw: dl.raw,
           }
         : rc
           ? {
-              title: `Read from RC · ${rc.confidence}% confidence`,
-              rows: [["Registration no", rc.regNo], ["Owner", rc.owner], ["Make / model", rc.vehicle], ["Fuel", rc.fuel], ["Chassis no", rc.chassis], ["Engine no", rc.engine], ["Registered on", dt(rc.regDate)], ["Valid till", dt(rc.validTill)], ["Hypothecation", rc.hypothecation]],
+              title: `Read from RC · ${how(rc)}`,
+              rows: [["Registration no", nf(rc.regNo)], ["Owner", nf(rc.owner && titleCase(rc.owner))], ["Make / model", nf(rc.vehicle)], ["Fuel", nf(rc.fuel)], ["Chassis no", nf(rc.chassis)], ["Engine no", nf(rc.engine)], ["Registered on", rc.regDate ? dt(rc.regDate) : "Not found"], ["Valid till", rc.validTill ? dt(rc.validTill) : "Not found"], ["Hypothecation", nf(rc.hypothecation)]],
               note: rc.checks.map((c) => `${c.ok === false ? "✗" : c.ok ? "✓" : "•"} ${c.label}`).join("  ·  "),
+              raw: rc.raw,
             }
           : null,
     });
@@ -1478,7 +1515,14 @@ export default function ODIntimation() {
                               title: "Driving licence",
                               icon: IdCard,
                               hint: "Fills driver name, DL no, validity, date of birth and class",
-                              done: f.dlRead && { fileName: f.dlRead.fileName, summary: `${f.dlRead.holder} · ${f.dlRead.dlNo} · valid till ${dt(f.dlRead.validTill)}` },
+                              done: f.dlRead && {
+                                fileName: f.dlRead.fileName,
+                                warn: f.dlRead.missing.length > 0,
+                                summary: f.dlRead.found.length
+                                  ? [f.dlRead.holder && titleCase(f.dlRead.holder), f.dlRead.dlNo, f.dlRead.validTill && `valid till ${dt(f.dlRead.validTill)}`].filter(Boolean).join(" · ") +
+                                    (f.dlRead.missing.length ? ` · not found: ${f.dlRead.missing.join(", ").toLowerCase()}` : "")
+                                  : "Nothing readable – type the details below or upload a clearer photo",
+                              },
                             }]
                           : []),
                         {
@@ -1486,30 +1530,37 @@ export default function ODIntimation() {
                           title: "RC",
                           icon: FileText,
                           hint: f.noPolicy ? "Fills vehicle no and make / model, reads chassis and engine no" : "Checks reg no, chassis, engine and owner against the policy",
-                          done: f.rcRead && { fileName: f.rcRead.fileName, summary: `${f.rcRead.regNo} · ${f.rcRead.vehicle} · owner ${f.rcRead.owner}` },
+                          done: f.rcRead && {
+                            fileName: f.rcRead.fileName,
+                            warn: f.rcRead.missing.length > 0,
+                            summary: f.rcRead.found.length
+                              ? [f.rcRead.regNo, f.rcRead.vehicle, f.rcRead.owner && `owner ${titleCase(f.rcRead.owner)}`].filter(Boolean).join(" · ") +
+                                (f.rcRead.missing.length ? ` · not found: ${f.rcRead.missing.join(", ").toLowerCase()}` : "")
+                              : "Nothing readable – upload a clearer photo",
+                          },
                         },
                       ]}
                     />
                     {f.rcRead && (
                       <div className="rounded-md border border-slate-200">
                         <p className="border-b border-slate-100 bg-slate-50 px-3 py-1 text-[12px] font-semibold text-slate-700">
-                          Read from RC <span className="font-normal text-slate-500">· {f.rcRead.confidence}% confidence</span>
+                          Read from RC <span className="font-normal text-slate-500">· {f.rcRead.source === "PDF text" ? "from PDF text" : `${f.rcRead.source} · ${f.rcRead.confidence}% confidence`}</span>
                         </p>
                         <dl className="grid grid-cols-2 gap-x-4 gap-y-1.5 px-3 py-2 text-[12px] sm:grid-cols-4">
                           {[
                             ["Registration no", f.rcRead.regNo],
-                            ["Owner", f.rcRead.owner],
+                            ["Owner", f.rcRead.owner && titleCase(f.rcRead.owner)],
                             ["Make / model", f.rcRead.vehicle],
                             ["Fuel", f.rcRead.fuel],
                             ["Chassis no", f.rcRead.chassis],
                             ["Engine no", f.rcRead.engine],
-                            ["Registered on", dt(f.rcRead.regDate)],
+                            ["Registered on", f.rcRead.regDate && dt(f.rcRead.regDate)],
                             ["Hypothecation", f.rcRead.hypothecation],
                           ].map(([k, v]) => (
                             <div key={k} className="min-w-0">
                               <dt className="text-[11px] text-slate-500">{k}</dt>
-                              <dd className="truncate font-medium text-slate-800" title={v}>
-                                {v}
+                              <dd className={`truncate font-medium ${v ? "text-slate-800" : "italic text-slate-500"}`} title={v || "Not found on the RC"}>
+                                {v || "Not found"}
                               </dd>
                             </div>
                           ))}
@@ -1553,8 +1604,8 @@ export default function ODIntimation() {
                           <input value={f.dlClass} onChange={(e) => setTyped("dlClass", e.target.value.toUpperCase())} className={inputCls()} placeholder="e.g. LMV, MCWG" />
                         </Field>
                       </div>
-                      {f.dlRead && !f.driverSameAsInsured && f.dlRead.holder === f.driverName && (
-                        <Banner kind="info" title={`Driver was ${f.dlRead.holder} (${f.dlRead.relation.toLowerCase()}), not the insured`}>
+                      {f.dlRead?.holder && !f.driverSameAsInsured && titleCase(f.dlRead.holder) === f.driverName && (
+                        <Banner kind="info" title={`Licence is in the name of ${f.driverName}, not the insured`}>
                           Taken from the uploaded licence. Untick only if this is wrong – a driver other than the insured is allowed if they hold a valid licence.
                         </Banner>
                       )}
@@ -1798,7 +1849,7 @@ export default function ODIntimation() {
         </div>
       </div>
 
-      {viewDoc && <DocViewer name={viewDoc.name} title={viewDoc.title} details={viewDoc.details} onClose={closeViewer} />}
+      {viewDoc && <DocViewer key={viewDoc.name} name={viewDoc.name} title={viewDoc.title} details={viewDoc.details} onClose={closeViewer} />}
       {toast && (
         <div role="status" className="fixed bottom-5 left-1/2 z-50 -translate-x-1/2 rounded-lg bg-[#0B1F3A] px-4 py-2.5 text-sm text-white shadow-lg">
           {toast}

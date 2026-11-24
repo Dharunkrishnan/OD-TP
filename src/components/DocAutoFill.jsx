@@ -1,30 +1,36 @@
 // src/components/DocAutoFill.jsx
 // "Upload to auto-fill" tiles (e.g. Driving licence, RC on Claim Intimation). Pick a photo / PDF →
-// the tile shows "Reading…" while the document is read (OCR), then calls onRead(key, fileName) so
-// the page can fill its fields. A read tile shows what was filled, with View (eye) and Replace.
+// onRead(key, file, onProgress) reads it (OCR / PDF text) and fills the page; the tile shows the
+// reader's progress until that finishes. A read tile shows what was found, with View (eye) and Replace.
 // items: [{ key, title, hint, icon, done }] – done: null, or { summary, fileName }
 
 import { useEffect, useRef, useState } from "react";
 import { CheckCircle2, Eye, Loader2, Upload } from "lucide-react";
 
-const READ_MS = 1200; // demo: time the "OCR" takes
-
 export default function DocAutoFill({ items, onRead, onView }) {
   const [reading, setReading] = useState(null);
-  const timer = useRef(null);
+  const [progress, setProgress] = useState("");
   const inputs = useRef({});
-  useEffect(() => () => clearTimeout(timer.current), []);
+  const alive = useRef(true);
+  useEffect(() => {
+    alive.current = true;
+    return () => (alive.current = false);
+  }, []);
 
-  function pick(key, e) {
+  async function pick(key, e) {
     const file = e.target.files?.[0];
     e.target.value = ""; // the same file can be picked again
     if (!file) return;
     setReading(key);
-    clearTimeout(timer.current);
-    timer.current = setTimeout(() => {
-      setReading(null);
-      onRead(key, file.name, file);
-    }, READ_MS);
+    setProgress("Starting…");
+    try {
+      await onRead(key, file, (msg) => alive.current && setProgress(msg));
+    } finally {
+      if (alive.current) {
+        setReading(null);
+        setProgress("");
+      }
+    }
   }
 
   return (
@@ -51,8 +57,8 @@ export default function DocAutoFill({ items, onRead, onView }) {
               <p className="text-[12.5px] font-semibold text-slate-800">
                 {busy ? `Reading ${noun}…` : done ? `${it.title} read` : `Upload ${noun}`}
               </p>
-              <p className="truncate text-[12px] text-slate-600" title={done ? `${it.done.fileName} – ${it.done.summary}` : it.hint}>
-                {busy ? "Extracting details – a moment" : done ? it.done.summary : it.hint}
+              <p className={`truncate text-[12px] ${done && it.done.warn ? "text-amber-800" : "text-slate-600"}`} title={done ? `${it.done.fileName} – ${it.done.summary}` : it.hint}>
+                {busy ? progress : done ? it.done.summary : it.hint}
               </p>
             </div>
             <input
