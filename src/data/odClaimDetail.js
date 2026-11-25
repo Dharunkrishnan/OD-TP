@@ -394,8 +394,9 @@ export function getClaimDetail(claimNo) {
   documents
     .filter((d) => d.status === "Pending")
     .forEach((d) => push(Math.max(1, row.ageDays - 9), "11:20", "Document requested", "Karthik Subramanian", `${d.name} · ${d.reminders} reminder(s) sent`));
-  if (step >= 5) push(Math.max(4, row.ageDays - 6), "12:45", "Sent for approval", "Karthik Subramanian", `Net liability ₹${(netLiability ?? 0).toLocaleString("en-IN")}`);
-  if (step >= 6) push(Math.max(5, row.ageDays - 4), "17:00", "Repair authorised", "Claims approver", "Delivery order issued to garage");
+  // decision within the IRDAI 7 days of the survey report (survey on day 3): approval day 4, DO day 5
+  if (step >= 5) push(4, "12:45", "Sent for approval", "Karthik Subramanian", `Net liability ₹${(netLiability ?? 0).toLocaleString("en-IN")}`);
+  if (step >= 6) push(5, "17:00", "Repair authorised", "Claims approver", "Delivery order issued to garage");
   if (step >= 7) push(Math.max(6, row.ageDays - 1), "11:00", "Payment requested", "Karthik Subramanian", `NEFT to ${garage?.name || row.insured}`);
   row.flags.forEach((f) => push(1, "09:00", `Flag raised: ${f}`, "System (rules)", f === "Fraud flag" ? "Theft within 30 days of policy inception" : f));
   if (row.closure) {

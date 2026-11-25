@@ -9,7 +9,7 @@
 // Settlement panel (src/data/claimSettlement.js): DO + working sheet 91 · final invoice 79–83 · payee & bank 120, 122 ·
 // consent 121 · delivery & satisfaction before payment 77 · payment 125–126 · auto-close after payment 130.
 
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { Link, useParams, useNavigate, useSearchParams } from "react-router-dom";
 import {
   ArrowLeft,
@@ -31,12 +31,16 @@ import {
   Car,
   X,
   CircleDot,
+  History,
+  Milestone,
 } from "lucide-react";
 import ODShell from "../../components/layout/ODShell";
 import { TAT_STAGES, needsIps } from "../../data/odHandlerMock";
 import { getClaimDetail, claimFromSlug, LIFECYCLE, STAGE_TO_STEP } from "../../data/odClaimDetail";
 import { ClaimStatusBanner, ClaimActionsMenu, ClaimStatusDialog } from "../../components/ClaimStatusActions";
 import ClaimDetailSections from "../../components/ClaimDetailSections";
+import ClaimTimeline from "../../components/ClaimTimeline";
+import { claimJourney } from "../../data/claimJourney";
 import { useClaimStatus, effectiveState } from "../../data/claimStatus";
 import { useClaimWork, reserveVariance, newId, isoToday, nowStamp, HANDLER, MANAGER, NOTE_VISIBILITY } from "../../data/claimWork";
 import SettlementPanel, { InvoiceDialog, PayeeDialog, ConsentDialog, DeliveryDialog, WorkingSheetDialog } from "../../components/SettlementPanel";
@@ -192,8 +196,20 @@ const STAGE_EVENTS = [
 ];
 const inrAmt = (n) => (n == null ? "–" : "₹" + Number(n).toLocaleString("en-IN"));
 
-function StageView({ c, index, label, documents, timeline, onBack }) {
+function StageView({ c, index, label, documents, timeline, journey, onBack, onUpload }) {
   const events = timeline.filter((e) => STAGE_EVENTS[index].some((k) => e.event.startsWith(k)));
+  // "Activity in this stage" stays hidden until asked for – opens as a floating card over the right side
+  // panel open over the right side: "activity" (this stage) or "timeline" (whole claim journey), one at a time
+  const [panel, setPanel] = useState(null);
+  const showActivity = panel === "activity";
+  const showTimeline = panel === "timeline";
+  const toggle = (k) => setPanel((p) => (p === k ? null : k));
+  useEffect(() => {
+    if (!panel) return undefined;
+    const onKey = (e) => e.key === "Escape" && setPanel(null);
+    document.addEventListener("keydown", onKey);
+    return () => document.removeEventListener("keydown", onKey);
+  }, [panel]);
   const ev = (name) => timeline.find((e) => e.event.startsWith(name));
   const registered = ev("Claim registered");
   const approvalSent = ev("Sent for approval");
@@ -202,34 +218,105 @@ function StageView({ c, index, label, documents, timeline, onBack }) {
 
   let sections = [];
   if (index === 0) {
+    const intimated = ev("Claim intimated");
+    const assigned = ev("Assigned to handler");
+    const allocated = ev("Allocated for survey");
+    const ipsClaim = needsIps(c);
+    const plusDays = (iso, n) => {
+      const d = new Date(iso + "T00:00:00");
+      d.setDate(d.getDate() + n);
+      return d.toISOString().slice(0, 10);
+    };
+    const tick = (ok) => (ok === true ? "✓ " : ok === false ? "✕ " : "");
+    const LATER_DOCS = ["Survey report", "Final invoice", "Satisfaction note / delivery", "Non-traceable report (police)", "Original keys & Form 28/29/30"];
+    const askedDocs = documents.filter((d) => !LATER_DOCS.includes(d.name));
     sections = [
       {
         title: "Intimation",
         items: [
-          ["Intimated on", dt(c.loss.intimatedOn)],
+          ["Intimated on", intimated ? `${dt(intimated.date)} · ${intimated.time}` : dt(c.loss.intimatedOn)],
           ["Channel", c.loss.intimationChannel],
-          ["Intimation delay", `${c.loss.intimationDelayDays} day(s) after loss`],
+          ["Intimation delay", `${c.loss.intimationDelayDays} day(s) after loss${c.loss.intimationDelayDays > 7 ? " – late, reason recorded" : ""}`],
+          ["Insured contact (masked)", `${c.contact.mobile} · ${c.contact.email}`],
+          [
+            "Acknowledgement",
+            registered ? `SMS & email with claim no sent · ${dt(registered.date)} ${registered.time}` : "Sent on registration",
+          ],
+          ["Customer KYC", c.profile.insured.kyc],
+        ],
+      },
+      {
+        title: "Loss details",
+        items: [
           ["Loss date / time", `${dt(c.loss.date)} · ${c.loss.time}`],
-          ["Place of loss", c.loss.place],
+          ["Loss type", c.lossType],
           ["Cause", c.loss.cause],
-          ["Police", c.loss.policeReport],
-          ["Contact (masked)", `${c.contact.mobile} · ${c.contact.email}`],
+          ["Place of loss", c.loss.place],
+          ["Vehicle now at", c.loss.vehicleLocation],
+          ["Third party", c.loss.tpInvolved ? "Involved – passed to TP claims desk" : "Not involved"],
+          ["Police / FIR", c.loss.policeReport],
+          c.loss.catEvent && ["Catastrophe (CAT) event", c.loss.catEvent],
+        ],
+      },
+      {
+        title: "Driver at the time of loss",
+        items: c.driver
+          ? [
+              ["Driver", c.driver.name === c.insured ? `${c.driver.name} (insured)` : c.driver.name],
+              ["Driving licence no", c.driver.dlNo, { mono: true }],
+              ["Valid till (non-transport)", `${tick(c.driver.dlValidTill >= c.loss.date)}${dt(c.driver.dlValidTill)}`],
+              ["Class of vehicle", c.driver.dlClass],
+              c.profile.driver?.dob && ["Date of birth", dt(c.profile.driver.dob)],
+            ]
+          : [["Driver", "Not applicable – vehicle was parked / not being driven"]],
+      },
+      {
+        title: "Vehicle & policy on the loss date",
+        items: [
+          ["Vehicle", `${c.vehicle.regNo} · ${c.vehicle.makeModel}`],
+          ["Year · fuel", `${c.vehicle.yearOfMfg} · ${c.vehicle.fuel}`],
+          ["Chassis / engine no", `${c.vehicle.chassis} / ${c.vehicle.engine}`, { mono: true }],
+          ["Policy no", c.policy.policyNo, { mono: true }],
+          ["Policy period", `${dt(c.policy.periodFrom)} – ${dt(c.policy.periodTo)}`],
+          ["Product", c.policy.product],
+          ["IDV · NCB", `${inrAmt(c.policy.idv)} · ${c.policy.ncb}`, { strong: true }],
+          ["Add-on covers", c.policy.addOns.length ? c.policy.addOns.join(", ") : "None"],
+          ["Deductibles", `Compulsory ${inrAmt(c.policy.compulsoryDeductible)} · voluntary ${inrAmt(c.policy.voluntaryDeductible)}`],
+          ["Financier", c.policy.financier ?? "None"],
         ],
       },
       {
         title: "Policy & coverage validation",
-        items: c.checks.slice(0, 4).map((k) => [k.label, `${k.ok === true ? "✓ " : k.ok === false ? "✕ " : ""}${k.note}`]),
+        items: c.checks.filter((k) => !/reserve/i.test(k.label)).map((k) => [k.label, `${tick(k.ok)}${k.note}`]),
       },
       {
-        title: "Registration",
+        title: "Registration & allocation",
         items: [
           ["Claim no", c.claimNo, { mono: true }],
           ["Registered on", registered ? `${dt(registered.date)} · ${registered.time}` : "–"],
           ["Initial reserve", inrAmt(c.reserveHistory[0]?.amount), { strong: true }],
           ["Reserve basis", c.reserveHistory[0]?.reason],
-          ["Assigned to", "Karthik Subramanian · Chennai"],
-          ["Policy no", c.policy.policyNo, { mono: true }],
+          ["Assigned to", `${assigned?.detail || "Karthik Subramanian · Chennai"} · auto (branch & territory rule)`],
+          [
+            "Survey arrangement",
+            ipsClaim
+              ? "External surveyor (IPS) needed – CAT / theft / total loss"
+              : `✓ In-house – claims handler is the surveyor${allocated ? ` · allocated ${dt(allocated.date)} ${allocated.time}` : ""} (IRDAI: within 24 h)`,
+          ],
+          registered && ["IRDAI clock – survey report due", `${dt(plusDays(registered.date, 15))} (15 days from registration)`],
+          ["IRDAI clock – claim decision", "Within 7 days of the survey report"],
         ],
+      },
+      {
+        title: "Documents asked at intimation",
+        items: askedDocs.map((d) => [
+          d.name,
+          /received|verified/i.test(d.status)
+            ? `✓ ${d.status}${d.receivedOn ? ` ${dt(d.receivedOn)}` : ""}${d.source ? ` · ${d.source}` : ""}`
+            : d.status === "Pending"
+              ? `Pending · ${d.reminders || 0} reminder(s)`
+              : d.status,
+        ]),
       },
     ];
   } else if (index === 1) {
@@ -322,23 +409,75 @@ function StageView({ c, index, label, documents, timeline, onBack }) {
             · Completed{completedOn ? ` on ${dt(completedOn.date)}` : ""} · <span className="text-slate-500">read only</span>
           </span>
         </p>
-        <button type="button" onClick={onBack} className="flex h-7 items-center gap-1.5 rounded-md bg-teal-700 px-2.5 text-[12px] font-semibold text-white hover:bg-teal-800">
-          <ArrowLeft className="h-3.5 w-3.5" aria-hidden="true" />
-          Back to current stage
-        </button>
+        <div className="flex items-center gap-2">
+          <button
+            type="button"
+            onClick={() => toggle("timeline")}
+            aria-expanded={showTimeline}
+            aria-controls={showTimeline ? "stage-timeline" : undefined}
+            className={`flex h-7 items-center gap-1.5 rounded-md border px-2.5 text-[12px] font-semibold ${
+              showTimeline ? "border-[#0B1F3A] bg-[#0B1F3A] text-white" : "border-slate-300 bg-white text-slate-700 hover:bg-slate-50"
+            }`}
+          >
+            <Milestone className="h-3.5 w-3.5" aria-hidden="true" />
+            Timeline
+          </button>
+          <button
+            type="button"
+            onClick={() => toggle("activity")}
+            aria-expanded={showActivity}
+            aria-controls={showActivity ? "stage-activity" : undefined}
+            className={`flex h-7 items-center gap-1.5 rounded-md border px-2.5 text-[12px] font-semibold ${
+              showActivity ? "border-[#0B1F3A] bg-[#0B1F3A] text-white" : "border-slate-300 bg-white text-slate-700 hover:bg-slate-50"
+            }`}
+          >
+            <History className="h-3.5 w-3.5" aria-hidden="true" />
+            Activity
+            <span className={`rounded px-1 text-[11px] font-bold leading-4 ${showActivity ? "bg-white/20" : "bg-slate-100"}`}>{events.length}</span>
+          </button>
+          {/* Upload a document for this claim (edit mode, open claim) – same dialog as the header Upload */}
+          {onUpload && (
+            <button
+              type="button"
+              onClick={onUpload}
+              title={`Upload a document – ${label} stage`}
+              className="flex h-7 items-center gap-1.5 rounded-md border border-slate-300 bg-white px-2.5 text-[12px] font-semibold text-slate-700 hover:bg-slate-50"
+            >
+              <Upload className="h-3.5 w-3.5" aria-hidden="true" />
+              Upload
+            </button>
+          )}
+          <button type="button" onClick={onBack} className="flex h-7 items-center gap-1.5 rounded-md bg-teal-700 px-2.5 text-[12px] font-semibold text-white hover:bg-teal-800">
+            <ArrowLeft className="h-3.5 w-3.5" aria-hidden="true" />
+            Back to current stage
+          </button>
+        </div>
       </div>
 
-      <div className="grid gap-2 p-2 lg:grid-cols-[minmax(0,1fr)_minmax(0,340px)]">
-        <div className="grid content-start gap-2">
+      {/* sections use the full width (two side by side on wide screens); activity floats over the right when opened */}
+      <div className="relative p-2">
+        {/* two balanced columns on wide screens – each section sits right under the previous one, no gaps */}
+        <div className="gap-2 xl:columns-2">
           {sections.map((sec) => (
-            <section key={sec.title} className="rounded-lg border border-slate-200">
+            <section key={sec.title} className="mb-2 break-inside-avoid rounded-lg border border-slate-200">
               <h3 className="border-b border-slate-100 px-3 py-1.5 text-[12.5px] font-semibold text-[#0B1F3A]">{sec.title}</h3>
               <Facts items={sec.items} />
             </section>
           ))}
         </div>
-        <section className="rounded-lg border border-slate-200">
-          <h3 className="border-b border-slate-100 px-3 py-1.5 text-[12.5px] font-semibold text-[#0B1F3A]">Activity in this stage</h3>
+        {showActivity && (
+        <section
+          id="stage-activity"
+          aria-label="Activity in this stage"
+          className="z-20 mt-2 flex flex-col overflow-hidden rounded-lg border border-slate-200 bg-white shadow-[0_12px_32px_-8px_rgba(15,23,42,0.28),0_2px_6px_rgba(15,23,42,0.08)] lg:absolute lg:right-3 lg:top-2 lg:mt-0 lg:max-h-[calc(100vh-14rem)] lg:w-[340px]"
+        >
+          <div className="flex min-h-9 flex-none items-center justify-between gap-2 border-b border-slate-100 px-3 py-1">
+            <h3 className="text-[12.5px] font-semibold text-[#0B1F3A]">Activity in this stage</h3>
+            <button type="button" onClick={() => setPanel(null)} aria-label="Close activity" className="grid h-7 w-7 place-items-center rounded-md text-slate-500 hover:bg-slate-100 hover:text-slate-800">
+              <X className="h-4 w-4" aria-hidden="true" />
+            </button>
+          </div>
+          <div tabIndex={0} className="min-h-0 flex-1 overflow-y-auto focus:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-teal-700/40">
           {events.length === 0 ? (
             <p className="px-3 py-4 text-[12px] text-slate-500">No recorded activity.</p>
           ) : (
@@ -357,7 +496,26 @@ function StageView({ c, index, label, documents, timeline, onBack }) {
               ))}
             </ol>
           )}
+          </div>
         </section>
+        )}
+        {showTimeline && (
+          <section
+            id="stage-timeline"
+            aria-label="Claim timeline"
+            className="z-20 mt-2 flex flex-col overflow-hidden rounded-lg border border-slate-200 bg-white shadow-[0_12px_32px_-8px_rgba(15,23,42,0.28),0_2px_6px_rgba(15,23,42,0.08)] lg:absolute lg:right-3 lg:top-2 lg:mt-0 lg:max-h-[calc(100vh-14rem)] lg:w-[520px]"
+          >
+            <div className="flex min-h-9 flex-none items-center justify-between gap-2 border-b border-slate-100 px-3 py-1">
+              <h3 className="text-[12.5px] font-semibold text-[#0B1F3A]">Claim timeline</h3>
+              <button type="button" onClick={() => setPanel(null)} aria-label="Close timeline" className="grid h-7 w-7 place-items-center rounded-md text-slate-500 hover:bg-slate-100 hover:text-slate-800">
+                <X className="h-4 w-4" aria-hidden="true" />
+              </button>
+            </div>
+            <div tabIndex={0} className="min-h-0 flex-1 overflow-y-auto focus:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-teal-700/40">
+              <ClaimTimeline steps={journey} highlight={index} compact />
+            </div>
+          </section>
+        )}
       </div>
     </Card>
   );
@@ -387,6 +545,7 @@ export default function ODClaim360() {
   const editMode = params.get("mode") === "edit";
 
   const [tab, setTab] = useState("details");
+  const [timelineView, setTimelineView] = useState("journey"); // Timeline tab: claim journey | all activity (audit trail)
   const [viewStage, setViewStage] = useState(null); // index of a completed lifecycle stage being viewed, or null
   const [toast, setToast] = useState("");
   const [modal, setModal] = useState(null); // "note" | "docs"
@@ -537,6 +696,10 @@ export default function ODClaim360() {
   const timeline = [...(statusRec?.events || []), ...(surveyRec?.events || []), ...work.events, ...c.timeline].sort((a, b) =>
     `${b.date} ${b.time}`.localeCompare(`${a.date} ${a.time}`)
   );
+  // claim journey for the timeline (Timeline tab + stage view): steps with team, SLA status and regulatory basis
+  const journey = claimJourney(c, timeline, {
+    closedEvent: st.closed && statusNow?.at ? { date: statusNow.at, time: "17:00", event: "Claim closed", by: statusNow.decidedBy || "System", detail: [statusNow.reason, statusNow.remarks].filter(Boolean).join(" · ") } : null,
+  });
   const tat = TAT_STAGES.find((s) => s.stage === STAGE_TAT[c.stage]);
 
   // 5-stage lifecycle shown in the left sidebar while this claim is open
@@ -851,7 +1014,9 @@ export default function ODClaim360() {
             label={LIFECYCLE[viewStage].label}
             documents={documents}
             timeline={timeline}
+            journey={journey}
             onBack={() => setViewStage(null)}
+            onUpload={editMode && active ? () => setWorkDialog("upload") : undefined}
           />
         ) : (
         <div className="grid grid-cols-[minmax(0,1fr)] items-start gap-2 lg:grid-cols-[minmax(0,1fr)_290px]">
@@ -1076,6 +1241,31 @@ export default function ODClaim360() {
 
             {/* ===== Timeline ===== */}
             {tab === "timeline" && (
+              <div>
+              {/* Claim journey (single-lane timeline) by default; the full audit trail one click away */}
+              <div className="flex items-center gap-2 border-b border-slate-100 px-3 py-2">
+                <div role="radiogroup" aria-label="Timeline view" className="inline-flex overflow-hidden rounded-md border border-slate-300">
+                  {[
+                    ["journey", "Claim journey"],
+                    ["activity", `All activity (${timeline.length})`],
+                  ].map(([k, l]) => (
+                    <button
+                      key={k}
+                      type="button"
+                      role="radio"
+                      aria-checked={timelineView === k}
+                      onClick={() => setTimelineView(k)}
+                      className={`h-7 px-2.5 text-[12px] font-medium ${timelineView === k ? "bg-[#0B1F3A] text-white" : "bg-white text-slate-700 hover:bg-slate-50"}`}
+                    >
+                      {l}
+                    </button>
+                  ))}
+                </div>
+                <span className="text-[12px] text-slate-500">{timelineView === "journey" ? "Key steps with SLA and regulatory basis" : "Every action, note, call and document – audit trail"}</span>
+              </div>
+              {timelineView === "journey" ? (
+                <ClaimTimeline steps={journey} />
+              ) : (
               <ol className="relative px-4 py-3">
                 {timeline.map((e, i) => (
                   <li key={i} className="relative border-l-2 border-slate-200 pb-3 pl-4 last:pb-0">
@@ -1094,6 +1284,8 @@ export default function ODClaim360() {
                   </li>
                 ))}
               </ol>
+              )}
+              </div>
             )}
           </Card>
 
