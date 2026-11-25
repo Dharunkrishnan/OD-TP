@@ -268,10 +268,12 @@ export default function LocationPicker({ value, onChange, height = 240 }) {
   }
 
   return (
-    <div className="flex flex-col gap-1.5 rounded-md border border-slate-200 bg-slate-50 p-1.5">
+    // "isolate": Leaflet gives its map panes z-index 400–1000; keep them inside this box so dialogs,
+    // menus and the document viewer always open above the map
+    <div className="isolate flex flex-col gap-1.5 rounded-md border border-slate-200 bg-slate-50 p-1.5">
       <form onSubmit={search} className="flex flex-wrap gap-2">
         <span className="relative min-w-[160px] flex-1">
-          <Search className="pointer-events-none absolute left-2.5 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" aria-hidden="true" />
+          <Search className="pointer-events-none absolute left-2.5 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-500" aria-hidden="true" />
           <input
             value={q}
             onChange={(e) => setQ(e.target.value)}
@@ -317,13 +319,13 @@ export default function LocationPicker({ value, onChange, height = 240 }) {
           </div>
         )}
         {busy && status === "ready" && (
-          <div className="absolute right-2 top-2 z-[500] flex items-center gap-1.5 rounded bg-white/95 px-2 py-1 text-[11.5px] text-slate-700 shadow">
+          <div className="absolute right-2 top-2 z-[500] flex items-center gap-1.5 rounded bg-white/95 px-2 py-1 text-[12px] text-slate-700 shadow">
             <Loader2 className="h-3.5 w-3.5 animate-spin" aria-hidden="true" /> Finding address…
           </div>
         )}
       </div>
 
-      <div className="flex flex-wrap items-center justify-between gap-2 text-[11.5px]">
+      <div className="flex flex-wrap items-center justify-between gap-2 text-[12px]">
         <span className="flex items-center gap-1.5 text-slate-600">
           <MapPin className="h-3.5 w-3.5 text-red-600" aria-hidden="true" />
           {value?.lat ? (
@@ -334,9 +336,9 @@ export default function LocationPicker({ value, onChange, height = 240 }) {
             "Click on the map or drag the pin · Ctrl + scroll to zoom"
           )}
         </span>
-        <span className="text-slate-400">{PROVIDER === "google" ? "Google Maps" : "OpenStreetMap"}</span>
+        <span className="text-slate-500">{PROVIDER === "google" ? "Google Maps" : "OpenStreetMap"}</span>
       </div>
-      {error && status === "ready" && <p className="text-[11.5px] text-amber-800">{error}</p>}
+      {error && status === "ready" && <p className="text-[12px] text-amber-800">{error}</p>}
     </div>
   );
 }

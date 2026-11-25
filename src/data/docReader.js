@@ -109,23 +109,35 @@ const lines = (text) =>
     .map((l) => l.replace(/[|_~`]+/g, " ").replace(/\s+/g, " ").trim())
     .filter(Boolean);
 
-/** value on the line of a label (after ":" / "-"), or on the next line when the label stands alone */
+// a line that is only labels ("Engine No. Owner Sr. No.", "Maker's Name Model Name") – two-column cards
+// put the labels side by side with the values on the line below
+const LABELISH = /^(?:[A-Za-z'./()]+\s*){1,5}$/;
+const LABEL_WORD = /\b(no|number|name|date|valid|till|validity|of|used|sr|owner|reg|regn|fuel|model|maker|class|issue|birth)\b/i;
+const isLabel = (s) => !!s && !/\d/.test(s) && LABELISH.test(s) && LABEL_WORD.test(s);
+
+/** value on the line of a label (after ":" / "-"), or on the next line when the label stands alone
+ *  or shares its line only with other labels */
 function valueAfter(ls, labelRe, { skip } = {}) {
   for (let i = 0; i < ls.length; i++) {
     const m = ls[i].match(labelRe);
     if (!m || (skip && skip.test(ls[i]))) continue;
     const rest = ls[i].slice(m.index + m[0].length).replace(/^[\s:.\-–=]+/, "").trim();
-    if (rest) return rest;
+    if (rest && !isLabel(rest)) return rest;
     if (ls[i + 1]) return ls[i + 1];
   }
   return "";
 }
+/** a date for a label; on a two-column row the right-hand label takes the right-hand date below */
 function dateAfter(ls, labelRe) {
   for (let i = 0; i < ls.length; i++) {
     const m = ls[i].match(labelRe);
     if (!m) continue;
-    const d = datesIn(ls[i].slice(m.index)) [0] || datesIn(ls[i + 1] || "")[0];
-    if (d) return d;
+    const same = datesIn(ls[i].slice(m.index));
+    if (same.length) return same[0];
+    const below = datesIn(ls[i + 1] || "");
+    if (!below.length) continue;
+    const rightColumn = m.index > ls[i].length * 0.35;
+    return rightColumn ? below[below.length - 1] : below[0];
   }
   return "";
 }
@@ -137,11 +149,25 @@ const cleanName = (s) =>
     .replace(/\b([A-Za-z])\b(?!\.)/g, "$1.") // "R ARUN" → "R. ARUN"
     .replace(/\.\./g, ".")
     .toUpperCase();
+/** the name in an OCR line: the longest run of capitalised words ("Zo. THIYAGARAJAN MANI =" → "THIYAGARAJAN MANI") */
+function pickName(s) {
+  const runs = String(s).match(/\b[A-Z][A-Z.']*(?:\s+[A-Z][A-Z.']*)*/g) || [];
+  const best = runs.map((r) => r.trim()).filter((r) => r.replace(/[^A-Z]/g, "").length >= 3).sort((a, b) => b.length - a.length)[0];
+  return best || s;
+}
+/** an ID in an OCR line (engine / chassis no): a letters-and-digits word of the right length */
+function pickId(s, min, max, prefer) {
+  const words = String(s).toUpperCase().split(/[^A-Z0-9]+/).filter((w) => w.length >= min && w.length <= max && /\d/.test(w) && /[A-Z]/.test(w));
+  return (prefer && words.find((w) => w.length === prefer)) || words.sort((a, b) => b.length - a.length)[0] || "";
+}
 const tokens = (s) => String(s).toUpperCase().replace(/[^A-Z ]/g, " ").split(/\s+/).filter((t) => t.length > 1);
-/** same person? – every 2+ letter word of the shorter name appears in the other ("R. Arun Kumar" = "ARUN KUMAR R") */
+/** same person? – every word or initial of each name matches the other, in any order:
+ *  "R. Arun Kumar" = "ARUN KUMAR R", "T. Mani" = "THIYAGARAJAN MANI", but "S. Arun" ≠ "R. Arun Kumar" */
 export function sameName(a, b) {
-  const [x, y] = [tokens(a), tokens(b)].sort((p, q) => p.length - q.length);
-  return x.length > 0 && x.every((t) => y.includes(t));
+  const words = (s) => String(s).toUpperCase().replace(/[^A-Z ]/g, " ").split(/\s+/).filter(Boolean);
+  const fits = (w, list) => list.some((v) => v === w || (w.length === 1 && v[0] === w) || (v.length === 1 && w[0] === v));
+  const [x, y] = [words(a), words(b)];
+  return x.some((w) => w.length > 1) && x.every((w) => fits(w, y)) && y.every((w) => fits(w, x));
 }
 const compact = (s) => String(s || "").replace(/[\s-]/g, "").toUpperCase();
 
@@ -162,7 +188,7 @@ export function parseDL(text) {
   if (dl) out.dlNo = `${dl[1]}${dl[2]} ${dl[3]}${dl[4]}`;
 
   const name = valueAfter(ls, /\b(holder'?s?\s+name|name)\b/i, { skip: /father|husband|s\/o|d\/o|w\/o|son of|daughter|wife|s\/d\/w/i });
-  if (name && tokens(name).length) out.holder = cleanName(name.split(/\s{2,}|\b(?:s\/o|d\/o|w\/o|dob|date)\b/i)[0]);
+  if (name && tokens(name).length) out.holder = cleanName(pickName(name.split(/\s{2,}|\b(?:s\/o|d\/o|w\/o|dob|date)\b/i)[0]));
 
   out.dob = dateAfter(ls, /\b(d\.?\s?o\.?\s?b|date of birth|birth)\b/i) || undefined;
   out.issueDate = dateAfter(ls, /\b(d\.?\s?o\.?\s?i|date of issue|issue date|issued on|doi)\b/i) || undefined;
@@ -212,14 +238,14 @@ export function parseRC(text, policy) {
   if (bh) out.regNo = `${bh[1]} BH ${bh[2]} ${bh[3]}`;
   else if (reg) out.regNo = [reg[1], reg[2], reg[3], reg[4]].filter(Boolean).join(" ");
 
-  const owner = valueAfter(ls, /\b(owner'?s?\s*name|registered owner|owner)\b/i, { skip: /serial|sr\.?\s*no|no\.\s*of|number of/i });
-  if (owner && tokens(owner).length) out.owner = cleanName(owner.split(/\b(?:s\/o|d\/o|w\/o|son|address)\b/i)[0]);
+  const owner = valueAfter(ls, /\b(owner'?s?\s*name|name of (the )?owner|registered owner)\b/i, { skip: /serial|sr\.?\s*no|no\.\s*of|number of/i });
+  if (owner && tokens(owner).length) out.owner = cleanName(pickName(owner.split(/\b(?:s\/o|d\/o|w\/o|son|address)\b/i)[0]));
 
   const chassisLine = valueAfter(ls, /\b(chassis|ch\.?\s*no|vin)\b/i);
-  const vin = (chassisLine.toUpperCase().replace(/\s/g, "").match(/[A-Z0-9]{10,17}/) || up.match(VIN_RE) || [])[0];
+  const vin = pickId(chassisLine, 10, 17, 17) || (up.match(VIN_RE) || [])[0];
   if (vin) out.chassis = vin;
   const engineLine = valueAfter(ls, /\b(engine|eng\.?|motor)\s*(no|number)?\b/i, { skip: /capacity|cubic|\bcc\b|type/i });
-  const eng = (engineLine.toUpperCase().replace(/\s/g, "").match(/[A-Z0-9]{5,15}/) || [])[0];
+  const eng = pickId(engineLine, 6, 15);
   if (eng && eng !== out.chassis) out.engine = eng;
 
   const maker = valueAfter(ls, /\b(maker'?s?\s*name|manufacturer|maker|make)\b/i);
@@ -237,24 +263,24 @@ export function parseRC(text, policy) {
   const fuel = up.match(/\b(PETROL\s*\/?\s*CNG|PETROL|DIESEL|CNG|LPG|ELECTRIC|EV|HYBRID)\b/);
   if (fuel) out.fuel = fuel[1].replace(/\s+/g, "").replace("PETROL/CNG", "Petrol / CNG").replace(/^(\w)(\w*)$/, (_, a, b) => a + b.toLowerCase());
 
-  out.regDate = dateAfter(ls, /\b(date of regn|regn\.?\s*date|registration date|date of registration|reg\.?\s*date)\b/i) || undefined;
-  out.validTill = dateAfter(ls, /\b(regn\.?\s*validity|valid\s*(till|upto|up to)|validity|fitness\s*(upto|valid))\b/i) || undefined;
+  out.regDate = dateAfter(ls, /\b(date of regn|date of reg\b|regn\.?\s*date|registration date|date of registration|reg\.?\s*date)/i) || undefined;
+  out.validTill = dateAfter(ls, /\b(regn\.?\s*validity|reg\.?\s*valid|valid\s*(till|upto|up to)|validity|fitness\s*(upto|valid))\b/i) || undefined;
   const fin = valueAfter(ls, /\b(financier|hypothecat\w*|hp\s*with|lease)\b/i);
   if (fin) out.hypothecation = fin.slice(0, 50);
 
   const has = (k) => !!out[k];
+  // one check per field: found → matches / does not match the policy; not found → can't check
+  const check = (key, what, against, same) =>
+    has(key)
+      ? { label: same() ? `${what} matches ${against}` : `${what} does not match ${against}`, ok: same() }
+      : { label: `${what} not found on RC`, ok: null };
+  const prefixOf = (masked) => compact(masked).replace(/X+$/, "");
   const checks = policy
     ? [
-        { label: has("regNo") ? "Registration no matches policy" : "Registration no not found on RC", ok: has("regNo") ? compact(out.regNo) === compact(policy.regNo) : null },
-        {
-          label: has("chassis") ? "Chassis no matches policy" : "Chassis no not found on RC",
-          ok: has("chassis") ? !policy.chassis || compact(out.chassis).startsWith(compact(policy.chassis).replace(/X+$/, "")) : null,
-        },
-        {
-          label: has("engine") ? "Engine no matches policy" : "Engine no not found on RC",
-          ok: has("engine") ? !policy.engine || compact(out.engine).startsWith(compact(policy.engine).replace(/X+$/, "")) : null,
-        },
-        { label: has("owner") ? "RC owner matches insured" : "Owner not found on RC", ok: has("owner") ? sameName(out.owner, policy.insured) : null },
+        check("regNo", "Registration no", "policy", () => compact(out.regNo) === compact(policy.regNo)),
+        check("chassis", "Chassis no", "policy", () => !policy.chassis || compact(out.chassis).startsWith(prefixOf(policy.chassis))),
+        check("engine", "Engine no", "policy", () => !policy.engine || compact(out.engine).startsWith(prefixOf(policy.engine))),
+        check("owner", "RC owner", "insured", () => sameName(out.owner, policy.insured)),
       ]
     : [{ label: "No policy to compare – vehicle details taken from the RC", ok: null }];
 

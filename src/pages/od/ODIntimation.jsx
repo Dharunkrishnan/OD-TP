@@ -1570,7 +1570,6 @@ export default function ODIntimation() {
                             <li key={c.label} className={`flex items-center gap-1 ${c.ok === false ? "text-red-700" : c.ok ? "text-emerald-700" : "text-slate-600"}`}>
                               {c.ok === false ? <XCircle className="h-3.5 w-3.5" aria-hidden="true" /> : c.ok ? <CheckCircle2 className="h-3.5 w-3.5" aria-hidden="true" /> : <Info className="h-3.5 w-3.5" aria-hidden="true" />}
                               {c.label}
-                              {c.ok === false && <span className="sr-only"> – does not match</span>}
                             </li>
                           ))}
                         </ul>

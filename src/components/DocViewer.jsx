@@ -25,7 +25,7 @@ export default function DocViewer({ name, title, details, onClose }) {
   }, [onClose]);
 
   return (
-    <div className="fixed inset-0 z-50 grid place-items-center bg-slate-900/50 p-4" onMouseDown={(e) => e.target === e.currentTarget && onClose()}>
+    <div className="fixed inset-0 z-[1100] grid place-items-center bg-slate-900/50 p-4" onMouseDown={(e) => e.target === e.currentTarget && onClose()}>
       <div role="dialog" aria-modal="true" aria-labelledby="doc-viewer-title" className="flex max-h-[90vh] w-full max-w-5xl flex-col overflow-hidden rounded-lg bg-white shadow-2xl">
         <div className="flex min-h-11 flex-none items-center justify-between gap-3 border-b border-slate-200 px-4 py-2">
           <div className="min-w-0">
