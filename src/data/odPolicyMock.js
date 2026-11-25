@@ -187,6 +187,31 @@ export const DEMO_POLICIES = [
     channel: "Agent",
     branch: "Chennai",
   },
+  // Policy for the RC / DL used to test document reading (TN 41 AX 5452 – Thiyagarajan Mani).
+  // Make / model is not printed on the smart-card RC – update "vehicle" when known.
+  {
+    policyNo: "OG-26-1802-7741-00152452",
+    product: "Private Car Package Policy (Comprehensive)",
+    cover: "OD+TP",
+    status: "In force",
+    periodFrom: "2026-02-19",
+    periodTo: "2027-02-18",
+    premiumRealised: true,
+    insured: "Thiyagarajan Mani",
+    mobile: "9000000452",
+    email: "thiyagarajan.mani@example.com",
+    regNo: "TN 41 AX 5452",
+    vehicle: "Hyundai Diesel",
+    yearOfMfg: 2021,
+    chassis: "MALFC81DLMM1XXXXX",
+    engine: "D4FALMXXXXXX",
+    idv: 520000,
+    ncb: "50%",
+    addOns: ["Zero depreciation", "Consumables", "Roadside assistance"],
+    financier: null,
+    channel: "Agent",
+    branch: "Coimbatore",
+  },
 ];
 
 /* ---------------- Masters used by the form ---------------- */

@@ -133,6 +133,68 @@ function mobileOf(r, claimNo) {
   return { masked: `98XXXXX${tail}`, full: `98${mid}${tail}` };
 }
 
+/* ---------------- claims with known (real) details ----------------
+   The builder below makes up demo values; a claim listed here shows these exact values instead
+   (policy, vehicle, driver, loss, garage). Used for the claim matching the RC / DL that were used
+   to test document reading. Keep this list private – it holds real card details. */
+const KNOWN_DETAILS = {
+  "OD/CHN/26/004652": {
+    policy: {
+      policyNo: "OG-26-1802-7741-00152452",
+      status: "In force",
+      periodFrom: "2026-02-19",
+      periodTo: "2027-02-18",
+      premiumRealised: "Yes",
+      idv: 520000,
+      ncb: "50%",
+      voluntaryDeductible: 0,
+      addOns: ["Zero depreciation", "Consumables", "Roadside assistance"],
+      financier: null,
+      previousClaims: 0,
+      channel: "Agent",
+    },
+    vehicle: { makeModel: "Hyundai Diesel", yearOfMfg: 2021, fuel: "Diesel", chassis: "MALFC81DLMM176541", engine: "D4FALM158370" },
+    driver: { name: "Mahesh A", dlNo: "TN41 20170004168", dlValidTill: "2027-12-18", dlClass: "LMV" },
+    loss: {
+      time: "18:40",
+      place: "Pollachi – Coimbatore Road, Kinathukadavu, Coimbatore",
+      cause: "Hit from behind by another vehicle at a signal",
+      tpInvolved: true,
+      policeReport: "Not reported",
+    },
+    garage: { name: "Hyundai authorised service, Pollachi", type: "Dealer · network", city: "Pollachi" },
+    survey: { estimate: 62000 }, // garage estimate – reserve ₹58,500 is within the 20% variance limit
+    contact: { mobile: "90XXXXX452", mobileFull: "9000000452", email: "thiyagarajan.mani@example.com" },
+    profile: {
+      insured: { nameAsPerDoc: "THIYAGARAJAN MANI", city: "Pollachi, Coimbatore", kyc: "Verified" },
+      vehicle: { make: "Hyundai", model: "Diesel (model to be confirmed)", regDate: "2021-02-19", owners: 1 },
+      driver: { dob: "1977-12-19" },
+      policy: { rollover: "Yes", breakIn: "No", vir: false, uwDocsMissing: false, ncbStatus: "Applicable", sec64VB: "Confirmed", startTime: "00:00" },
+    },
+  },
+};
+function withKnownDetails(claimNo, d) {
+  const k = KNOWN_DETAILS[claimNo];
+  if (!k) return d;
+  const vehicleLocation = k.garage?.name || d.loss.vehicleLocation;
+  const driver = d.driver ? { ...d.driver, ...k.driver } : d.driver;
+  return {
+    ...d,
+    policy: { ...d.policy, ...k.policy },
+    vehicle: { ...d.vehicle, ...k.vehicle },
+    driver,
+    // checks that quote overridden values
+    checks: d.checks.map((c) =>
+      c.label === "Driving licence valid" && driver ? { ...c, ok: driver.dlValidTill >= d.loss.date, note: `Valid till ${driver.dlValidTill}` } : c
+    ),
+    loss: { ...d.loss, ...k.loss, vehicleLocation },
+    garage: k.garage ? { ...d.garage, ...k.garage } : d.garage,
+    survey: k.survey && d.survey.estimate != null ? { ...d.survey, ...k.survey } : d.survey,
+    contact: { ...d.contact, ...k.contact },
+    profile: Object.fromEntries(Object.entries(d.profile).map(([sec, v]) => [sec, v && k.profile?.[sec] ? { ...v, ...k.profile[sec] } : v])),
+  };
+}
+
 /* ---------------- main builder ---------------- */
 export function getClaimDetail(claimNo) {
   // open queue first, then claims closed earlier (My Work Queue → Closed)
@@ -430,7 +492,7 @@ export function getClaimDetail(claimNo) {
       : null,
   };
 
-  return {
+  return withKnownDetails(claimNo, {
     ...row,
     step, // detailed internal step
     profile,
@@ -451,5 +513,5 @@ export function getClaimDetail(claimNo) {
     closure: row.closure || null,
     timeline: t,
     checks,
-  };
+  });
 }
