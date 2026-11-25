@@ -39,7 +39,7 @@ function Label({ children, req }) {
   );
 }
 function Err({ msg }) {
-  return msg ? <span className="mt-1 block text-[11.5px] text-red-700">{msg}</span> : null;
+  return msg ? <span className="mt-1 block text-[12px] text-red-700">{msg}</span> : null;
 }
 
 export default function AppointSurveyorDialog({ claim, current, wasNbnr, onCancel, onDone }) {
@@ -213,21 +213,21 @@ export default function AppointSurveyorDialog({ claim, current, wasNbnr, onCance
                         <span className="flex flex-wrap items-center gap-1.5">
                           <span className="text-[13px] font-semibold text-slate-800">{s.name}</span>
                           {isSug && (
-                            <span className="inline-flex items-center gap-0.5 rounded bg-teal-700 px-1.5 py-px text-[10.5px] font-semibold text-white">
+                            <span className="inline-flex items-center gap-0.5 rounded bg-teal-700 px-1.5 py-px text-[11px] font-semibold text-white">
                               <Star className="h-3 w-3" aria-hidden="true" /> Suggested
                             </span>
                           )}
-                          {s.speciality && <span className="rounded bg-sky-50 px-1.5 py-px text-[10.5px] font-medium text-sky-800">{s.speciality}</span>}
-                          {s.blocked && <span className="rounded bg-slate-200 px-1.5 py-px text-[10.5px] font-medium text-slate-700">{s.blocked}</span>}
+                          {s.speciality && <span className="rounded bg-sky-50 px-1.5 py-px text-[11px] font-medium text-sky-800">{s.speciality}</span>}
+                          {s.blocked && <span className="rounded bg-slate-200 px-1.5 py-px text-[11px] font-medium text-slate-700">{s.blocked}</span>}
                         </span>
-                        <span className="block text-[11.5px] text-slate-500">
+                        <span className="block text-[12px] text-slate-500">
                           {KIND_LABEL[s.kind]}
                           {s.licence && ` · ${s.licence}`}
                           {s.licenceTill && ` · valid till ${fmt(s.licenceTill)}`}
                         </span>
-                        {isSug && <span className="block text-[11.5px] text-teal-800">{suggestionWhy(s, place)}</span>}
+                        {isSug && <span className="block text-[12px] text-teal-800">{suggestionWhy(s, place)}</span>}
                       </span>
-                      <span className="flex-none text-right text-[11.5px] text-slate-500">
+                      <span className="flex-none text-right text-[12px] text-slate-500">
                         <span className="block font-semibold tabular-nums text-slate-700">
                           {s.open}/{s.capacity} jobs
                         </span>
@@ -242,7 +242,7 @@ export default function AppointSurveyorDialog({ claim, current, wasNbnr, onCance
               })}
             </ul>
             {mode === "physical" && ranked.some((s) => s.blocked && s.blocked !== "Current surveyor") && (
-              <p className="mt-1 text-[11.5px] text-slate-500">
+              <p className="mt-1 text-[12px] text-slate-500">
                 Not available:{" "}
                 {ranked
                   .filter((s) => s.blocked && s.blocked !== "Current surveyor")
@@ -331,7 +331,7 @@ export default function AppointSurveyorDialog({ claim, current, wasNbnr, onCance
             </div>
           </fieldset>
 
-          <p className="flex items-start gap-1.5 text-[11.5px] text-slate-500">
+          <p className="flex items-start gap-1.5 text-[12px] text-slate-500">
             <CalendarDays className="mt-0.5 h-3.5 w-3.5 flex-none" aria-hidden="true" />
             Survey report due within {REPORT_WITHIN_DAYS} days of appointment ({fmt(addDaysIso(today, REPORT_WITHIN_DAYS))}). The claim moves to Survey pending.
           </p>

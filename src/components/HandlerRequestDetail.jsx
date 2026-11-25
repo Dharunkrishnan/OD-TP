@@ -25,15 +25,15 @@ export function RequestListItem({ r, on, onClick }) {
       className={`block w-full border-l-[3px] px-3 py-1.5 text-left ${on ? "border-teal-600 bg-teal-50/60" : "border-transparent hover:bg-slate-50"}`}
     >
       <span className="flex items-center justify-between gap-2">
-        <span className="font-mono text-[11.5px] font-semibold text-teal-800">{r.claimNo}</span>
+        <span className="font-mono text-[12px] font-semibold text-teal-800">{r.claimNo}</span>
         <span className="text-[12.5px] font-semibold tabular-nums text-slate-900">{r.kind === "RESERVE" ? inr(r.to) : inr(r.reserve)}</span>
       </span>
-      <span className="block truncate text-[11.5px] text-slate-600">
+      <span className="block truncate text-[12px] text-slate-600">
         {r.insured} · {r.vehicle} · {r.handler.split(" ")[0]}
       </span>
       <span className="mt-0.5 flex flex-wrap items-center gap-1">
-        <span className={`inline-flex items-center rounded px-1.5 text-[10.5px] font-semibold leading-[18px] ring-1 ring-inset ${k.tone}`}>{k.label}</span>
-        <span className="text-[11px] text-slate-500">sent {fmt(r.raisedOn)}</span>
+        <span className={`inline-flex items-center rounded px-1.5 text-[11px] font-semibold leading-[18px] ring-1 ring-inset ${k.tone}`}>{k.label}</span>
+        <span className="text-[12px] text-slate-500">sent {fmt(r.raisedOn)}</span>
       </span>
     </button>
   );
@@ -62,7 +62,7 @@ export default function HandlerRequestDetail({ r, onDecide, onOpenClaim }) {
         <div className="min-w-0">
           <p className="flex flex-wrap items-center gap-2">
             <span className="font-mono text-[14px] font-semibold text-[#0B1F3A]">{r.claimNo}</span>
-            <span className={`inline-flex items-center rounded px-1.5 text-[11px] font-semibold leading-5 ring-1 ring-inset ${k.tone}`}>{k.label}</span>
+            <span className={`inline-flex items-center rounded px-1.5 text-[12px] font-semibold leading-5 ring-1 ring-inset ${k.tone}`}>{k.label}</span>
           </p>
           <p className="text-[12px] text-slate-500">
             {r.insured} · {r.regNo} · {r.vehicle}
@@ -77,13 +77,13 @@ export default function HandlerRequestDetail({ r, onDecide, onOpenClaim }) {
         <dl className="grid grid-cols-2 gap-x-4 gap-y-2 text-[12.5px] sm:grid-cols-4">
           {facts.map(([t, v]) => (
             <div key={t}>
-              <dt className="text-[10.5px] font-semibold uppercase tracking-wide text-slate-500">{t}</dt>
+              <dt className="text-[11px] font-semibold uppercase tracking-wide text-slate-500">{t}</dt>
               <dd className="text-slate-800">{v}</dd>
             </div>
           ))}
         </dl>
         <div className="rounded-lg bg-slate-50 px-3 py-2">
-          <p className="text-[10.5px] font-semibold uppercase tracking-wide text-slate-500">Handler's reason</p>
+          <p className="text-[11px] font-semibold uppercase tracking-wide text-slate-500">Handler's reason</p>
           <p className="text-[13px] font-semibold text-slate-800">{r.reason}</p>
           {r.remarks && <p className="text-[12.5px] text-slate-700">“{r.remarks}”</p>}
         </div>
@@ -106,7 +106,7 @@ export default function HandlerRequestDetail({ r, onDecide, onOpenClaim }) {
             className="w-full rounded-lg border border-slate-300 px-2.5 py-2 text-[13px] outline-none focus:border-teal-600 focus:ring-2 focus:ring-teal-600/20"
             aria-invalid={tried && rejectBad}
           />
-          {tried && rejectBad && <span className="mt-1 block text-[11.5px] text-red-700">Tell the handler why (at least 10 characters).</span>}
+          {tried && rejectBad && <span className="mt-1 block text-[12px] text-red-700">Tell the handler why (at least 10 characters).</span>}
         </label>
       </div>
 

@@ -1,6 +1,6 @@
 // src/components/HandlerMyDay.jsx
 // Claims Handler dashboard → "My Day" tab: the work to act on today (Performance is the other tab).
-//   • Quick actions   – new intimation, find a claim, NBNR to resolve, documents pending
+//   • Quick actions   – new intimation, NBNR to resolve, documents pending (search is in the header)
 //   • Due today & overdue – breached / at-risk / due-today claims with row quick actions (catalogue 160, 166)
 //   • Diary           – today's follow-ups, tick done; upcoming dates (catalogue 161)
 //   • Alerts & approvals – manager decisions on my requests, requests waiting, system alerts (20, 94, 181)
@@ -10,14 +10,11 @@ import { useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import {
   FilePlus2,
-  Search,
   Inbox,
   FileStack,
   AlertTriangle,
   Clock,
   CheckCircle2,
-  CalendarClock,
-  BellRing,
   Pencil,
   ChevronRight,
   XCircle,
@@ -27,6 +24,7 @@ import {
   Info,
 } from "lucide-react";
 import { openQueue } from "../data/claimLists";
+import { queueLink } from "../data/handlerDashboard";
 import { DIARY, ALERTS } from "../data/odHandlerMock";
 import { claimSlug } from "../data/odClaimDetail";
 import { listHandlerRequests, managerDecisions, REQUEST_KIND } from "../data/handlerRequests";
@@ -34,9 +32,9 @@ import { logWorkFor, pendingDocsFor, isoToday, NOTE_VISIBILITY, DATA_EVENT } fro
 import { QuickActionsMenu, QuickActionDialog } from "./QueueQuickActions";
 
 const DIARY_KEY = "smartclaims-diary"; // shared with My Work Queue
-const CARD = "flex min-h-0 flex-col rounded-xl border border-slate-200/80 bg-white shadow-[0_1px_2px_rgba(15,23,42,0.04),0_4px_12px_-4px_rgba(15,23,42,0.08)]";
+const CARD = "flex min-h-0 min-w-0 flex-col rounded-lg border border-slate-200 bg-white";
 const SLA_RANK = { breach: 0, risk: 1, ok: 2 };
-const DUE_LIMIT = 8;
+const DUE_LIMIT = 10;
 
 const readDiary = () => {
   try {
@@ -54,18 +52,13 @@ const saveDiary = (list) => {
 };
 const fmtDate = (iso) => new Date(iso + "T00:00:00").toLocaleDateString("en-IN", { day: "2-digit", month: "short" });
 
-function Card({ title, icon: Icon, right, children, className = "" }) {
+function Card({ title, right, children, className = "" }) {
   return (
     <section className={`${CARD} ${className}`}>
-      <div className="flex min-h-10 flex-none items-center justify-between gap-2 border-b border-slate-100 px-3 py-1">
-        <h2 className="flex min-w-0 items-center gap-2 text-[13.5px] font-semibold text-[#0B1F3A]">
-          <span className="grid h-6 w-6 flex-none place-items-center rounded-md bg-teal-50 text-teal-700 ring-1 ring-inset ring-teal-100">
-            <Icon className="h-3.5 w-3.5" aria-hidden="true" />
-          </span>
-          <span className="truncate">{title}</span>
-        </h2>
+      <header className="flex min-h-[42px] flex-none items-center justify-between gap-2 border-b border-slate-100 px-4 py-1.5">
+        <h2 className="truncate text-[13.5px] font-semibold text-slate-900">{title}</h2>
         {right}
-      </div>
+      </header>
       {children}
     </section>
   );
@@ -184,22 +177,21 @@ export default function HandlerMyDay() {
 
   const TILES = [
     { key: "new", label: "New claim intimation", sub: "Register a Motor OD claim", icon: FilePlus2, primary: true, onClick: () => navigate("/od/intimation") },
-    { key: "find", label: "Find a claim", sub: "Claim, vehicle, policy or name", icon: Search, onClick: () => window.dispatchEvent(new Event("smartclaims:open-search")) },
-    { key: "nbnr", label: "NBNR to resolve", sub: "Notified, not registered", icon: Inbox, count: nbnr, onClick: () => navigate("/od/worklist?tab=nbnr") },
-    { key: "docs", label: "Documents pending", sub: "Claims waiting on documents", icon: FileStack, count: docs, onClick: () => navigate("/od/worklist?tab=docs") },
+    { key: "nbnr", label: "NBNR to resolve", sub: "Notified, not registered", icon: Inbox, count: nbnr, onClick: () => navigate(queueLink({}, { stage: "NBNR" })) },
+    { key: "docs", label: "Documents pending", sub: "Claims waiting on documents", icon: FileStack, count: docs, onClick: () => navigate(queueLink({}, { stage: "Documents pending" })) },
   ];
 
   return (
-    <div className="flex min-h-0 flex-1 flex-col gap-2">
+    <div className="flex min-h-0 flex-1 flex-col gap-3">
       {/* ---------------- Quick actions ---------------- */}
-      <div className="grid grid-cols-2 gap-2 lg:grid-cols-4">
+      <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
         {TILES.map((t) => (
           <button
             key={t.key}
             type="button"
             onClick={t.onClick}
-            className={`group flex min-w-0 items-center gap-2.5 rounded-xl border px-3 py-2 text-left transition hover:-translate-y-px hover:shadow-md ${
-              t.primary ? "border-teal-700 bg-teal-700 text-white hover:bg-teal-800" : "border-slate-200/80 bg-white hover:border-teal-600/60"
+            className={`group flex min-w-0 items-center gap-3 rounded-lg border px-4 py-2.5 text-left transition ${
+              t.primary ? "border-teal-700 bg-teal-700 text-white hover:bg-teal-800" : "border-slate-200 bg-white hover:border-teal-600 hover:bg-slate-50"
             }`}
           >
             <span className={`grid h-8 w-8 flex-none place-items-center rounded-lg ${t.primary ? "bg-white/15" : "bg-teal-50 text-teal-700"}`}>
@@ -212,27 +204,30 @@ export default function HandlerMyDay() {
             {t.count != null && (
               <span className="flex-none rounded-full bg-slate-100 px-2 text-[13px] font-bold leading-6 tabular-nums text-slate-800">{t.count}</span>
             )}
-            <ChevronRight className={`h-4 w-4 flex-none ${t.primary ? "text-teal-100" : "text-slate-400 group-hover:text-teal-700"}`} aria-hidden="true" />
+            <ChevronRight className={`h-4 w-4 flex-none ${t.primary ? "text-teal-100" : "text-slate-500 group-hover:text-teal-700"}`} aria-hidden="true" />
           </button>
         ))}
       </div>
 
-      <div className="grid min-h-0 flex-1 grid-cols-1 gap-2 lg:grid-cols-3">
+      <div className="grid min-h-0 flex-1 grid-cols-1 gap-3 lg:grid-cols-3">
         {/* ---------------- Due today & overdue ---------------- */}
         <Card
           title="Due today & overdue"
-          icon={AlertTriangle}
           className="lg:col-span-2"
           right={
             <span className="flex items-center gap-1.5 text-[12px]">
-              <span className="rounded bg-red-50 px-1.5 font-semibold leading-5 text-red-800">{overdue} overdue</span>
-              <span className="rounded bg-amber-50 px-1.5 font-semibold leading-5 text-amber-900">{dueRows.length - overdue} due</span>
+              <button type="button" disabled={!overdue} onClick={() => navigate(queueLink({}, { sla: "breach" }))} className="rounded bg-red-50 px-1.5 font-semibold leading-6 text-red-800 hover:ring-1 hover:ring-inset hover:ring-red-300 disabled:hover:ring-0">
+                {overdue} overdue
+              </button>
+              <button type="button" disabled={dueRows.length === overdue} onClick={() => navigate(queueLink({}, { due: "due" }))} className="rounded bg-amber-50 px-1.5 font-semibold leading-6 text-amber-900 hover:ring-1 hover:ring-inset hover:ring-amber-300 disabled:hover:ring-0">
+                {dueRows.length - overdue} due today
+              </button>
             </span>
           }
         >
           {dueRows.length === 0 ? (
             <p className="flex flex-1 items-center justify-center gap-2 p-6 text-[13px] text-emerald-700">
-              <CheckCircle2 className="h-4 w-4" aria-hidden="true" /> Nothing due today. Good work.
+              <CheckCircle2 className="h-4 w-4" aria-hidden="true" /> No claims due today or overdue.
             </p>
           ) : (
             <table className="w-full table-fixed text-left">
@@ -247,7 +242,12 @@ export default function HandlerMyDay() {
               </thead>
               <tbody>
                 {dueRows.slice(0, DUE_LIMIT).map((r) => (
-                  <tr key={r.claimNo} className="border-t border-slate-100 align-middle hover:bg-slate-50/70">
+                  <tr
+                    key={r.claimNo}
+                    // a click anywhere on the row opens the claim in Claim 360 (view); buttons keep their own action
+                    onClick={(e) => !e.target.closest("button, a") && !window.getSelection()?.toString() && openClaim(r.claimNo)}
+                    className="cursor-pointer border-t border-slate-100 align-middle hover:bg-slate-50/70"
+                  >
                     <td className={`border-l-[3px] py-1.5 pl-2.5 ${STRIPE[r.sla.status]}`}>
                       <button type="button" onClick={() => openClaim(r.claimNo)} className="block font-mono text-[12.5px] font-semibold text-teal-700 hover:underline">
                         {r.claimNo}
@@ -285,7 +285,7 @@ export default function HandlerMyDay() {
           {dueRows.length > DUE_LIMIT && (
             <button
               type="button"
-              onClick={() => navigate("/od/worklist")}
+              onClick={() => navigate(queueLink({}, { due: "all" }))}
               className="mt-auto flex items-center justify-center gap-1 border-t border-slate-100 py-2 text-[12.5px] font-semibold text-teal-700 hover:bg-teal-50/50"
             >
               View all {dueRows.length} in My Work Queue <ChevronRight className="h-3.5 w-3.5" aria-hidden="true" />
@@ -293,9 +293,9 @@ export default function HandlerMyDay() {
           )}
         </Card>
 
-        <div className="flex min-h-0 flex-col gap-2">
+        <div className="flex min-h-0 flex-col gap-3">
           {/* ---------------- Diary ---------------- */}
-          <Card title="Today's diary" icon={CalendarClock} right={<span className="text-[12px] text-slate-500">{diaryLeft} left</span>}>
+          <Card title="Today's diary" right={<span className="text-[12px] text-slate-500">{diaryLeft} left</span>}>
             <ul className="flex flex-col px-3 py-1">
               {todayList.map((d) => (
                 <li key={`${d.i}-${d.time}`} className="flex items-start gap-2 border-b border-slate-100 py-1.5 last:border-0">
@@ -325,7 +325,7 @@ export default function HandlerMyDay() {
           </Card>
 
           {/* ---------------- Alerts & approvals ---------------- */}
-          <Card title="Alerts & approvals" icon={BellRing} className="flex-1" right={<span className="text-[12px] text-slate-500">{decisions.length + waiting.length + alerts.length}</span>}>
+          <Card title="Alerts & approvals" className="flex-1" right={<span className="text-[12px] text-slate-500">{decisions.length + waiting.length + alerts.length}</span>}>
             <ul className="flex flex-col px-3 py-1">
               {decisions.map((d, i) => (
                 <li key={`d${i}`} className="flex items-start gap-2 border-b border-slate-100 py-1.5">

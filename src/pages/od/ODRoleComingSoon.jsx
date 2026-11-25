@@ -92,7 +92,7 @@ export default function ODRoleComingSoon() {
             Work as Claims Manager
           </button>
         </div>
-        <p className="mt-3 pl-[52px] text-[11.5px] text-slate-400">You can also change role any time from your name at the top right → Select role.</p>
+        <p className="mt-3 pl-[52px] text-[12px] text-slate-500">You can also change role any time from your name at the top right → Select role.</p>
       </div>
 
       {toast && (

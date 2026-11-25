@@ -179,7 +179,7 @@ function ViewSelect({ value, onChange, views, label }) {
       >
         {CurIcon && <CurIcon className={`h-3.5 w-3.5 flex-none ${open ? "text-teal-700" : "text-slate-500"}`} aria-hidden="true" />}
         <span className="truncate">{cur.label}</span>
-        <ChevronDown className={`h-3.5 w-3.5 flex-none text-slate-400 transition ${open ? "rotate-180" : ""}`} aria-hidden="true" />
+        <ChevronDown className={`h-3.5 w-3.5 flex-none text-slate-500 transition ${open ? "rotate-180" : ""}`} aria-hidden="true" />
       </button>
       {open && (
         <ul
@@ -188,7 +188,7 @@ function ViewSelect({ value, onChange, views, label }) {
           aria-label={label}
           className="absolute right-0 top-full z-30 mt-1.5 w-max min-w-full max-w-[280px] rounded-xl border border-slate-200 bg-white p-1 shadow-xl"
         >
-          <li className="px-2 pb-1 pt-1 text-[10px] font-semibold uppercase tracking-wider text-slate-400" role="presentation">
+          <li className="px-2 pb-1 pt-1 text-[11px] font-semibold uppercase tracking-wider text-slate-500" role="presentation">
             {label}
           </li>
           {views.map((v, i) => {
@@ -211,7 +211,7 @@ function ViewSelect({ value, onChange, views, label }) {
                 </span>
                 <span className="min-w-0 flex-1">
                   <span className={`block text-[12.5px] leading-tight ${sel ? "font-semibold text-teal-900" : "font-medium text-slate-800"}`}>{v.label}</span>
-                  {v.hint && <span className="block text-[11px] leading-snug text-slate-500">{v.hint}</span>}
+                  {v.hint && <span className="block text-[12px] leading-snug text-slate-500">{v.hint}</span>}
                 </span>
                 <Check className={`mt-1 h-3.5 w-3.5 flex-none ${sel ? "text-teal-700" : "text-transparent"}`} aria-hidden="true" />
               </li>
@@ -229,7 +229,7 @@ function ViewSelect({ value, onChange, views, label }) {
 /** Shared legend for the stage charts */
 function StageLegend({ type }) {
   return (
-    <div className="flex flex-wrap items-center gap-x-3 gap-y-1 text-[11px] text-slate-600">
+    <div className="flex flex-wrap items-center gap-x-3 gap-y-1 text-[12px] text-slate-600">
       {type === "variance" ? (
         <>
           <span className="flex items-center gap-1.5"><span className="h-2.5 w-2.5 rounded-sm bg-teal-600" aria-hidden="true" />Under target (days spare)</span>
@@ -248,7 +248,7 @@ function StageLegend({ type }) {
           <span className="flex items-center gap-1.5"><span className="w-3.5 border-t-2 border-dashed border-slate-800" aria-hidden="true" />Target</span>
         </>
       )}
-      <span className="ml-auto text-slate-400">days</span>
+      <span className="ml-auto text-slate-500">days</span>
     </div>
   );
 }
@@ -256,7 +256,7 @@ function StageLegend({ type }) {
 /** Tooltip text for a stage */
 function StageTip({ s }) {
   return (
-    <div className="pointer-events-none absolute left-1/2 top-0 z-30 -translate-x-1/2 whitespace-nowrap rounded-md bg-slate-900 px-2.5 py-1.5 text-[11px] text-white shadow-lg">
+    <div className="pointer-events-none absolute left-1/2 top-0 z-30 -translate-x-1/2 whitespace-nowrap rounded-md bg-slate-900 px-2.5 py-1.5 text-[12px] text-white shadow-lg">
       <p className="font-semibold">{s.stage}</p>
       <p className="tabular-nums text-slate-300">
         Avg {s.actual} d · target {s.target} d ·{" "}
@@ -296,7 +296,7 @@ function StageBars({ items }) {
               onMouseEnter={() => setHover(s.stage)}
               onFocus={() => setHover(s.stage)}
               aria-label={`${s.stage}: average ${s.actual} days, target ${s.target} days`}
-              className={`grid grid-cols-[minmax(0,150px)_minmax(0,1fr)_44px] items-center gap-2 rounded px-1 py-px text-[11.5px] ${on ? "bg-slate-100" : ""}`}
+              className={`grid grid-cols-[minmax(0,150px)_minmax(0,1fr)_44px] items-center gap-2 rounded px-1 py-px text-[12px] ${on ? "bg-slate-100" : ""}`}
             >
               <span className="truncate text-slate-700" title={s.stage}>
                 {(STAGE_SHORT[s.stage] || [s.stage]).join(" ")}
@@ -313,7 +313,7 @@ function StageBars({ items }) {
           );
         })}
       </ul>
-      <div className="mt-1 grid grid-cols-[minmax(0,150px)_minmax(0,1fr)_44px] gap-2 px-1 text-[10px] text-slate-400" aria-hidden="true">
+      <div className="mt-1 grid grid-cols-[minmax(0,150px)_minmax(0,1fr)_44px] gap-2 px-1 text-[11px] text-slate-500" aria-hidden="true">
         <span />
         <span className="flex justify-between tabular-nums">
           {Array.from({ length: top / 2 + 1 }, (_, i) => (
@@ -389,7 +389,7 @@ function StageVariance({ items }) {
               onMouseEnter={() => setHover(s.stage)}
               onFocus={() => setHover(s.stage)}
               aria-label={`${s.stage}: ${d > 0 ? `${d} days over target` : `${Math.abs(d)} days under target`}`}
-              className={`grid grid-cols-[minmax(0,150px)_minmax(0,1fr)_58px] items-center gap-2 rounded px-1 py-px text-[11.5px] ${on ? "bg-slate-100" : ""}`}
+              className={`grid grid-cols-[minmax(0,150px)_minmax(0,1fr)_58px] items-center gap-2 rounded px-1 py-px text-[12px] ${on ? "bg-slate-100" : ""}`}
             >
               <span className="truncate text-slate-700" title={s.stage}>
                 {(STAGE_SHORT[s.stage] || [s.stage]).join(" ")}
@@ -409,7 +409,7 @@ function StageVariance({ items }) {
           );
         })}
       </ul>
-      <div className="mt-1 grid grid-cols-[minmax(0,150px)_minmax(0,1fr)_58px] gap-2 px-1 text-[10px] text-slate-400" aria-hidden="true">
+      <div className="mt-1 grid grid-cols-[minmax(0,150px)_minmax(0,1fr)_58px] gap-2 px-1 text-[11px] text-slate-500" aria-hidden="true">
         <span />
         <span className="flex justify-between">
           <span>← spare</span>
@@ -436,7 +436,7 @@ function StageColumns({ items }) {
         {/* y axis */}
         <div className="relative w-6 flex-none" style={{ height: H }} aria-hidden="true">
           {ticks.map((t) => (
-            <span key={t} className="absolute right-1 translate-y-1/2 text-[10px] leading-none tabular-nums text-slate-400" style={{ bottom: y(t) }}>
+            <span key={t} className="absolute right-1 translate-y-1/2 text-[11px] leading-none tabular-nums text-slate-500" style={{ bottom: y(t) }}>
               {t}
             </span>
           ))}
@@ -463,7 +463,7 @@ function StageColumns({ items }) {
                   {on && <span className="absolute inset-x-1 bottom-[34px] top-0 rounded bg-slate-100/70" aria-hidden="true" />}
                   {/* value label – above the bar or the target line, whichever is higher */}
                   <span
-                    className={`absolute z-20 flex items-center gap-0.5 whitespace-nowrap text-[11px] font-semibold tabular-nums ${over ? "text-red-700" : "text-slate-700"}`}
+                    className={`absolute z-20 flex items-center gap-0.5 whitespace-nowrap text-[12px] font-semibold tabular-nums ${over ? "text-red-700" : "text-slate-700"}`}
                     style={{ bottom: 34 + y(Math.max(s.actual, s.target)) + 4 }}
                   >
                     {over && <AlertTriangle className="h-3 w-3" aria-hidden="true" />}
@@ -481,7 +481,7 @@ function StageColumns({ items }) {
                     aria-hidden="true"
                   />
                   {/* x label */}
-                  <span className="flex h-[34px] w-full flex-col items-center justify-start pt-1 text-center text-[10.5px] leading-tight text-slate-500">
+                  <span className="flex h-[34px] w-full flex-col items-center justify-start pt-1 text-center text-[11px] leading-tight text-slate-500">
                     <span className="max-w-full truncate">{l1}</span>
                     <span className="max-w-full truncate">{l2}</span>
                   </span>
@@ -596,7 +596,7 @@ function Columns({ items, labelKey, valueKey = "count", hover, setHover, colorFo
                 style={{ height: h }}
               >
                 {inside && (
-                  <span className={`text-[11.5px] font-semibold tabular-nums ${active ? "text-white" : inkFor ? inkFor(it, i) : "text-white"}`}>
+                  <span className={`text-[12px] font-semibold tabular-nums ${active ? "text-white" : inkFor ? inkFor(it, i) : "text-white"}`}>
                     {format(it[valueKey])}
                   </span>
                 )}
@@ -607,13 +607,13 @@ function Columns({ items, labelKey, valueKey = "count", hover, setHover, colorFo
       </div>
       <div className="mt-1 flex gap-3">
         {items.map((it) => (
-          <span key={it[labelKey]} className="flex-1 text-center text-[11px] leading-tight text-slate-500">
+          <span key={it[labelKey]} className="flex-1 text-center text-[12px] leading-tight text-slate-500">
             {it[labelKey]}
           </span>
         ))}
       </div>
       {inside && (
-        <p className="mt-1 flex flex-wrap items-center gap-x-4 gap-y-1 text-[10.5px] text-slate-500">
+        <p className="mt-1 flex flex-wrap items-center gap-x-4 gap-y-1 text-[11px] text-slate-500">
           <span className="flex items-center gap-1.5">
             <span className="inline-block w-5 border-t-2 border-dashed border-slate-700" aria-hidden="true" />
             {targetLabel ?? `Target ${format(target)}`}
@@ -688,7 +688,7 @@ function PieChart({ items, labelKey, colorFor, donut, hover, setHover, total, ce
               <span className="block text-lg font-semibold leading-none tabular-nums text-slate-900">
                 {active ? active.count : total}
               </span>
-              <span className="block text-[10px] text-slate-500">{active ? `${pct(active.count, total)}%` : centerLabel}</span>
+              <span className="block text-[11px] text-slate-500">{active ? `${pct(active.count, total)}%` : centerLabel}</span>
             </span>
           </div>
         )}
@@ -708,7 +708,7 @@ function PieChart({ items, labelKey, colorFor, donut, hover, setHover, total, ce
               {it[labelKey]}
             </span>
             <span className="font-semibold tabular-nums text-slate-800">{it.count}</span>
-            <span className="w-8 text-right text-[11px] tabular-nums text-slate-500">{pct(it.count, total)}%</span>
+            <span className="w-8 text-right text-[12px] tabular-nums text-slate-500">{pct(it.count, total)}%</span>
           </li>
         ))}
       </ul>
@@ -806,7 +806,7 @@ function HandlerRow({ h, on, setHover, children, right }) {
     >
       <span className="flex min-w-0 items-center gap-1 text-slate-700" title={`${h.name} · ${h.userId}`}>
         <span className="truncate">{first(h.name)}</span>
-        {h.status === "leave" && <Plane className="h-3 w-3 flex-none text-slate-400" aria-label="On leave" />}
+        {h.status === "leave" && <Plane className="h-3 w-3 flex-none text-slate-500" aria-label="On leave" />}
       </span>
       {children}
       {right}
@@ -836,14 +836,14 @@ function CapacityBars({ team, hover, setHover, onReallocate }) {
                       onClick={onReallocate}
                       title={`${h.leaveNote} · ${h.dueToday} due today – reallocate`}
                       aria-label={`Reallocate ${first(h.name)}'s claims – ${h.dueToday} due today`}
-                      className="inline-flex items-center gap-0.5 rounded bg-amber-50 px-1 text-[10.5px] font-semibold text-amber-900 ring-1 ring-inset ring-amber-200 hover:bg-amber-100"
+                      className="inline-flex items-center gap-0.5 rounded bg-amber-50 px-1 text-[11px] font-semibold text-amber-900 ring-1 ring-inset ring-amber-200 hover:bg-amber-100"
                     >
                       <Shuffle className="h-3 w-3" aria-hidden="true" />
                       {h.dueToday}
                     </button>
                   ) : null}
                   <span className={load > 1 ? "font-semibold text-red-700" : "font-semibold text-slate-800"}>{h.open}</span>
-                  <span className="text-[11px] text-slate-400">/{HANDLER_CAPACITY}</span>
+                  <span className="text-[12px] text-slate-500">/{HANDLER_CAPACITY}</span>
                 </span>
               }
             >
@@ -855,10 +855,10 @@ function CapacityBars({ team, hover, setHover, onReallocate }) {
           );
         })}
       </ul>
-      <p className="mt-1.5 flex flex-wrap items-center gap-x-3 gap-y-1 text-[10.5px] text-slate-500">
+      <p className="mt-1.5 flex flex-wrap items-center gap-x-3 gap-y-1 text-[11px] text-slate-500">
         <span className="flex items-center gap-1.5"><span className="inline-block w-4 border-t-2 border-dashed border-slate-800" aria-hidden="true" />Capacity {HANDLER_CAPACITY}</span>
         <span className="flex items-center gap-1.5"><span className="h-2.5 w-2.5 rounded-sm bg-red-600" aria-hidden="true" />Over capacity</span>
-        <span className="flex items-center gap-1.5"><Plane className="h-3 w-3 text-slate-400" aria-hidden="true" />On leave</span>
+        <span className="flex items-center gap-1.5"><Plane className="h-3 w-3 text-slate-500" aria-hidden="true" />On leave</span>
       </p>
     </div>
   );
@@ -890,7 +890,7 @@ function RiskBars({ team, hover, setHover }) {
           </HandlerRow>
         ))}
       </ul>
-      <p className="mt-1.5 flex flex-wrap items-center gap-x-3 gap-y-1 text-[10.5px] text-slate-500">
+      <p className="mt-1.5 flex flex-wrap items-center gap-x-3 gap-y-1 text-[11px] text-slate-500">
         <span className="flex items-center gap-1.5"><span className="h-2.5 w-2.5 rounded-sm bg-red-600" aria-hidden="true" />Breached</span>
         <span className="flex items-center gap-1.5"><span className="h-2.5 w-2.5 rounded-sm bg-amber-500" aria-hidden="true" />At risk (due ≤ 24 h)</span>
       </p>
@@ -922,7 +922,7 @@ function TargetBars({ team, hover, setHover, valueOf, target, bad, format, targe
           );
         })}
       </ul>
-      <p className="mt-1.5 flex flex-wrap items-center gap-x-3 gap-y-1 text-[10.5px] text-slate-500">
+      <p className="mt-1.5 flex flex-wrap items-center gap-x-3 gap-y-1 text-[11px] text-slate-500">
         <span className="flex items-center gap-1.5"><span className="inline-block w-4 border-t-2 border-dashed border-slate-800" aria-hidden="true" />{targetLabel}</span>
         <span className="flex items-center gap-1.5"><span className="h-2.5 w-2.5 rounded-sm bg-red-600" aria-hidden="true" />{badLabel}</span>
       </p>
@@ -1030,9 +1030,9 @@ export default function ODManagerDashboard() {
                   <k.icon className="h-3.5 w-3.5" aria-hidden="true" />
                 </span>
                 <span className="min-w-0">
-                  <span className="block truncate text-[11px] font-medium leading-tight text-slate-500" title={k.label}>{k.label}</span>
+                  <span className="block truncate text-[12px] font-medium leading-tight text-slate-500" title={k.label}>{k.label}</span>
                   <span className="block text-base font-semibold leading-tight tabular-nums text-slate-900">{k.value}</span>
-                  <span className="flex items-center gap-1 truncate text-[10.5px] leading-tight text-slate-500">
+                  <span className="flex items-center gap-1 truncate text-[11px] leading-tight text-slate-500">
                     {k.sub}
                     {k.ok !== undefined &&
                       (k.ok ? (
@@ -1059,7 +1059,7 @@ export default function ODManagerDashboard() {
               </div>
             }
           >
-            <p className="truncate px-3 pt-1 text-[11px] text-slate-500" aria-live="polite">
+            <p className="truncate px-3 pt-1 text-[12px] text-slate-500" aria-live="polite">
               {slaView === "status" && (hSla?.key ? `${hSla.label}: ${hSla.count} claims (${pct(hSla.count, K.open)}%)` : `${K.open} team open claims by current SLA position`)}
               {slaView === "ageing" && (hSla?.bucket ? `${hSla.bucket}: ${hSla.count} claims (${pct(hSla.count, K.open)}%)` : `${K.open} team open claims by age · ${ageing[3].count + ageing[4].count} older than 30 days`)}
               {slaView === "met" && (hSla?.userId ? `${hSla.name}: ${hSla.slaMet}% within SLA · ${hSla.closed30} closed` : `% of claims closed within SLA · team ${K.slaMet}%`)}
@@ -1082,7 +1082,7 @@ export default function ODManagerDashboard() {
                           <st.Icon className="h-3 w-3" aria-hidden="true" />
                         </span>
                         <span className="min-w-0">
-                          <span className="block truncate text-[11px] leading-tight text-slate-500">{x.label.split(" (")[0]}</span>
+                          <span className="block truncate text-[12px] leading-tight text-slate-500">{x.label.split(" (")[0]}</span>
                           <span className="flex items-baseline gap-1.5">
                             <span className="text-sm font-semibold tabular-nums text-slate-900">{x.count}</span>
                             <span className="text-xs tabular-nums text-slate-500">{pct(x.count, K.open)}%</span>
@@ -1092,7 +1092,7 @@ export default function ODManagerDashboard() {
                     );
                   })}
                 </ul>
-                <p className="text-[10.5px] leading-snug text-slate-500">
+                <p className="text-[11px] leading-snug text-slate-500">
                   Most breaches: <b className="font-semibold text-slate-700">{first([...TEAM].sort((a, b) => b.breached - a.breached)[0].name)}</b> ({Math.max(...TEAM.map((h) => h.breached))}) · Settlement SLA clock pauses while documents are with the insured.
                 </p>
               </div>
@@ -1159,7 +1159,7 @@ export default function ODManagerDashboard() {
               </div>
             }
           >
-            <p className="truncate px-3 pt-1 text-[11px] text-slate-500" aria-live="polite" title={hWork?.userId ? handlerReadout(hWork) : undefined}>
+            <p className="truncate px-3 pt-1 text-[12px] text-slate-500" aria-live="polite" title={hWork?.userId ? handlerReadout(hWork) : undefined}>
               {hWork?.userId
                 ? handlerReadout(hWork)
                 : workView === "capacity"
@@ -1207,7 +1207,7 @@ export default function ODManagerDashboard() {
             title="Waiting for my approval"
             action={<ViewSelect value={apprView} onChange={pick(setApprView, KEY.appr)} views={APPROVAL_VIEWS} label="Show" />}
           >
-            <p className="truncate px-3 pt-1 text-[11px] text-slate-500">
+            <p className="truncate px-3 pt-1 text-[12px] text-slate-500">
               {K.approvals} claims · {lakh(K.approvalsValue)} · {K.approvalsOverSla} over SLA · {K.aboveAuthority} above my limit
             </p>
             <ul className="min-h-0 flex-1 divide-y divide-slate-100 overflow-y-auto lg:max-h-[176px] [@media(max-height:660px)]:lg:max-h-[136px]">
@@ -1220,20 +1220,20 @@ export default function ODManagerDashboard() {
                     <button type="button" onClick={() => navigate(`/od/approvals?claim=${approvalSlug(a.claimNo)}`)} className="flex w-full items-center gap-2 px-3 py-1 text-left hover:bg-teal-50/40">
                       <span className="min-w-0 flex-1 leading-tight">
                         <span className="flex items-center gap-1.5">
-                          <span className="font-mono text-[11.5px] font-semibold text-teal-800">{a.claimNo}</span>
+                          <span className="font-mono text-[12px] font-semibold text-teal-800">{a.claimNo}</span>
                           {above && (
-                            <span className="rounded bg-indigo-50 px-1 text-[10px] font-semibold text-indigo-800 ring-1 ring-inset ring-indigo-200" title={`Above your authority of ${inr(MANAGER_AUTHORITY)} – refer to the Zonal Claims Head`}>
+                            <span className="rounded bg-indigo-50 px-1 text-[11px] font-semibold text-indigo-800 ring-1 ring-inset ring-indigo-200" title={`Above your authority of ${inr(MANAGER_AUTHORITY)} – refer to the Zonal Claims Head`}>
                               Above my limit
                             </span>
                           )}
                         </span>
-                        <span className="block truncate text-[11px] text-slate-500">
+                        <span className="block truncate text-[12px] text-slate-500">
                           {first(a.handler)} · {a.insured} · {a.lossType}
                         </span>
                       </span>
                       <span className="flex-none text-right leading-tight">
                         <span className="block text-[12.5px] font-semibold tabular-nums text-slate-900">{inr(a.amount)}</span>
-                        <span className={`inline-flex items-center gap-0.5 text-[10.5px] font-semibold ${overSla ? "text-red-700" : nearSla ? "text-amber-800" : "text-slate-500"}`} title={`Approval SLA ${APPROVAL_SLA_HOURS / 24} days`}>
+                        <span className={`inline-flex items-center gap-0.5 text-[11px] font-semibold ${overSla ? "text-red-700" : nearSla ? "text-amber-800" : "text-slate-500"}`} title={`Approval SLA ${APPROVAL_SLA_HOURS / 24} days`}>
                           {overSla ? <AlertTriangle className="h-3 w-3" aria-hidden="true" /> : <CalendarClock className="h-3 w-3" aria-hidden="true" />}
                           {waitLabel(a.waitingHours)}
                           {overSla ? " · over SLA" : " waiting"}
@@ -1272,7 +1272,7 @@ export default function ODManagerDashboard() {
               <StageTatChart items={STAGES} type={stageChart} />
               <table className="w-full self-start text-left text-[12px]">
                 <thead>
-                  <tr className="bg-slate-50 text-[10.5px] uppercase tracking-wide text-slate-500">
+                  <tr className="bg-slate-50 text-[11px] uppercase tracking-wide text-slate-500">
                     <th scope="col" className="px-3 py-1 font-semibold">Stage</th>
                     <th scope="col" className="whitespace-nowrap px-2 py-1 text-right font-semibold">Avg / target</th>
                     <th scope="col" className="px-3 py-1 text-right font-semibold" title="Team open claims now over the stage SLA">Breached</th>
@@ -1286,7 +1286,7 @@ export default function ODManagerDashboard() {
                         <td className="truncate px-3 py-1 [@media(max-height:660px)]:py-0.5 text-slate-700" title={s.stage}>{(STAGE_SHORT[s.stage] || [s.stage]).join(" ").trim()}</td>
                         <td className="whitespace-nowrap px-2 py-1 [@media(max-height:660px)]:py-0.5 text-right tabular-nums">
                           <span className={`font-semibold ${over ? "text-red-700" : "text-slate-800"}`}>{fmtDays(s.actual)}</span>
-                          <span className="text-slate-400"> / {fmtDays(s.target)}</span>
+                          <span className="text-slate-500"> / {fmtDays(s.target)}</span>
                         </td>
                         <td className="px-3 py-1 [@media(max-height:660px)]:py-0.5 text-right tabular-nums">
                           {s.breachedOpen > 0 ? (
@@ -1312,7 +1312,7 @@ export default function ODManagerDashboard() {
           </Card>
 
           <Card title="Watch list" action={<ViewSelect value={watchView} onChange={pick(setWatchView, KEY.watch)} views={WATCH_VIEWS} label="Show" />}>
-            <p className="truncate px-3 pt-1 text-[11px] text-slate-500">
+            <p className="truncate px-3 pt-1 text-[12px] text-slate-500">
               {watch.length} claims · reserve {lakh(watch.reduce((t, w) => t + w.reserve, 0))}
             </p>
             <ul className="divide-y divide-slate-100">
@@ -1324,8 +1324,8 @@ export default function ODManagerDashboard() {
                     </span>
                     {/* two lines on normal screens; one line on short screens (≤ 660 px high) so the page still fits */}
                     <span className="min-w-0 flex-1 leading-tight [@media(max-height:660px)]:truncate">
-                      <span className="block font-mono text-[11.5px] font-semibold text-teal-800 [@media(max-height:660px)]:inline">{w.claimNo}</span>
-                      <span className="block truncate text-[11px] text-slate-500 [@media(max-height:660px)]:inline">
+                      <span className="block font-mono text-[12px] font-semibold text-teal-800 [@media(max-height:660px)]:inline">{w.claimNo}</span>
+                      <span className="block truncate text-[12px] text-slate-500 [@media(max-height:660px)]:inline">
                         <span className="hidden [@media(max-height:660px)]:inline"> · </span>
                         {w.reason} · {first(w.handler)}
                       </span>

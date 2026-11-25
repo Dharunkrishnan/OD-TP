@@ -46,6 +46,7 @@ import {
 import ODShell from "../../components/layout/ODShell";
 import { WORK_QUEUE, DIARY, ALERTS } from "../../data/odHandlerMock";
 import { openQueue, closedList } from "../../data/claimLists";
+import { readDrill, matchOpen, matchClosed, drillLabel } from "../../data/handlerDashboard";
 import ClosedClaimsTable from "../../components/ClosedClaimsTable";
 import { claimSlug } from "../../data/odClaimDetail";
 import { QuickActionsMenu, QuickActionDialog } from "../../components/QueueQuickActions";
@@ -183,7 +184,7 @@ function Card({ title, note, action, children, className = "" }) {
     <section className={`flex flex-col rounded-lg border border-slate-200 bg-white ${className}`}>
       <div className="flex min-h-9 flex-none flex-wrap items-center justify-between gap-2 border-b border-slate-100 px-3 py-0.5">
         <h2 className="truncate text-[13px] font-semibold text-[#0B1F3A]">{title}</h2>
-        {action ?? (note && <span className="text-[11px] text-slate-500">{note}</span>)}
+        {action ?? (note && <span className="text-[12px] text-slate-500">{note}</span>)}
       </div>
       {children}
     </section>
@@ -198,7 +199,7 @@ function SlaChip({ sla }) {
   };
   const { cls, Icon } = map[sla.status];
   return (
-    <span className={`inline-flex items-center gap-1 whitespace-nowrap rounded px-1.5 text-[11px] font-semibold leading-[18px] ring-1 ring-inset ${cls}`}>
+    <span className={`inline-flex items-center gap-1 whitespace-nowrap rounded px-1.5 text-[12px] font-semibold leading-[18px] ring-1 ring-inset ${cls}`}>
       <Icon className="h-3 w-3" aria-hidden="true" />
       {sla.label}
     </span>
@@ -285,10 +286,10 @@ function FilterPill({ label, icon: Icon, value, onChange, options, allLabel, sho
           aria-label={`${label}: ${current ? current.label : allLabel}`}
           className="flex h-full items-center gap-1.5 rounded-full pl-3 pr-2.5 focus:outline-none focus-visible:ring-4 focus-visible:ring-teal-700/15"
         >
-          {Icon && <Icon className={`h-3.5 w-3.5 flex-none ${on ? "text-teal-700" : "text-slate-400"}`} aria-hidden="true" />}
+          {Icon && <Icon className={`h-3.5 w-3.5 flex-none ${on ? "text-teal-700" : "text-slate-500"}`} aria-hidden="true" />}
           <span className={on ? "text-teal-700" : "text-slate-500"}>{label}:</span>
           <span className="max-w-[150px] truncate font-semibold">{current ? current.label : allLabel}</span>
-          <ChevronDown className={`h-3.5 w-3.5 flex-none transition ${open ? "rotate-180" : ""} ${on ? "text-teal-700" : "text-slate-400"}`} aria-hidden="true" />
+          <ChevronDown className={`h-3.5 w-3.5 flex-none transition ${open ? "rotate-180" : ""} ${on ? "text-teal-700" : "text-slate-500"}`} aria-hidden="true" />
         </button>
         {on && showClear && (
           <button
@@ -331,7 +332,7 @@ function FilterPill({ label, icon: Icon, value, onChange, options, allLabel, sho
                 <Check className={`h-3.5 w-3.5 flex-none ${sel ? "text-teal-700" : "text-transparent"}`} aria-hidden="true" />
                 <span className="flex-1">{o.label}</span>
                 {n !== null && (
-                  <span className={`min-w-6 rounded-full px-1.5 text-center text-[10.5px] font-semibold leading-[18px] ${sel ? "bg-teal-700 text-white" : n ? "bg-slate-100 text-slate-600" : "text-slate-300"}`}>
+                  <span className={`min-w-6 rounded-full px-1.5 text-center text-[11px] font-semibold leading-[18px] ${sel ? "bg-teal-700 text-white" : n ? "bg-slate-100 text-slate-600" : "text-slate-300"}`}>
                     {n}
                   </span>
                 )}
@@ -349,8 +350,23 @@ function FilterPill({ label, icon: Icon, value, onChange, options, allLabel, sho
 /* ------------------------------------------------------------------ */
 export default function ODWorkQueue() {
   const [params, setParams] = useSearchParams();
-  const [QUEUE] = useState(loadQueue);
-  const [closed] = useState(closedList);
+  const [allOpen] = useState(loadQueue);
+  const [allClosed] = useState(closedList);
+  // Filters carried from a dashboard figure (?stage=…&sla=…&reg=…) – same rule the dashboard counted with
+  const drillKey = JSON.stringify(readDrill(params));
+  const drill = useMemo(() => JSON.parse(drillKey), [drillKey]);
+  const QUEUE = useMemo(() => allOpen.filter((r) => matchOpen(r, drill)), [allOpen, drill]);
+  const closed = useMemo(() => allClosed.filter((r) => matchClosed(r, drill)), [allClosed, drill]);
+  const removeDrill = (key) =>
+    setParams(
+      (p) => {
+        const n = new URLSearchParams(p);
+        if (key) n.delete(key);
+        else Object.keys(drill).forEach((k) => n.delete(k));
+        return n;
+      },
+      { replace: true }
+    );
   const view = params.get("view") === "closed" ? "closed" : "open";
   const setView = (v) =>
     setParams(
@@ -365,6 +381,8 @@ export default function ODWorkQueue() {
   const navigate = useNavigate();
   // Eye icon / row click → Claim 360 read only; paper-and-pen icon → Claim 360 ready to work on
   const openClaim = (claimNo) => navigate(`/od/claims/${claimSlug(claimNo)}`);
+  // row click → open, unless the click was on a control in the row or the user was selecting text
+  const rowOpens = (e) => !e.target.closest("button, a, input, select, textarea, label, [role=menu], [role=dialog]") && !window.getSelection()?.toString();
   const editClaim = (claimNo) => navigate(`/od/claims/${claimSlug(claimNo)}?mode=edit`);
   const initialTab = TABS.some((t) => t.key === params.get("tab")) ? params.get("tab") : "all";
   // Bucket from the URL; a dashboard link with only ?tab= opens the bucket with most of those claims
@@ -527,7 +545,7 @@ export default function ODWorkQueue() {
           return [b.key, { n: list.length, breach: list.filter((r) => r.sla.status === "breach").length, risk: list.filter((r) => r.sla.status === "risk").length }];
         })
       ),
-    []
+    [QUEUE]
   );
   // Tabs shown in this bucket: Docs pending / NBNR only where they apply
   const tabsHere = TABS.filter((t) => !["docs", "nbnr"].includes(t.key) || counts[t.key] > 0 || t.key === tab);
@@ -689,7 +707,7 @@ export default function ODWorkQueue() {
         return d.tone === "plain" ? (
           <span className="tabular-nums text-slate-700">{d.label}</span>
         ) : (
-          <span className={`rounded px-1.5 text-[11px] font-semibold leading-[18px] ring-1 ring-inset ${DUE_TONE[d.tone]}`}>{d.label}</span>
+          <span className={`rounded px-1.5 text-[12px] font-semibold leading-[18px] ring-1 ring-inset ${DUE_TONE[d.tone]}`}>{d.label}</span>
         );
       }
       case "age":
@@ -717,7 +735,11 @@ export default function ODWorkQueue() {
     <ODShell
       active="queue"
       title="My Work Queue"
-      subtitle={view === "closed" ? `${closed.length} closed claims · most recent first` : `${QUEUE.length} open claims assigned to me · priority order`}
+      subtitle={
+        view === "closed"
+          ? `${closed.length}${closed.length !== allClosed.length ? ` of ${allClosed.length}` : ""} closed claims · most recent first`
+          : `${QUEUE.length}${QUEUE.length !== allOpen.length ? ` of ${allOpen.length}` : ""} open claims assigned to me · priority order`
+      }
       onNavigateMissing={notBuilt}
     >
       <div className="flex flex-col gap-2">
@@ -739,7 +761,7 @@ export default function ODWorkQueue() {
                   className={`flex h-7 items-center gap-1.5 rounded-md px-3 text-[12.5px] font-semibold ${view === k ? "bg-white text-[#0B1F3A] shadow-sm" : "text-slate-600 hover:text-slate-900"}`}
                 >
                   {l}
-                  <span className={`rounded px-1.5 text-[10.5px] ${view === k ? "bg-teal-700 text-white" : "bg-slate-200 text-slate-600"}`}>{n}</span>
+                  <span className={`rounded px-1.5 text-[11px] ${view === k ? "bg-teal-700 text-white" : "bg-slate-200 text-slate-600"}`}>{n}</span>
                 </button>
               ))}
             </span>
@@ -747,7 +769,7 @@ export default function ODWorkQueue() {
           action={
             <span className="flex flex-wrap items-center gap-2">
               {view === "open" && (
-              <span className="text-[11px] text-slate-500">
+              <span className="text-[12px] text-slate-500">
                 Showing <b className="font-semibold text-slate-700">{filtered.length}</b> of {bucketRows.length}
                 <span className="mx-1.5 text-slate-300">·</span>
                 Reserve <b className="font-semibold text-slate-700">{lakh(filtered.reduce((t, r) => t + r.reserve, 0))}</b>
@@ -763,7 +785,7 @@ export default function ODWorkQueue() {
               >
                 <CalendarClock className="h-3.5 w-3.5" aria-hidden="true" />
                 Today's diary
-                <span className="rounded bg-teal-700 px-1.5 text-[10.5px] text-white">{diaryLeft}</span>
+                <span className="rounded bg-teal-700 px-1.5 text-[11px] text-white">{diaryLeft}</span>
               </button>
               <button
                 type="button"
@@ -775,11 +797,28 @@ export default function ODWorkQueue() {
               >
                 <Bell className="h-3.5 w-3.5" aria-hidden="true" />
                 Alerts
-                <span className="rounded bg-red-600 px-1.5 text-[10.5px] text-white">{ALERTS.length}</span>
+                <span className="rounded bg-red-600 px-1.5 text-[11px] text-white">{ALERTS.length}</span>
               </button>
             </span>
           }
         >
+          {/* Filters carried from a dashboard figure – remove one, or all */}
+          {Object.keys(drill).length > 0 && (
+            <div className="flex flex-wrap items-center gap-1.5 border-b border-slate-200 bg-teal-50/60 px-3 py-1.5" aria-label="Filters from the dashboard">
+              <span className="text-[12px] font-semibold text-teal-900">From dashboard</span>
+              {Object.entries(drill).map(([k, v]) => (
+                <span key={k} className="inline-flex items-center gap-1 rounded-md bg-white px-2 text-[12px] font-medium leading-6 text-slate-700 ring-1 ring-inset ring-teal-200">
+                  {drillLabel(k, v)}
+                  <button type="button" onClick={() => removeDrill(k)} aria-label={`Remove filter ${drillLabel(k, v)}`} className="-mr-1 grid h-5 w-5 place-items-center rounded text-slate-500 hover:bg-slate-100 hover:text-slate-800">
+                    <X className="h-3 w-3" aria-hidden="true" />
+                  </button>
+                </span>
+              ))}
+              <button type="button" onClick={() => removeDrill()} className="ml-1 text-[12px] font-semibold text-teal-700 hover:underline">
+                Clear all
+              </button>
+            </div>
+          )}
           {view === "closed" ? (
             <ClosedClaimsTable rows={closed} onOpen={(no, edit) => navigate(`/od/claims/${claimSlug(no)}${edit ? "?mode=edit" : ""}`)} />
           ) : (
@@ -801,7 +840,7 @@ export default function ODWorkQueue() {
                   }`}
                 >
                   <span
-                    className={`grid h-6 w-6 flex-none place-items-center rounded-full text-[11px] font-bold ${
+                    className={`grid h-6 w-6 flex-none place-items-center rounded-full text-[12px] font-bold ${
                       on ? "bg-teal-700 text-white" : "bg-slate-200 text-slate-600"
                     }`}
                   >
@@ -809,7 +848,7 @@ export default function ODWorkQueue() {
                   </span>
                   <span className="min-w-0 flex-1 leading-tight">
                     <span className={`block truncate text-[12.5px] font-semibold ${on ? "text-teal-900" : "text-slate-700"}`}>{b.label}</span>
-                    <span className="block truncate text-[10.5px] text-slate-500">
+                    <span className="block truncate text-[11px] text-slate-500">
                       {st.breach > 0 && <span className="font-semibold text-red-700">{st.breach} breached</span>}
                       {st.breach > 0 && st.risk > 0 && <span className="text-slate-300"> · </span>}
                       {st.risk > 0 && <span className="font-semibold text-amber-700">{st.risk} at risk</span>}
@@ -817,7 +856,7 @@ export default function ODWorkQueue() {
                     </span>
                   </span>
                   <span
-                    className={`flex-none rounded-full px-2 text-[11px] font-bold leading-5 ${on ? "bg-teal-700 text-white" : "bg-white text-slate-700 ring-1 ring-inset ring-slate-200"}`}
+                    className={`flex-none rounded-full px-2 text-[12px] font-bold leading-5 ${on ? "bg-teal-700 text-white" : "bg-white text-slate-700 ring-1 ring-inset ring-slate-200"}`}
                   >
                     {st.n}
                   </span>
@@ -883,16 +922,16 @@ export default function ODWorkQueue() {
                 <>
                   <button type="button" aria-label="Close columns menu" className="fixed inset-0 z-20 cursor-default" onClick={() => setColsOpen(false)} />
                   <div className="absolute right-0 top-full z-30 mt-1 w-52 rounded-md border border-slate-200 bg-white py-1 shadow-lg">
-                    <p className="px-3 pb-1 pt-1 text-[10.5px] font-semibold uppercase tracking-wider text-slate-400">Show columns</p>
+                    <p className="px-3 pb-1 pt-1 text-[11px] font-semibold uppercase tracking-wider text-slate-500">Show columns</p>
                     {COLUMNS.map((c) => (
-                      <label key={c.key} className={`flex items-center gap-2 px-3 py-1 text-[12.5px] ${c.fixed ? "text-slate-400" : "cursor-pointer text-slate-700 hover:bg-slate-50"}`}>
+                      <label key={c.key} className={`flex items-center gap-2 px-3 py-1 text-[12.5px] ${c.fixed ? "text-slate-500" : "cursor-pointer text-slate-700 hover:bg-slate-50"}`}>
                         <input type="checkbox" checked={!hidden.includes(c.key)} disabled={c.fixed} onChange={() => toggleCol(c.key)} className="h-3.5 w-3.5 accent-teal-700" />
                         <span className="flex-1">{c.title || c.label}</span>
-                        {noRoom.includes(c.key) && <span className="text-[10.5px] text-amber-700">no room</span>}
+                        {noRoom.includes(c.key) && <span className="text-[11px] text-amber-700">no room</span>}
                       </label>
                     ))}
                     {noRoom.length > 0 && (
-                      <p className="border-t border-slate-100 px-3 pb-1 pt-1.5 text-[11px] leading-snug text-slate-500">
+                      <p className="border-t border-slate-100 px-3 pb-1 pt-1.5 text-[12px] leading-snug text-slate-500">
                         “No room” columns appear when the screen is wider, or when you untick other columns.
                       </p>
                     )}
@@ -919,7 +958,7 @@ export default function ODWorkQueue() {
                 <col style={{ width: `${((ACTIONS_W / Math.max(boxW, usedMin + ACTIONS_W)) * 100).toFixed(3)}%` }} />
               </colgroup>
               <thead>
-                <tr className="whitespace-nowrap bg-slate-50 text-[10.5px] uppercase tracking-normal text-slate-500">
+                <tr className="whitespace-nowrap bg-slate-50 text-[11px] uppercase tracking-normal text-slate-500">
                   {cols.map((c) => (
                     <th
                       key={c.key}
@@ -941,8 +980,10 @@ export default function ODWorkQueue() {
                 {rows.map((r) => (
                   <tr
                     key={r.claimNo}
-                    // Only the claim number and the view / edit icons open the claim – not the whole row
-                    className="group whitespace-nowrap border-t border-slate-100 hover:bg-teal-50/60"
+                    // a click anywhere on the row opens the claim in Claim 360 (view); buttons and menus in
+                    // the row keep their own action, and selecting text does not open the claim
+                    onClick={(e) => rowOpens(e) && openClaim(r.claimNo)}
+                    className="group cursor-pointer whitespace-nowrap border-t border-slate-100 hover:bg-teal-50/60"
                   >
                     {cols.map((c) => (
                       <td
@@ -1001,7 +1042,7 @@ export default function ODWorkQueue() {
           </div>
 
           {/* Pagination */}
-          <div className="flex flex-wrap items-center justify-between gap-2 border-t border-slate-100 px-3 py-1.5 text-[11.5px] text-slate-500">
+          <div className="flex flex-wrap items-center justify-between gap-2 border-t border-slate-100 px-3 py-1.5 text-[12px] text-slate-500">
             <span>
               {filtered.length === 0
                 ? "0 claims"
@@ -1070,7 +1111,7 @@ export default function ODWorkQueue() {
                     }`}
                   >
                     {label}
-                    <span className={`text-[10.5px] font-medium ${drawer === k ? "text-white/70" : "text-slate-400"}`}>{n}</span>
+                    <span className={`text-[11px] font-medium ${drawer === k ? "text-white/70" : "text-slate-500"}`}>{n}</span>
                   </button>
                 ))}
               </div>
@@ -1101,7 +1142,7 @@ export default function ODWorkQueue() {
               <form onSubmit={addDiary} className="mx-3 mt-2 flex flex-col gap-1.5 rounded-md border border-slate-200 bg-slate-50 px-3 py-2">
                 <div className="grid grid-cols-[112px_minmax(0,1fr)] gap-1.5">
                   <label className="flex flex-col gap-0.5">
-                    <span className="text-[10.5px] text-slate-500">Time</span>
+                    <span className="text-[11px] text-slate-500">Time</span>
                     <input
                       type="time"
                       value={newItem.time}
@@ -1110,11 +1151,11 @@ export default function ODWorkQueue() {
                     />
                   </label>
                   <label className="flex min-w-0 flex-col gap-0.5">
-                    <span className="text-[10.5px] text-slate-500">Claim</span>
+                    <span className="text-[11px] text-slate-500">Claim</span>
                     <select
                       value={newItem.claimNo}
                       onChange={(e) => setNewItem((n) => ({ ...n, claimNo: e.target.value }))}
-                      className="h-7 rounded border border-slate-300 bg-white py-0 pl-1.5 pr-6 font-mono text-[11.5px]"
+                      className="h-7 rounded border border-slate-300 bg-white py-0 pl-1.5 pr-6 font-mono text-[12px]"
                       required
                     >
                       <option value="">Select claim</option>
@@ -1127,7 +1168,7 @@ export default function ODWorkQueue() {
                   </label>
                 </div>
                 <label className="flex flex-col gap-0.5">
-                  <span className="text-[10.5px] text-slate-500">Follow-up</span>
+                  <span className="text-[11px] text-slate-500">Follow-up</span>
                   <input
                     type="text"
                     value={newItem.text}
@@ -1155,15 +1196,15 @@ export default function ODWorkQueue() {
                     {d.done ? (
                       <CheckCircle className="mt-px h-3.5 w-3.5 flex-none text-emerald-600" aria-hidden="true" />
                     ) : (
-                      <Circle className="mt-px h-3.5 w-3.5 flex-none text-slate-400" aria-hidden="true" />
+                      <Circle className="mt-px h-3.5 w-3.5 flex-none text-slate-500" aria-hidden="true" />
                     )}
                     <span className="min-w-0 flex-1">
-                      <span className={`block text-[12px] leading-tight ${d.done ? "text-slate-400 line-through" : "text-slate-800"}`}>
+                      <span className={`block text-[12px] leading-tight ${d.done ? "text-slate-500 line-through" : "text-slate-800"}`}>
                         {d.text}
                       </span>
-                      <span className="block font-mono text-[10.5px] text-slate-500">{d.claimNo}</span>
+                      <span className="block font-mono text-[11px] text-slate-500">{d.claimNo}</span>
                     </span>
-                    <span className="flex-none text-[11px] font-semibold tabular-nums text-slate-600">{d.time}</span>
+                    <span className="flex-none text-[12px] font-semibold tabular-nums text-slate-600">{d.time}</span>
                   </button>
 
                   {/* Completion note – what was done */}
@@ -1187,18 +1228,18 @@ export default function ODWorkQueue() {
                           }
                         }}
                         placeholder="What was done? e.g. Called insured – DL copy will be emailed today"
-                        className="w-full resize-none rounded-md border border-teal-300 bg-white px-2 py-1.5 text-[12px] leading-snug text-slate-800 placeholder:text-slate-400 focus:border-teal-600 focus:outline-none focus:ring-2 focus:ring-teal-600/20"
+                        className="w-full resize-none rounded-md border border-teal-300 bg-white px-2 py-1.5 text-[12px] leading-snug text-slate-800 placeholder:text-slate-500 focus:border-teal-600 focus:outline-none focus:ring-2 focus:ring-teal-600/20"
                       />
                       <div className="flex items-center justify-between gap-2">
-                        <span className="text-[10.5px] text-slate-400">{noteDraft.trim().length}/200 · Ctrl + Enter to save</span>
+                        <span className="text-[11px] text-slate-500">{noteDraft.trim().length}/200 · Ctrl + Enter to save</span>
                         <span className="flex gap-1.5">
-                          <button type="button" onClick={() => setNoteFor(null)} className="h-6 rounded px-2 text-[11.5px] font-medium text-slate-600 hover:bg-slate-100">
+                          <button type="button" onClick={() => setNoteFor(null)} className="h-6 rounded px-2 text-[12px] font-medium text-slate-600 hover:bg-slate-100">
                             Later
                           </button>
                           <button
                             type="submit"
                             disabled={!noteDraft.trim()}
-                            className="h-6 rounded bg-teal-700 px-2.5 text-[11.5px] font-semibold text-white hover:bg-teal-800 disabled:opacity-40"
+                            className="h-6 rounded bg-teal-700 px-2.5 text-[12px] font-semibold text-white hover:bg-teal-800 disabled:opacity-40"
                           >
                             Save note
                           </button>
@@ -1206,10 +1247,10 @@ export default function ODWorkQueue() {
                       </div>
                     </form>
                   ) : d.done && d.note ? (
-                    <div className="mb-1 ml-7 mr-1.5 flex items-start gap-1.5 rounded-md bg-emerald-50/70 px-2 py-1 text-[11.5px] leading-snug text-slate-700 ring-1 ring-inset ring-emerald-100">
+                    <div className="mb-1 ml-7 mr-1.5 flex items-start gap-1.5 rounded-md bg-emerald-50/70 px-2 py-1 text-[12px] leading-snug text-slate-700 ring-1 ring-inset ring-emerald-100">
                       <StickyNote className="mt-0.5 h-3 w-3 flex-none text-emerald-700" aria-hidden="true" />
                       <span className="min-w-0 flex-1 whitespace-normal break-words">{d.note}</span>
-                      <span className="flex-none text-[10.5px] tabular-nums text-slate-400">{d.noteAt}</span>
+                      <span className="flex-none text-[11px] tabular-nums text-slate-500">{d.noteAt}</span>
                       <button
                         type="button"
                         onClick={() => {
@@ -1218,7 +1259,7 @@ export default function ODWorkQueue() {
                         }}
                         aria-label="Edit note"
                         title="Edit note"
-                        className="grid h-4 w-4 flex-none place-items-center rounded text-slate-400 hover:text-teal-700"
+                        className="grid h-4 w-4 flex-none place-items-center rounded text-slate-500 hover:text-teal-700"
                       >
                         <FilePen className="h-3 w-3" aria-hidden="true" />
                       </button>
@@ -1230,7 +1271,7 @@ export default function ODWorkQueue() {
                         setNoteFor(idx);
                         setNoteDraft("");
                       }}
-                      className="mb-1 ml-7 flex items-center gap-1 rounded px-1 text-[11px] font-medium text-teal-700 hover:underline"
+                      className="mb-1 ml-7 flex items-center gap-1 rounded px-1 text-[12px] font-medium text-teal-700 hover:underline"
                     >
                       <Plus className="h-3 w-3" aria-hidden="true" />
                       Add note – what was done
@@ -1242,14 +1283,14 @@ export default function ODWorkQueue() {
             {/* Follow-ups dated after today (catalogue 161 – diary dates) */}
             {upcoming.length > 0 && (
               <div className="mx-3 mb-2 border-t border-slate-100 pt-1.5">
-                <p className="text-[10.5px] font-semibold uppercase tracking-wide text-slate-500">Upcoming</p>
+                <p className="text-[11px] font-semibold uppercase tracking-wide text-slate-500">Upcoming</p>
                 <ul>
                   {upcoming.map((d, i) => (
                     <li key={i} className="flex items-start gap-2 py-0.5 text-[12px] text-slate-700">
                       <span className="min-w-0 flex-1">
-                        {d.text} <span className="font-mono text-[10.5px] text-slate-500">{d.claimNo}</span>
+                        {d.text} <span className="font-mono text-[11px] text-slate-500">{d.claimNo}</span>
                       </span>
-                      <span className="flex-none text-[11px] tabular-nums text-slate-500">
+                      <span className="flex-none text-[12px] tabular-nums text-slate-500">
                         {new Date(d.date + "T00:00:00").toLocaleDateString("en-IN", { day: "2-digit", month: "short" })} · {d.time}
                       </span>
                     </li>
@@ -1291,9 +1332,9 @@ export default function ODWorkQueue() {
                       <span className="min-w-0 flex-1">
                         <span className="flex items-baseline justify-between gap-2">
                           <span className="text-[12px] font-semibold text-slate-800">{a.title}</span>
-                          <span className="flex-none text-[10.5px] text-slate-500">{a.time}</span>
+                          <span className="flex-none text-[11px] text-slate-500">{a.time}</span>
                         </span>
-                        <span className="block text-[11px] leading-snug text-slate-600">{a.text}</span>
+                        <span className="block text-[12px] leading-snug text-slate-600">{a.text}</span>
                       </span>
                     </button>
                   </li>

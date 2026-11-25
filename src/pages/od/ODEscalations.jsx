@@ -53,7 +53,7 @@ const saveUpdates = (u) => saveStore(KEYS.escalations, u);
 
 function Chip({ tone, children, title }) {
   return (
-    <span title={title} className={`inline-flex items-center gap-1 whitespace-nowrap rounded px-1.5 py-px text-[10.5px] font-semibold ring-1 ring-inset ${tone}`}>
+    <span title={title} className={`inline-flex items-center gap-1 whitespace-nowrap rounded px-1.5 py-px text-[11px] font-semibold ring-1 ring-inset ${tone}`}>
       {children}
     </span>
   );
@@ -179,17 +179,17 @@ function ActionDialog({ mode, e, today, onCancel, onConfirm }) {
                   onChange={(ev) => setTask(ev.target.value.slice(0, 300))}
                   rows={3}
                   placeholder="e.g. Get the survey done today and call the customer with an update"
-                  className="w-full resize-none rounded-lg border border-slate-300 px-2.5 py-2 text-[13px] outline-none placeholder:text-slate-400 focus:border-teal-600 focus:ring-2 focus:ring-teal-600/20"
+                  className="w-full resize-none rounded-lg border border-slate-300 px-2.5 py-2 text-[13px] outline-none placeholder:text-slate-500 focus:border-teal-600 focus:ring-2 focus:ring-teal-600/20"
                   aria-invalid={!!err("task")}
                 />
-                {err("task") && <span className="mt-1 block text-[11.5px] text-red-700">{err("task")}</span>}
+                {err("task") && <span className="mt-1 block text-[12px] text-red-700">{err("task")}</span>}
               </label>
               <label className="block">
                 <span className="mb-1 block text-[12px] font-medium text-slate-700">
                   Complete by <span className="text-red-600">*</span>
                 </span>
                 <input type="date" value={by} min={new Date(today).toISOString().slice(0, 10)} max={maxDate} onChange={(ev) => setBy(ev.target.value)} className={inputCls} aria-invalid={!!err("by")} />
-                <span className="mt-1 block text-[11.5px] text-slate-500">On or before the response due date ({fmtDate(due)}). Goes to {first(e.handler)}'s diary as a task.</span>
+                <span className="mt-1 block text-[12px] text-slate-500">On or before the response due date ({fmtDate(due)}). Goes to {first(e.handler)}'s diary as a task.</span>
               </label>
             </>
           )}
@@ -206,7 +206,7 @@ function ActionDialog({ mode, e, today, onCancel, onConfirm }) {
                     <option key={o}>{o}</option>
                   ))}
                 </select>
-                {err("outcome") && <span className="mt-1 block text-[11.5px] text-red-700">{err("outcome")}</span>}
+                {err("outcome") && <span className="mt-1 block text-[12px] text-red-700">{err("outcome")}</span>}
               </label>
               <label className="block">
                 <span className="mb-1 block text-[12px] font-medium text-slate-700">
@@ -220,9 +220,9 @@ function ActionDialog({ mode, e, today, onCancel, onConfirm }) {
                   aria-invalid={!!err("response")}
                 />
                 {err("response") ? (
-                  <span className="mt-1 block text-[11.5px] text-red-700">{err("response")}</span>
+                  <span className="mt-1 block text-[12px] text-red-700">{err("response")}</span>
                 ) : (
-                  <span className="mt-1 block text-[11.5px] text-slate-500">Minimum 20 characters · saved in the claim's audit trail{rule.external ? " and on the final letter" : ""}</span>
+                  <span className="mt-1 block text-[12px] text-slate-500">Minimum 20 characters · saved in the claim's audit trail{rule.external ? " and on the final letter" : ""}</span>
                 )}
               </label>
               {rule.external && (
@@ -234,7 +234,7 @@ function ActionDialog({ mode, e, today, onCancel, onConfirm }) {
                       {e.source === "LEGAL" ? " through the Legal team" : ""}
                     </span>
                   </label>
-                  {err("letter") && <span className="mt-1 block text-[11.5px] text-red-700">{err("letter")}</span>}
+                  {err("letter") && <span className="mt-1 block text-[12px] text-red-700">{err("letter")}</span>}
                 </div>
               )}
             </>
@@ -380,10 +380,10 @@ function EscalationsPage() {
         <aside data-esc-list className="flex min-h-0 flex-col rounded-lg border border-slate-200 bg-white lg:w-[350px] lg:flex-none">
           <div className="border-b border-slate-100 px-3 pb-2 pt-2">
             <label className="flex h-8 items-center gap-2 rounded-lg border border-slate-200 px-2 focus-within:border-teal-600 focus-within:ring-2 focus-within:ring-teal-600/20">
-              <Search className="h-3.5 w-3.5 flex-none text-slate-400" aria-hidden="true" />
-              <input value={query} onChange={(ev) => setQuery(ev.target.value)} placeholder="Escalation no, claim no, insured, handler" aria-label="Search escalations" className="h-full min-w-0 flex-1 bg-transparent text-[12.5px] outline-none placeholder:text-slate-400" />
+              <Search className="h-3.5 w-3.5 flex-none text-slate-500" aria-hidden="true" />
+              <input value={query} onChange={(ev) => setQuery(ev.target.value)} placeholder="Escalation no, claim no, insured, handler" aria-label="Search escalations" className="h-full min-w-0 flex-1 bg-transparent text-[12.5px] outline-none placeholder:text-slate-500" />
               {query && (
-                <button type="button" onClick={() => setQuery("")} aria-label="Clear search" className="text-slate-400 hover:text-slate-600">
+                <button type="button" onClick={() => setQuery("")} aria-label="Clear search" className="text-slate-500 hover:text-slate-600">
                   <X className="h-3.5 w-3.5" />
                 </button>
               )}
@@ -399,9 +399,9 @@ function EscalationsPage() {
                     role="tab"
                     aria-selected={on}
                     onClick={() => setFilter(x.key)}
-                    className={`h-6 rounded-full px-2 text-[11.5px] font-medium ring-1 ring-inset ${on ? "bg-[#0B1F3A] text-white ring-[#0B1F3A]" : alert ? "bg-red-50 text-red-700 ring-red-200 hover:bg-red-100" : "bg-white text-slate-600 ring-slate-200 hover:bg-slate-50"}`}
+                    className={`h-6 rounded-full px-2 text-[12px] font-medium ring-1 ring-inset ${on ? "bg-[#0B1F3A] text-white ring-[#0B1F3A]" : alert ? "bg-red-50 text-red-700 ring-red-200 hover:bg-red-100" : "bg-white text-slate-600 ring-slate-200 hover:bg-slate-50"}`}
                   >
-                    {x.label} <span className={`tabular-nums ${on ? "text-teal-300" : alert ? "text-red-600" : "text-slate-400"}`}>{counts[x.key]}</span>
+                    {x.label} <span className={`tabular-nums ${on ? "text-teal-300" : alert ? "text-red-600" : "text-slate-500"}`}>{counts[x.key]}</span>
                   </button>
                 );
               })}
@@ -417,8 +417,8 @@ function EscalationsPage() {
                       <span className="text-[12px] font-semibold text-slate-800">{e.id}</span>
                       <DueChip e={e} today={today} />
                     </span>
-                    <span className="block truncate text-[11.5px] text-slate-600">
-                      <span className="font-mono text-[11px] text-teal-800">{e.claimNo}</span> · {e.insured} · {first(e.handler)}
+                    <span className="block truncate text-[12px] text-slate-600">
+                      <span className="font-mono text-[12px] text-teal-800">{e.claimNo}</span> · {e.insured} · {first(e.handler)}
                     </span>
                     <span className="mt-0.5 flex flex-wrap items-center gap-1">
                       <SourceChip source={e.source} />
@@ -492,9 +492,9 @@ function Detail({ e, today, canUndo, onAct, onUndo, onOpenClaim, onTeamQueue }) 
             ["Claim SLA", e.sla.label, `Reserve ${inr(e.reserve)} · ${e.ageDays} d old`, slaTone],
           ].map(([l, v, s, tone]) => (
             <div key={l} className="min-w-0 rounded-lg border border-slate-200 bg-white px-3 py-1.5">
-              <p className="truncate text-[11px] font-medium text-slate-500">{l}</p>
+              <p className="truncate text-[12px] font-medium text-slate-500">{l}</p>
               <p className={`truncate text-[15px] font-semibold leading-tight ${tone || "text-slate-900"}`}>{v}</p>
-              <p className="truncate text-[11px] text-slate-500" title={s}>
+              <p className="truncate text-[12px] text-slate-500" title={s}>
                 {s}
               </p>
             </div>
@@ -502,9 +502,9 @@ function Detail({ e, today, canUndo, onAct, onUndo, onOpenClaim, onTeamQueue }) 
         </div>
 
         <div className="grid gap-2 lg:grid-cols-[minmax(0,1.2fr)_minmax(0,1fr)]">
-          <Section title={e.source === "SLA" ? "Why it was escalated" : e.source === "OMBUDSMAN" ? "Award" : "Complaint"} right={<span className="truncate text-[11px] text-slate-500">{e.ref}</span>}>
+          <Section title={e.source === "SLA" ? "Why it was escalated" : e.source === "OMBUDSMAN" ? "Award" : "Complaint"} right={<span className="truncate text-[12px] text-slate-500">{e.ref}</span>}>
             <div className="px-3 py-2">
-              <p className="text-[11.5px] text-slate-500">
+              <p className="text-[12px] text-slate-500">
                 {e.source === "SLA" ? <Clock className="mr-1 inline h-3 w-3" aria-hidden="true" /> : e.source === "LEGAL" ? <FileText className="mr-1 inline h-3 w-3" aria-hidden="true" /> : <Mail className="mr-1 inline h-3 w-3" aria-hidden="true" />}
                 {e.raisedBy}
               </p>
@@ -518,7 +518,7 @@ function Detail({ e, today, canUndo, onAct, onUndo, onOpenClaim, onTeamQueue }) 
             </div>
           </Section>
 
-          <Section title="Timeline" right={<span className="text-[11px] tabular-nums text-slate-500">{e.history.length} entries</span>}>
+          <Section title="Timeline" right={<span className="text-[12px] tabular-nums text-slate-500">{e.history.length} entries</span>}>
             <ol className="relative px-3 py-2">
               {e.history.map((h, i) => {
                 const last = i === e.history.length - 1;
@@ -527,7 +527,7 @@ function Detail({ e, today, canUndo, onAct, onUndo, onOpenClaim, onTeamQueue }) 
                     {!last && <span className="absolute left-[5px] top-3 h-full w-px bg-slate-200" aria-hidden="true" />}
                     <span className={`relative mt-1 h-[11px] w-[11px] flex-none rounded-full ring-2 ring-white ${h.now ? "bg-teal-600" : last ? "bg-slate-500" : "bg-slate-300"}`} aria-hidden="true" />
                     <span className="min-w-0 text-[12px] leading-snug">
-                      <span className="block text-[10.5px] font-semibold text-slate-400">{h.now ? "Today · you" : fmtShort(today - h.d * DAY)}</span>
+                      <span className="block text-[11px] font-semibold text-slate-500">{h.now ? "Today · you" : fmtShort(today - h.d * DAY)}</span>
                       <span className="text-slate-700">{h.text}</span>
                     </span>
                   </li>
@@ -539,7 +539,7 @@ function Detail({ e, today, canUndo, onAct, onUndo, onOpenClaim, onTeamQueue }) 
       </div>
 
       <div className="flex flex-wrap items-center gap-2 rounded-b-lg border-t border-slate-200 bg-white px-3 py-2">
-        <p className="min-w-0 flex-1 truncate text-[11.5px] text-slate-500">
+        <p className="min-w-0 flex-1 truncate text-[12px] text-slate-500">
           {closed ? "Closed – kept for audit and IRDAI returns." : e.status === "NEW" ? (rule.external ? "Acknowledge first – IRDAI expects an immediate acknowledgement." : "New SLA escalation – act within 2 days.") : `Respond by ${fmtDate(due)}.`}
         </p>
         {canUndo && (

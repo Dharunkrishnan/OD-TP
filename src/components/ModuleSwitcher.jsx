@@ -25,7 +25,7 @@ const ModuleSwitcher = () => {
             </svg>
           </div>
           <div>
-            <div className="text-[10px] font-semibold uppercase tracking-[0.18em] text-[#005F56]">Smart Claims</div>
+            <div className="text-[11px] font-semibold uppercase tracking-[0.18em] text-[#005F56]">Smart Claims</div>
             <div className="text-sm text-slate-500">{user?.email}</div>
           </div>
         </div>
@@ -62,4 +62,3 @@ const ModuleSwitcher = () => {
 };
 
 export default ModuleSwitcher;
-

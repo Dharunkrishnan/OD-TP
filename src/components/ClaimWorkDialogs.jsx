@@ -36,7 +36,7 @@ function Label({ children, req, hint }) {
   );
 }
 function Err({ msg }) {
-  return msg ? <span className="mt-1 block text-[11.5px] text-red-700">{msg}</span> : null;
+  return msg ? <span className="mt-1 block text-[12px] text-red-700">{msg}</span> : null;
 }
 
 /** shared dialog frame – Esc closes, first field focused */
@@ -125,7 +125,7 @@ export function ReserveDialog({ claim, onCancel, onDone }) {
         <Label req>New reserve (₹)</Label>
         <input inputMode="numeric" value={amount} onChange={(e) => setAmount(e.target.value)} placeholder={basis ? String(basis) : ""} className={inputCls} aria-invalid={!!err("amount")} />
         {n > 0 && n !== current && (
-          <span className={`mt-1 block text-[11.5px] ${diff > 0 ? "text-amber-800" : "text-emerald-700"}`}>
+          <span className={`mt-1 block text-[12px] ${diff > 0 ? "text-amber-800" : "text-emerald-700"}`}>
             {diff > 0 ? "Increase" : "Decrease"} of {inr(Math.abs(diff))} ({Math.round((Math.abs(diff) / current) * 100)}%)
           </span>
         )}
@@ -152,7 +152,7 @@ export function ReserveDialog({ claim, onCancel, onDone }) {
           Above your ₹1 L authority – the increase goes to {MANAGER} for approval. The current reserve stays until she approves.
         </p>
       ) : (
-        <p className="text-[11.5px] text-slate-500">Within your authority – the reserve changes now and is recorded in the reserve history.</p>
+        <p className="text-[12px] text-slate-500">Within your authority – the reserve changes now and is recorded in the reserve history.</p>
       )}
     </Frame>
   );
@@ -171,7 +171,7 @@ export function VarianceBanner({ v, reserve, canRevise, onRevise, pending }) {
         <span className="text-[12px] font-medium">Revision waiting for {MANAGER}</span>
       ) : (
         canRevise && (
-          <button type="button" onClick={onRevise} className="h-7 rounded-md bg-amber-600 px-2.5 text-[12px] font-semibold text-white hover:bg-amber-700">
+          <button type="button" onClick={onRevise} className="h-7 rounded-md bg-amber-700 px-2.5 text-[12px] font-semibold text-white hover:bg-amber-800">
             Revise reserve
           </button>
         )
@@ -241,7 +241,7 @@ export function QueryDialog({ claim, surveyorName, onCancel, onDone }) {
         <input type="date" value={due} min={today} max={maxDue} onChange={(e) => setDue(e.target.value)} className={inputCls} aria-invalid={!!err("due")} />
         <Err msg={err("due")} />
       </label>
-      <p className="text-[11.5px] text-slate-500">Sent by SMS and email. A reminder goes automatically one day before the reply date.</p>
+      <p className="text-[12px] text-slate-500">Sent by SMS and email. A reminder goes automatically one day before the reply date.</p>
     </Frame>
   );
 }
@@ -292,7 +292,7 @@ export function QueriesPanel({ queries, canAct, onRaise, onRemind, onClose }) {
         <div className="overflow-x-auto rounded-lg border border-slate-200">
           <table className="w-full min-w-[640px] text-left text-[12.5px]">
             <thead>
-              <tr className="bg-slate-50 text-[10.5px] uppercase tracking-wide text-slate-500">
+              <tr className="bg-slate-50 text-[11px] uppercase tracking-wide text-slate-500">
                 <th scope="col" className="px-3 py-1.5 font-semibold">To</th>
                 <th scope="col" className="px-2 py-1.5 font-semibold">Query</th>
                 <th scope="col" className="px-2 py-1.5 font-semibold">Raised · reply by</th>
@@ -308,26 +308,26 @@ export function QueriesPanel({ queries, canAct, onRaise, onRemind, onClose }) {
                   <tr key={q.id} className="border-t border-slate-100 align-top">
                     <td className="px-3 py-1.5">
                       <span className="block font-semibold text-slate-800">{q.to}</span>
-                      <span className="block max-w-[150px] truncate text-[11.5px] text-slate-500">{q.toName}</span>
+                      <span className="block max-w-[150px] truncate text-[12px] text-slate-500">{q.toName}</span>
                     </td>
                     <td className="px-2 py-1.5">
                       <span className="block text-slate-800">{q.subject}</span>
-                      <span className="block text-[11.5px] text-slate-500">{q.details}</span>
-                      {q.reply && <span className="mt-0.5 block text-[11.5px] text-emerald-800">Reply: {q.reply}</span>}
+                      <span className="block text-[12px] text-slate-500">{q.details}</span>
+                      {q.reply && <span className="mt-0.5 block text-[12px] text-emerald-800">Reply: {q.reply}</span>}
                     </td>
                     <td className="whitespace-nowrap px-2 py-1.5 text-slate-600">
                       {fmt(q.raisedOn)}
-                      <span className="block text-[11.5px]">by {fmt(q.due)}</span>
+                      <span className="block text-[12px]">by {fmt(q.due)}</span>
                     </td>
                     <td className="px-2 py-1.5">
                       {q.status === "OPEN" ? (
-                        <span className={`inline-flex whitespace-nowrap rounded px-1.5 text-[11px] font-semibold leading-5 ${overdue ? "bg-red-50 text-red-700" : "bg-amber-50 text-amber-900"}`}>
+                        <span className={`inline-flex whitespace-nowrap rounded px-1.5 text-[12px] font-semibold leading-5 ${overdue ? "bg-red-50 text-red-700" : "bg-amber-50 text-amber-900"}`}>
                           {overdue ? `Overdue ${-left} d` : left === 0 ? "Due today" : `Open · ${left} d left`}
                         </span>
                       ) : (
-                        <span className="inline-flex rounded bg-emerald-50 px-1.5 text-[11px] font-semibold leading-5 text-emerald-800">Closed {fmt(q.closedOn)}</span>
+                        <span className="inline-flex rounded bg-emerald-50 px-1.5 text-[12px] font-semibold leading-5 text-emerald-800">Closed {fmt(q.closedOn)}</span>
                       )}
-                      {q.reminders > 0 && <span className="block text-[11px] text-slate-500">{q.reminders} reminder(s)</span>}
+                      {q.reminders > 0 && <span className="block text-[12px] text-slate-500">{q.reminders} reminder(s)</span>}
                     </td>
                     <td className="whitespace-nowrap px-3 py-1.5 text-right">
                       {canAct && q.status === "OPEN" && (
@@ -414,7 +414,7 @@ export function UploadDialog({ claim, documents, onCancel, onDone }) {
           ))}
         </select>
       </label>
-      <p className="text-[11.5px] text-slate-500">The document is marked Received – to verify. Verify or reject it from the Documents tab.</p>
+      <p className="text-[12px] text-slate-500">The document is marked Received – to verify. Verify or reject it from the Documents tab.</p>
     </Frame>
   );
 }

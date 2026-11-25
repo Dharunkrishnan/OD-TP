@@ -101,7 +101,7 @@ const FILTERS = [
 /* ---------------- small UI pieces ---------------- */
 function Chip({ tone = "bg-slate-100 text-slate-700 ring-slate-200", children, title }) {
   return (
-    <span title={title} className={`inline-flex items-center gap-1 whitespace-nowrap rounded px-1.5 py-px text-[10.5px] font-semibold ring-1 ring-inset ${tone}`}>
+    <span title={title} className={`inline-flex items-center gap-1 whitespace-nowrap rounded px-1.5 py-px text-[11px] font-semibold ring-1 ring-inset ${tone}`}>
       {children}
     </span>
   );
@@ -134,9 +134,9 @@ function Section({ title, right, children, className = "" }) {
 function Tile({ label, value, sub, tone = "text-slate-900", subTone = "text-slate-500" }) {
   return (
     <div className="min-w-0 rounded-lg border border-slate-200 bg-white px-3 py-1.5">
-      <p className="truncate text-[11px] font-medium text-slate-500">{label}</p>
+      <p className="truncate text-[12px] font-medium text-slate-500">{label}</p>
       <p className={`truncate text-[17px] font-semibold leading-tight tabular-nums ${tone}`}>{value}</p>
-      <p className={`truncate text-[11px] ${subTone}`}>{sub}</p>
+      <p className={`truncate text-[12px] ${subTone}`}>{sub}</p>
     </div>
   );
 }
@@ -146,7 +146,7 @@ function CheckRow({ state, children, sub }) {
     ok: [CheckCircle2, "text-emerald-600"],
     warn: [AlertTriangle, "text-amber-600"],
     bad: [XCircle, "text-red-600"],
-    info: [Info, "text-slate-400"],
+    info: [Info, "text-slate-500"],
   };
   const [Icon, tone] = map[state];
   return (
@@ -154,7 +154,7 @@ function CheckRow({ state, children, sub }) {
       <Icon className={`mt-0.5 h-3.5 w-3.5 flex-none ${tone}`} aria-hidden="true" />
       <span className="min-w-0 text-[12px] leading-snug text-slate-700">
         {children}
-        {sub && <span className="block text-[11px] text-slate-500">{sub}</span>}
+        {sub && <span className="block text-[12px] text-slate-500">{sub}</span>}
       </span>
     </li>
   );
@@ -172,7 +172,7 @@ function PartialAssessment({ c }) {
   return (
     <table className="w-full text-[12px] tabular-nums">
       <thead>
-        <tr className="text-left text-[10.5px] uppercase tracking-wide text-slate-500">
+        <tr className="text-left text-[11px] uppercase tracking-wide text-slate-500">
           <th className="py-1 pl-3 font-semibold">Item</th>
           <th className="hidden py-1 font-semibold sm:table-cell">Type</th>
           <th className="py-1 text-right font-semibold">Estimate</th>
@@ -202,7 +202,7 @@ function PartialAssessment({ c }) {
         {less.map(([label, amt, note]) => (
           <tr key={label} className="text-slate-600">
             <td className="py-[2px] pl-3" colSpan={2}>
-              {label} <span className="text-[11px] text-slate-400">· {note}</span>
+              {label} <span className="text-[12px] text-slate-500">· {note}</span>
             </td>
             <td className="hidden sm:table-cell" />
             <td className="py-[2px] text-right">− {inr(amt)}</td>
@@ -242,7 +242,7 @@ function CtlAssessment({ c }) {
           <tr key={label}>
             <td className="py-1 pl-3 text-slate-700">
               {label}
-              {note && <span className="block text-[11px] text-slate-400">{note}</span>}
+              {note && <span className="block text-[12px] text-slate-500">{note}</span>}
             </td>
             <td className="py-1 pr-3 text-right font-medium text-slate-800">{value}</td>
           </tr>
@@ -273,7 +273,7 @@ function Field({ label, required, error, children, hint }) {
         {required && <span className="text-red-600"> *</span>}
       </span>
       {children}
-      {error ? <span className="mt-1 block text-[11.5px] text-red-700">{error}</span> : hint ? <span className="mt-1 block text-[11.5px] text-slate-500">{hint}</span> : null}
+      {error ? <span className="mt-1 block text-[12px] text-red-700">{error}</span> : hint ? <span className="mt-1 block text-[12px] text-slate-500">{hint}</span> : null}
     </label>
   );
 }
@@ -360,7 +360,7 @@ function DecisionDialog({ mode, c, onCancel, onConfirm }) {
               </div>
               {c.reserveShort && (
                 <p className="flex gap-2 text-[12px] text-slate-700">
-                  <Info className="mt-0.5 h-3.5 w-3.5 flex-none text-slate-400" aria-hidden="true" />
+                  <Info className="mt-0.5 h-3.5 w-3.5 flex-none text-slate-500" aria-hidden="true" />
                   Reserve will be revised from {inr(c.reserve)} to {inr(c.amount)} on approval.
                 </p>
               )}
@@ -378,7 +378,7 @@ function DecisionDialog({ mode, c, onCancel, onConfirm }) {
                       Approve subject to <b>{c.docsPending.join(", ")}</b>. Payment is held until it is received.
                     </span>
                   </label>
-                  {err("docs") && <span className="mt-1 block text-[11.5px] text-red-700">{err("docs")}</span>}
+                  {err("docs") && <span className="mt-1 block text-[12px] text-red-700">{err("docs")}</span>}
                 </div>
               )}
             </>
@@ -582,21 +582,21 @@ function ApprovalsPage() {
           <div className="border-b border-slate-100 px-3 pb-2 pt-2">
             <div className="flex items-baseline justify-between gap-2">
               <h2 className="text-[13px] font-semibold text-[#0B1F3A]">Waiting for my approval</h2>
-              <span className="text-[11.5px] tabular-nums text-slate-500">
+              <span className="text-[12px] tabular-nums text-slate-500">
                 {pending.length} · {lakh(totalValue)}
               </span>
             </div>
             <label className="mt-1.5 flex h-8 items-center gap-2 rounded-lg border border-slate-200 px-2 focus-within:border-teal-600 focus-within:ring-2 focus-within:ring-teal-600/20">
-              <Search className="h-3.5 w-3.5 flex-none text-slate-400" aria-hidden="true" />
+              <Search className="h-3.5 w-3.5 flex-none text-slate-500" aria-hidden="true" />
               <input
                 value={query}
                 onChange={(e) => setQuery(e.target.value)}
                 placeholder="Claim no, insured, vehicle or handler"
                 aria-label="Search approvals"
-                className="h-full min-w-0 flex-1 bg-transparent text-[12.5px] outline-none placeholder:text-slate-400"
+                className="h-full min-w-0 flex-1 bg-transparent text-[12.5px] outline-none placeholder:text-slate-500"
               />
               {query && (
-                <button type="button" onClick={() => setQuery("")} aria-label="Clear search" className="text-slate-400 hover:text-slate-600">
+                <button type="button" onClick={() => setQuery("")} aria-label="Clear search" className="text-slate-500 hover:text-slate-600">
                   <X className="h-3.5 w-3.5" />
                 </button>
               )}
@@ -615,17 +615,17 @@ function ApprovalsPage() {
                       if (f.key === "requests") selectReq(selectedReq);
                       else if (filter === "requests") setParams({}, { replace: true });
                     }}
-                    className={`h-6 rounded-full px-2 text-[11.5px] font-medium ring-1 ring-inset ${
+                    className={`h-6 rounded-full px-2 text-[12px] font-medium ring-1 ring-inset ${
                       on ? "bg-[#0B1F3A] text-white ring-[#0B1F3A]" : "bg-white text-slate-600 ring-slate-200 hover:bg-slate-50"
                     }`}
                   >
-                    {f.label} <span className={`tabular-nums ${on ? "text-teal-300" : "text-slate-400"}`}>{f.n}</span>
+                    {f.label} <span className={`tabular-nums ${on ? "text-teal-300" : "text-slate-500"}`}>{f.n}</span>
                   </button>
                 );
               })}
             </div>
             {filter !== "decided" && filter !== "requests" && (
-              <div className="mt-1.5 flex items-center gap-1 text-[11px] text-slate-500">
+              <div className="mt-1.5 flex items-center gap-1 text-[12px] text-slate-500">
                 Sort
                 {[
                   ["oldest", "Oldest first"],
@@ -668,10 +668,10 @@ function ApprovalsPage() {
                     className={`block w-full border-l-[3px] px-3 py-1.5 text-left ${on ? "border-teal-600 bg-teal-50/60" : "border-transparent hover:bg-slate-50"}`}
                   >
                     <span className="flex items-center justify-between gap-2">
-                      <span className="font-mono text-[11.5px] font-semibold text-teal-800">{c.claimNo}</span>
+                      <span className="font-mono text-[12px] font-semibold text-teal-800">{c.claimNo}</span>
                       <span className="text-[12.5px] font-semibold tabular-nums text-slate-900">{inr(d?.amount ?? c.amount)}</span>
                     </span>
-                    <span className="block truncate text-[11.5px] text-slate-600">
+                    <span className="block truncate text-[12px] text-slate-600">
                       {c.insured} · {c.vehicle} · {firstName(c.handler)}
                     </span>
                     <span className="mt-0.5 flex flex-wrap items-center gap-1">
@@ -732,7 +732,7 @@ function ApprovalsPage() {
             <BadgeCheck className="h-4 w-4 flex-none text-teal-300" aria-hidden="true" />
             {toast.text}
           </p>
-          {toast.sub && <p className="pl-6 text-[11.5px] text-slate-300">{toast.sub}</p>}
+          {toast.sub && <p className="pl-6 text-[12px] text-slate-300">{toast.sub}</p>}
         </div>
       )}
     </ODShell>
@@ -796,7 +796,7 @@ function Detail({ c, decision, onOpenClaim, onDecide, onUndo }) {
             <Section
               title={c.basis === "ctl" ? "Total loss settlement" : "Assessment"}
               right={
-                <span className="text-[11px] text-slate-500">
+                <span className="text-[12px] text-slate-500">
                   Surveyor {c.surveyor} · {fmtDate(c.surveyDate)}
                 </span>
               }
@@ -847,11 +847,11 @@ function Detail({ c, decision, onOpenClaim, onDecide, onUndo }) {
                 <dt className="text-slate-500">Garage</dt>
                 <dd className="text-slate-800">{c.garage}</dd>
                 <dt className="text-slate-500">Policy</dt>
-                <dd className="font-mono text-[11.5px] text-slate-800">{c.policyNo}</dd>
+                <dd className="font-mono text-[12px] text-slate-800">{c.policyNo}</dd>
               </dl>
             </Section>
 
-            <Section title="Documents" right={<span className="text-[11px] tabular-nums text-slate-500">{docsOk} / {c.docs.length}</span>}>
+            <Section title="Documents" right={<span className="text-[12px] tabular-nums text-slate-500">{docsOk} / {c.docs.length}</span>}>
               <ul className="flex flex-wrap gap-1 px-3 py-2">
                 {c.docs.map((d) => (
                   <li key={d.name}>
@@ -891,7 +891,7 @@ function Detail({ c, decision, onOpenClaim, onDecide, onUndo }) {
           </>
         ) : (
           <>
-            <p className="min-w-0 flex-1 truncate text-[11.5px] text-slate-500">
+            <p className="min-w-0 flex-1 truncate text-[12px] text-slate-500">
               {c.aboveLimit ? `Above ${lakh(MANAGER_AUTHORITY)} – approve or repudiate is for the ${ZONAL_HEAD.role}.` : "Every decision is saved in the claim's audit trail."}
             </p>
             <button

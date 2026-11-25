@@ -82,6 +82,7 @@ export default function Login() {
   const [showPwd, setShowPwd] = useState(false);
   const [remember, setRemember] = useState(false);
   const [capsOn, setCapsOn] = useState(false);
+  const [showReset, setShowReset] = useState(false);
 
   const [submitted, setSubmitted] = useState(false);
   const [loading, setLoading] = useState(false);
@@ -209,7 +210,7 @@ export default function Login() {
         </div>
 
         <div className="relative hidden flex-wrap justify-between gap-2 text-xs text-slate-500 lg:flex">
-          <span>[INSURER NAME] · Powered by Owlsure IT</span>
+          <span>Smart Claims · Powered by Owlsure IT</span>
           <span>Version 0.1.0</span>
         </div>
       </aside>
@@ -276,7 +277,7 @@ export default function Login() {
                                       {lobs.map((l) => (
                                         <span
                                           key={l}
-                                          className={`rounded px-1.5 py-0.5 text-[11px] font-semibold ${
+                                          className={`rounded px-1.5 py-0.5 text-[12px] font-semibold ${
                                             l === "OD" ? "bg-teal-50 text-teal-800" : "bg-indigo-50 text-indigo-800"
                                           }`}
                                         >
@@ -378,12 +379,15 @@ export default function Login() {
                 <label htmlFor="password" className="text-sm font-medium text-slate-700">
                   Password
                 </label>
-                <a
-                  href="#forgot-password"
+                <button
+                  type="button"
+                  onClick={() => setShowReset((v) => !v)}
+                  aria-expanded={showReset}
+                  aria-controls="reset-help"
                   className="text-[13px] font-medium text-teal-700 hover:text-teal-900 hover:underline"
                 >
                   Forgot password?
-                </a>
+                </button>
               </div>
               <div className="relative">
                 <input
@@ -416,6 +420,11 @@ export default function Login() {
               {passwordError && (
                 <p id="password-error" className="text-[13px] text-red-700">
                   {passwordError}
+                </p>
+              )}
+              {showReset && (
+                <p id="reset-help" className="rounded-lg bg-slate-50 px-3 py-2 text-[13px] leading-snug text-slate-600 ring-1 ring-inset ring-slate-200">
+                  Password resets are handled by your IT helpdesk. Raise a reset request with your user ID. Self-service reset will come with company SSO at go-live.
                 </p>
               )}
               {capsOn && !passwordError && (
@@ -452,11 +461,15 @@ export default function Login() {
 
             <button
               type="button"
-              className="flex h-11 items-center justify-center gap-2.5 rounded-lg border border-slate-300 bg-white text-[15px] font-semibold text-[#0B1F3A] transition hover:bg-slate-50 focus-visible:outline-2 focus-visible:outline-teal-700"
+              aria-disabled="true"
+              aria-describedby="sso-note"
+              title="Company SSO is set up with your insurer's identity provider at go-live"
+              className="flex h-11 cursor-not-allowed items-center justify-center gap-2.5 rounded-lg border border-dashed border-slate-300 bg-slate-50 text-[15px] font-semibold text-slate-500 focus-visible:outline-2 focus-visible:outline-teal-700"
             >
               <KeyRound className="h-[18px] w-[18px]" aria-hidden="true" />
               Sign in with company SSO
             </button>
+            <p id="sso-note" className="-mt-2 text-center text-[12px] text-slate-500">Available at go-live</p>
 
             {/* Security notice + help */}
             <div className="flex flex-col gap-2 border-t border-slate-100 pt-3 text-[12.5px] leading-snug text-slate-500">

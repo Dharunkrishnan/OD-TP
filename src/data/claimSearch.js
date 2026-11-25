@@ -20,7 +20,8 @@ export const BASIC_FIELDS = [
 export const ADVANCED_KEYS = ["name", "garage", "svType", "svName", "status", "loss", "from", "to"];
 export const SEARCH_KEYS = [...BASIC_FIELDS.map((f) => f.key), ...ADVANCED_KEYS];
 
-const SURVEYOR_TYPE = { panel: "Panel surveyor (IPS)", inhouse: "In-house surveyor", video: "Video survey" };
+// The claims handler is the in-house surveyor (one persona); an external surveyor (IPS) only by exception
+const SURVEYOR_TYPE = { panel: "External surveyor (IPS)", inhouse: "In-house surveyor", video: "Video survey" };
 
 function readSurveys() {
   try {
@@ -40,7 +41,7 @@ export function searchIndex() {
     const panel = session && SURVEYOR_PANEL.find((s) => s.id === session.id || s.name === session.name);
     const sv = d.survey?.surveyor;
     const svName = session?.name || sv?.name || "";
-    const svType0 = panel ? SURVEYOR_TYPE[panel.kind] : sv ? sv.type || "In-house surveyor" : "";
+    const svType0 = panel ? SURVEYOR_TYPE[panel.kind] : sv ? sv.type : "";
     const svType = svName ? svType0 : "";
     return {
       ...r,

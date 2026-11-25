@@ -9,12 +9,12 @@ export default function FilePicker({ file, onChange, label, invalid, accept = ".
   const kb = file ? Math.max(1, Math.round(file.size / 1024)) : 0;
   return (
     <div className={`flex items-center gap-2.5 rounded-lg border border-dashed px-3 py-2 text-[12.5px] ${invalid ? "border-red-400 bg-red-50/30" : file ? "border-teal-600 bg-teal-50/40" : "border-slate-300"}`}>
-      {file ? <Paperclip className="h-4 w-4 flex-none text-teal-700" aria-hidden="true" /> : <Upload className="h-4 w-4 flex-none text-slate-400" aria-hidden="true" />}
+      {file ? <Paperclip className="h-4 w-4 flex-none text-teal-700" aria-hidden="true" /> : <Upload className="h-4 w-4 flex-none text-slate-500" aria-hidden="true" />}
       <span className="min-w-0 flex-1">
         {file ? (
           <>
             <span className="block break-all font-medium text-slate-800">{file.name}</span>
-            <span className="block text-[11px] text-slate-500">{kb.toLocaleString("en-IN")} KB</span>
+            <span className="block text-[12px] text-slate-500">{kb.toLocaleString("en-IN")} KB</span>
           </>
         ) : (
           <span className="text-slate-500">No file chosen</span>

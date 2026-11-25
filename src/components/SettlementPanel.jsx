@@ -61,7 +61,7 @@ const Label = ({ children, req }) => (
     {children} {req && <span className="text-red-600">*</span>}
   </span>
 );
-const Err = ({ msg }) => (msg ? <span className="mt-1 block text-[11.5px] text-red-700">{msg}</span> : null);
+const Err = ({ msg }) => (msg ? <span className="mt-1 block text-[12px] text-red-700">{msg}</span> : null);
 
 /* ---------- 2 · Final invoice ---------- */
 export function InvoiceDialog({ c, s, onCancel, onDone }) {
@@ -139,7 +139,7 @@ export function InvoiceDialog({ c, s, onCancel, onDone }) {
         <Label req>Invoice amount incl. GST (₹)</Label>
         <input inputMode="numeric" value={amount} onChange={(e) => setAmount(e.target.value)} className={inputCls} aria-invalid={!!err("amount")} />
         {n > 0 && (
-          <span className={`mt-1 block text-[11.5px] ${over > INVOICE_TOLERANCE_PCT ? "text-red-700" : "text-emerald-700"}`}>
+          <span className={`mt-1 block text-[12px] ${over > INVOICE_TOLERANCE_PCT ? "text-red-700" : "text-emerald-700"}`}>
             {over > INVOICE_TOLERANCE_PCT
               ? `${over}% above the approved amount – goes to the surveyor for re-check`
               : over > 0
@@ -200,7 +200,7 @@ export function PayeeDialog({ c, s, onCancel, onDone }) {
             />
             <span className="min-w-0 text-[12.5px]">
               <b className="font-semibold text-slate-800">{x.type}</b> · {x.name}
-              <span className="block text-[11.5px] text-slate-500">
+              <span className="block text-[12px] text-slate-500">
                 {x.hint} · A/c {x.acct} · IFSC {x.ifsc}
               </span>
             </span>
@@ -243,7 +243,7 @@ export function WorkingSheetDialog({ c, s, onCancel }) {
             <tr key={l} className="border-b border-slate-100">
               <td className="py-1.5 pr-2 text-slate-700">
                 {l}
-                {note && <span className="block text-[11px] text-slate-500">{note}</span>}
+                {note && <span className="block text-[12px] text-slate-500">{note}</span>}
               </td>
               <td className={`py-1.5 text-right tabular-nums ${v < 0 ? "text-red-700" : "text-slate-900"}`}>{v < 0 ? `– ${inr(-v)}` : inr(v)}</td>
             </tr>
@@ -254,7 +254,7 @@ export function WorkingSheetDialog({ c, s, onCancel }) {
           </tr>
         </tbody>
       </table>
-      <p className="text-[11.5px] text-slate-500">
+      <p className="text-[12px] text-slate-500">
         {s.do ? `Sent with the delivery order to: ${s.do.sentTo.join(", ")} (email & SMS link) on ${fmt(s.do.date)}.` : "Reimbursement – sent to the insured with the settlement letter."}
       </p>
     </Frame>
@@ -435,7 +435,7 @@ export default function SettlementPanel({ s, canAct, closed, onViewSheet, onInvo
       <div className="flex flex-wrap items-center justify-between gap-2 border-b border-slate-100 px-3 py-2">
         <h3 className="flex items-center gap-2 text-[13.5px] font-semibold text-slate-900">
           <BadgeCheck className="h-4 w-4 text-teal-700" aria-hidden="true" /> Settlement
-          <span className="rounded bg-slate-100 px-1.5 text-[11px] font-semibold text-slate-600">
+          <span className="rounded bg-slate-100 px-1.5 text-[12px] font-semibold text-slate-600">
             {doneCount} of {steps.length} done
           </span>
         </h3>
@@ -449,7 +449,7 @@ export default function SettlementPanel({ s, canAct, closed, onViewSheet, onInvo
           return (
             <li key={st.key} className={`flex items-start gap-3 px-3 py-2 ${isNext ? "bg-teal-50/50" : ""}`}>
               <span
-                className={`mt-0.5 grid h-6 w-6 flex-none place-items-center rounded-full text-[11px] font-bold ${
+                className={`mt-0.5 grid h-6 w-6 flex-none place-items-center rounded-full text-[12px] font-bold ${
                   st.done ? "bg-teal-600 text-white" : st.warn ? "bg-amber-100 text-amber-800" : isNext ? "bg-[#0B1F3A] text-white" : "border border-slate-300 text-slate-500"
                 }`}
               >
@@ -457,7 +457,7 @@ export default function SettlementPanel({ s, canAct, closed, onViewSheet, onInvo
               </span>
               <span className="min-w-0 flex-1">
                 <span className="flex items-center gap-1.5 text-[13px] font-semibold text-slate-800">
-                  <st.Icon className="h-3.5 w-3.5 text-slate-400" aria-hidden="true" /> {st.title}
+                  <st.Icon className="h-3.5 w-3.5 text-slate-500" aria-hidden="true" /> {st.title}
                 </span>
                 <span className={`block text-[12px] ${st.warn ? "text-amber-800" : "text-slate-600"}`}>{st.text}</span>
               </span>

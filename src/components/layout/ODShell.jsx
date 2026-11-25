@@ -533,7 +533,6 @@ export default function ODShell({ active = "dashboard", title, subtitle, headerS
           )}
 
           <div className="ml-auto flex items-center gap-2">
-            {/* Global search – icon only; opens a panel with suggestions */}
             {/* Search opens the Search Claims page (Universal Claim Search, catalogue 178) */}
             <button
               type="button"

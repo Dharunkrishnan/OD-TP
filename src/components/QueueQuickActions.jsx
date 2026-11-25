@@ -70,11 +70,11 @@ export function QuickActionsMenu({ row, pendingCount, onPick }) {
                   setOpen(false);
                   onPick(a.key);
                 }}
-                className="flex w-full items-center gap-2 px-3 py-1.5 text-left text-[12.5px] text-slate-800 hover:bg-slate-50 disabled:cursor-not-allowed disabled:text-slate-400 disabled:hover:bg-transparent"
+                className="flex w-full items-center gap-2 px-3 py-1.5 text-left text-[12.5px] text-slate-800 hover:bg-slate-50 disabled:cursor-not-allowed disabled:text-slate-500 disabled:hover:bg-transparent"
               >
                 <a.Icon className="h-3.5 w-3.5 flex-none text-slate-500" aria-hidden="true" />
                 <span className="min-w-0 flex-1">{a.label}</span>
-                {a.key === "remind" && <span className="flex-none rounded bg-slate-100 px-1.5 text-[11px] font-semibold text-slate-600">{pendingCount || "none"}</span>}
+                {a.key === "remind" && <span className="flex-none rounded bg-slate-100 px-1.5 text-[12px] font-semibold text-slate-600">{pendingCount || "none"}</span>}
               </button>
             );
           })}
@@ -150,7 +150,7 @@ export function QuickActionDialog({ kind, row, pendingDocs, onCancel, onDone }) 
                       className="h-4 w-4 accent-teal-700"
                     />
                     <span className="flex-1">{d.name}</span>
-                    <span className="text-[11px] text-slate-500">{d.status === "Rejected" ? "rejected" : `${d.reminders || 0} reminder(s) sent`}</span>
+                    <span className="text-[12px] text-slate-500">{d.status === "Rejected" ? "rejected" : `${d.reminders || 0} reminder(s) sent`}</span>
                   </label>
                 ))}
               </div>
@@ -201,8 +201,8 @@ export function QuickActionDialog({ kind, row, pendingDocs, onCancel, onDone }) 
               <textarea rows={2} value={text} onChange={(e) => setText(e.target.value)} placeholder="What was discussed (optional)" className={`${inputCls} h-auto py-2`} aria-label="Call notes" />
             </>
           )}
-          {tried && error && <p className="text-[11.5px] text-red-700">{error}</p>}
-          <p className="text-[11.5px] text-slate-500">Saved to the claim's timeline.</p>
+          {tried && error && <p className="text-[12px] text-red-700">{error}</p>}
+          <p className="text-[12px] text-slate-500">Saved to the claim's timeline.</p>
         </div>
         <div className="flex justify-end gap-2 border-t border-slate-100 bg-slate-50 px-4 py-2.5">
           <button type="button" onClick={onCancel} className="h-9 rounded-lg border border-slate-300 bg-white px-3 text-[13px] font-semibold text-slate-700 hover:bg-slate-50">

@@ -133,7 +133,7 @@ export function ClaimActionsMenu({ stage, rec, onPick, canChangeSurveyor = false
                 <it.Icon className="mt-0.5 h-4 w-4 flex-none text-slate-500" aria-hidden="true" />
                 <span className="leading-tight">
                   <span className="block text-[12.5px] font-medium text-slate-800">{it.label}</span>
-                  {it.note && <span className="block text-[11px] text-slate-500">{it.note}</span>}
+                  {it.note && <span className="block text-[12px] text-slate-500">{it.note}</span>}
                 </span>
               </button>
             </li>
@@ -311,7 +311,7 @@ export function ClaimStatusDialog({ action, claim, rec, onCancel, onDone }) {
                   <option key={r}>{r}</option>
                 ))}
               </select>
-              {err("reason") && <span className="mt-1 block text-[11.5px] text-red-700">{err("reason")}</span>}
+              {err("reason") && <span className="mt-1 block text-[12px] text-red-700">{err("reason")}</span>}
             </label>
           )}
 
@@ -333,7 +333,7 @@ export function ClaimStatusDialog({ action, claim, rec, onCancel, onDone }) {
                   <option key={v}>{v}</option>
                 ))}
               </select>
-              {err("via") && <span className="mt-1 block text-[11.5px] text-red-700">{err("via")}</span>}
+              {err("via") && <span className="mt-1 block text-[12px] text-red-700">{err("via")}</span>}
             </label>
           )}
 
@@ -344,9 +344,9 @@ export function ClaimStatusDialog({ action, claim, rec, onCancel, onDone }) {
               </span>
               <input type="date" value={reviewDate} min={today()} max={maxHold} onChange={(e) => setReviewDate(e.target.value)} className={inputCls} aria-invalid={!!err("reviewDate")} />
               {err("reviewDate") ? (
-                <span className="mt-1 block text-[11.5px] text-red-700">{err("reviewDate")}</span>
+                <span className="mt-1 block text-[12px] text-red-700">{err("reviewDate")}</span>
               ) : (
-                <span className="mt-1 block text-[11.5px] text-slate-500">Within 30 days. A diary reminder is set for that day.</span>
+                <span className="mt-1 block text-[12px] text-slate-500">Within 30 days. A diary reminder is set for that day.</span>
               )}
             </label>
           )}
@@ -363,9 +363,9 @@ export function ClaimStatusDialog({ action, claim, rec, onCancel, onDone }) {
               aria-invalid={!!err("remarks")}
             />
             {err("remarks") ? (
-              <span className="mt-1 block text-[11.5px] text-red-700">{err("remarks")}</span>
+              <span className="mt-1 block text-[12px] text-red-700">{err("remarks")}</span>
             ) : (
-              <span className="mt-1 block text-[11.5px] text-slate-500">{minRemarks ? `Minimum ${minRemarks} characters · ` : "Optional · "}saved in the claim timeline</span>
+              <span className="mt-1 block text-[12px] text-slate-500">{minRemarks ? `Minimum ${minRemarks} characters · ` : "Optional · "}saved in the claim timeline</span>
             )}
           </label>
 
@@ -375,12 +375,12 @@ export function ClaimStatusDialog({ action, claim, rec, onCancel, onDone }) {
                 <input type="checkbox" checked={confirm} onChange={(e) => setConfirm(e.target.checked)} className="mt-0.5 h-4 w-4 accent-teal-700" />
                 <span>{action === "withdraw" ? "The insured's written withdrawal request is uploaded to the claim." : "Reminders were sent to the insured as per the follow-up rule and there was no response."}</span>
               </label>
-              {err("confirm") && <span className="mt-1 block text-[11.5px] text-red-700">{err("confirm")}</span>}
+              {err("confirm") && <span className="mt-1 block text-[12px] text-red-700">{err("confirm")}</span>}
             </div>
           )}
 
           {action === "hold" && (
-            <p className="flex gap-2 text-[11.5px] text-slate-500">
+            <p className="flex gap-2 text-[12px] text-slate-500">
               <Clock className="mt-0.5 h-3.5 w-3.5 flex-none" aria-hidden="true" />
               The claim's SLA clock pauses while on hold. Regulatory TAT reports still count the full days from intimation.
             </p>

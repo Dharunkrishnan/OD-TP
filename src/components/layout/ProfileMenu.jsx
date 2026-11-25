@@ -147,11 +147,11 @@ export default function ProfileMenu({ lob = "OD", onLogout }) {
         </span>
         <span className="hidden whitespace-nowrap text-left leading-tight sm:block">
           <span className="block text-[13px] font-semibold text-slate-800">{user?.name}</span>
-          <span className="block text-[11px] text-slate-500">
+          <span className="block text-[12px] text-slate-500">
             {role?.roleLabel} · {user?.branch}
           </span>
         </span>
-        <ChevronDown className={`h-4 w-4 text-slate-400 transition-transform ${open ? "rotate-180" : ""}`} aria-hidden="true" />
+        <ChevronDown className={`h-4 w-4 text-slate-500 transition-transform ${open ? "rotate-180" : ""}`} aria-hidden="true" />
       </button>
 
       {open && (
@@ -165,7 +165,7 @@ export default function ProfileMenu({ lob = "OD", onLogout }) {
                 </span>
                 <div className="min-w-0 leading-tight">
                   <p className="truncate text-[13.5px] font-semibold text-slate-800">{user?.name}</p>
-                  <p className="truncate text-[11.5px] text-slate-500">
+                  <p className="truncate text-[12px] text-slate-500">
                     {user?.userId} · {user?.branch} · {LOB_LABEL[lob]}
                   </p>
                 </div>
@@ -184,10 +184,10 @@ export default function ProfileMenu({ lob = "OD", onLogout }) {
 
               {/* Select role */}
               <div className="mt-1 border-t border-slate-100">
-                <p className="flex items-center gap-1.5 px-4 pb-1 pt-3 text-[11px] font-semibold uppercase tracking-wider text-slate-500">
+                <p className="flex items-center gap-1.5 px-4 pb-1 pt-3 text-[12px] font-semibold uppercase tracking-wider text-slate-500">
                   Select role
                   {DEMO_MODE && !user?.roles?.[lob] && (
-                    <span className="rounded bg-amber-100 px-1 py-px text-[9.5px] font-semibold normal-case tracking-normal text-amber-800">Demo · all roles</span>
+                    <span className="rounded bg-amber-100 px-1 py-px text-[11px] font-semibold normal-case tracking-normal text-amber-800">Demo · all roles</span>
                   )}
                 </p>
                 <div role="radiogroup" aria-label="Select role" onKeyDown={onRolesKey} className="max-h-[min(264px,calc(100vh-280px))] overflow-y-auto px-2 pb-2">
@@ -212,7 +212,7 @@ export default function ProfileMenu({ lob = "OD", onLogout }) {
                           {on && <span className="h-2.5 w-2.5 rounded-full bg-teal-600" />}
                         </span>
                         <span className={`flex-1 truncate text-[14px] ${on ? "font-semibold text-[#0B1F3A]" : "font-medium text-slate-800"}`}>{r.roleLabel}</span>
-                        {r.authorityLimit && <span className="flex-none text-[11px] text-slate-400">{limitText(r.authorityLimit)}</span>}
+                        {r.authorityLimit && <span className="flex-none text-[12px] text-slate-500">{limitText(r.authorityLimit)}</span>}
                       </button>
                     );
                   })}
@@ -262,7 +262,7 @@ export default function ProfileMenu({ lob = "OD", onLogout }) {
                         <span className={`h-2.5 w-2.5 flex-none rounded-full ${a.dot}`} aria-hidden="true" />
                         <span className="min-w-0 flex-1 leading-tight">
                           <span className="block text-[13.5px] font-semibold text-slate-800">{a.label}</span>
-                          <span className="block text-[11.5px] text-slate-500">{a.note}</span>
+                          <span className="block text-[12px] text-slate-500">{a.note}</span>
                         </span>
                         {on && <Check className="h-4 w-4 flex-none text-teal-700" aria-label="Current status" />}
                       </button>

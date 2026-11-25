@@ -95,7 +95,7 @@ function SlaChip({ sla }) {
   };
   const [tone, Icon] = map[sla.status];
   return (
-    <span className={`inline-flex items-center gap-1 whitespace-nowrap rounded px-1.5 py-px text-[11px] font-semibold ring-1 ring-inset ${tone}`}>
+    <span className={`inline-flex items-center gap-1 whitespace-nowrap rounded px-1.5 py-px text-[12px] font-semibold ring-1 ring-inset ${tone}`}>
       <Icon className="h-3 w-3" aria-hidden="true" />
       {sla.label}
     </span>
@@ -129,8 +129,8 @@ function Pill({ icon: Icon, label, value, options, onChange }) {
       >
         <Icon className="h-3.5 w-3.5" aria-hidden="true" />
         {label}: <b className="font-semibold text-slate-900">{current.label}</b>
-        {current.count != null && <span className="text-slate-400">{current.count}</span>}
-        <ChevronDown className="h-3.5 w-3.5 text-slate-400" aria-hidden="true" />
+        {current.count != null && <span className="text-slate-500">{current.count}</span>}
+        <ChevronDown className="h-3.5 w-3.5 text-slate-500" aria-hidden="true" />
       </button>
       {open && (
         <ul role="listbox" className="absolute left-0 top-full z-30 mt-1 max-h-72 min-w-[200px] overflow-y-auto rounded-lg border border-slate-200 bg-white p-1 shadow-lg">
@@ -148,7 +148,7 @@ function Pill({ icon: Icon, label, value, options, onChange }) {
               >
                 <span>{o.label}</span>
                 <span className="flex items-center gap-1.5">
-                  {o.count != null && <span className="tabular-nums text-slate-400">{o.count}</span>}
+                  {o.count != null && <span className="tabular-nums text-slate-500">{o.count}</span>}
                   {o.key === value && <Check className="h-3.5 w-3.5" aria-hidden="true" />}
                 </span>
               </button>
@@ -283,28 +283,28 @@ function ReallocateDialog({ claims, loads, onCancel, onConfirm, defaultReason })
                         </span>
                         <span className="min-w-0 flex-1 leading-tight">
                           <span className="block text-[13px] font-medium text-slate-800">
-                            {h.name} <span className="font-mono text-[10.5px] font-normal text-slate-400">{h.userId}</span>
+                            {h.name} <span className="font-mono text-[11px] font-normal text-slate-500">{h.userId}</span>
                           </span>
-                          <span className="block text-[11px] text-slate-500">
+                          <span className="block text-[12px] text-slate-500">
                             {leave ? h.leaveNote : `${h.breached} breached · ${h.atRisk} at risk · SLA ${h.slaMet}%`}
                           </span>
                         </span>
                         {!leave && (
-                          <span className="flex-none text-right text-[11.5px] leading-tight tabular-nums">
+                          <span className="flex-none text-right text-[12px] leading-tight tabular-nums">
                             <span className="block text-slate-500">
                               {loads[h.userId]} → <b className={over ? "text-red-700" : "text-slate-900"}>{after}</b>
-                              <span className="text-slate-400">/{HANDLER_CAPACITY}</span>
+                              <span className="text-slate-500">/{HANDLER_CAPACITY}</span>
                             </span>
-                            {over && <span className="text-[10.5px] font-semibold text-red-700">Over capacity</span>}
+                            {over && <span className="text-[11px] font-semibold text-red-700">Over capacity</span>}
                           </span>
                         )}
-                        {leave && <Plane className="h-4 w-4 flex-none text-slate-400" aria-label="On leave" />}
+                        {leave && <Plane className="h-4 w-4 flex-none text-slate-500" aria-label="On leave" />}
                       </button>
                     </li>
                   );
                 })}
               </ul>
-              {err("to") && <p className="mt-1 text-[11.5px] text-red-700">{err("to")}</p>}
+              {err("to") && <p className="mt-1 text-[12px] text-red-700">{err("to")}</p>}
             </div>
           ) : (
             <div>
@@ -337,7 +337,7 @@ function ReallocateDialog({ claims, loads, onCancel, onConfirm, defaultReason })
                   {overList.map(([id]) => first(HANDLER[id].name)).join(", ")} will go over capacity ({HANDLER_CAPACITY}). Assign anyway.
                 </span>
               </label>
-              {err("over") && <p className="mt-1 text-[11.5px] text-red-700">{err("over")}</p>}
+              {err("over") && <p className="mt-1 text-[12px] text-red-700">{err("over")}</p>}
             </div>
           )}
 
@@ -351,7 +351,7 @@ function ReallocateDialog({ claims, loads, onCancel, onConfirm, defaultReason })
                 <option key={r}>{r}</option>
               ))}
             </select>
-            {err("reason") && <span className="mt-1 block text-[11.5px] text-red-700">{err("reason")}</span>}
+            {err("reason") && <span className="mt-1 block text-[12px] text-red-700">{err("reason")}</span>}
           </label>
 
           <label className="block">
@@ -366,9 +366,9 @@ function ReallocateDialog({ claims, loads, onCancel, onConfirm, defaultReason })
               aria-invalid={!!err("remarks")}
             />
             {err("remarks") ? (
-              <span className="mt-1 block text-[11.5px] text-red-700">{err("remarks")}</span>
+              <span className="mt-1 block text-[12px] text-red-700">{err("remarks")}</span>
             ) : (
-              <span className="mt-1 block text-[11.5px] text-slate-500">Both handlers are notified. The SLA clock keeps running – reallocation does not reset TAT.</span>
+              <span className="mt-1 block text-[12px] text-slate-500">Both handlers are notified. The SLA clock keeps running – reallocation does not reset TAT.</span>
             )}
           </label>
         </div>
@@ -414,9 +414,9 @@ function Preview({ c, move, onClose, onReallocate, onOpen }) {
             <p className="font-mono text-[14px] font-semibold text-[#0B1F3A]">{c.claimNo}</p>
             <div className="mt-1 flex flex-wrap gap-1">
               <SlaChip sla={c.sla} />
-              {c.dueToday && <span className="rounded bg-slate-100 px-1.5 py-px text-[11px] font-semibold text-slate-700">Due today</span>}
+              {c.dueToday && <span className="rounded bg-slate-100 px-1.5 py-px text-[12px] font-semibold text-slate-700">Due today</span>}
               {c.flags.map((f) => (
-                <span key={f} className="rounded bg-amber-50 px-1.5 py-px text-[11px] font-semibold text-amber-800 ring-1 ring-inset ring-amber-200">
+                <span key={f} className="rounded bg-amber-50 px-1.5 py-px text-[12px] font-semibold text-amber-800 ring-1 ring-inset ring-amber-200">
                   {f}
                 </span>
               ))}
@@ -605,26 +605,26 @@ function TeamQueuePage() {
                 onClick={() => setParam("handler", h.userId)}
                 className={`flex min-w-[150px] flex-1 items-center gap-2 rounded-lg border px-2 py-1 text-left ${on ? "border-teal-600 bg-teal-50/70 ring-1 ring-teal-600" : "border-slate-200 hover:bg-slate-50"}`}
               >
-                <span className={`grid h-7 w-7 flex-none place-items-center rounded-full text-[10.5px] font-semibold ${h.userId === "all" ? "bg-[#0B1F3A] text-white" : leave ? "bg-slate-100 text-slate-500" : "bg-teal-100 text-teal-800"}`}>
+                <span className={`grid h-7 w-7 flex-none place-items-center rounded-full text-[11px] font-semibold ${h.userId === "all" ? "bg-[#0B1F3A] text-white" : leave ? "bg-slate-100 text-slate-600" : "bg-teal-100 text-teal-800"}`}>
                   {h.userId === "all" ? <Users className="h-3.5 w-3.5" aria-hidden="true" /> : initials(h.name)}
                 </span>
                 <span className="min-w-0 flex-1 leading-tight">
                   <span className="flex items-center gap-1 text-[12.5px] font-semibold text-slate-800">
                     <span className="truncate">{h.userId === "all" ? "All" : first(h.name)}</span>
-                    {leave && <Plane className="h-3 w-3 flex-none text-slate-400" aria-label="On leave" />}
+                    {leave && <Plane className="h-3 w-3 flex-none text-slate-500" aria-label="On leave" />}
                     <span
-                      className={`ml-auto flex-none rounded-full px-1.5 text-[11px] font-semibold tabular-nums ${over ? "bg-red-50 text-red-700" : on ? "bg-teal-700 text-white" : "bg-slate-100 text-slate-700"}`}
+                      className={`ml-auto flex-none rounded-full px-1.5 text-[12px] font-semibold tabular-nums ${over ? "bg-red-50 text-red-700" : on ? "bg-teal-700 text-white" : "bg-slate-100 text-slate-700"}`}
                       title={h.userId === "all" ? undefined : `Open claims / capacity ${HANDLER_CAPACITY}`}
                     >
                       {st.n}
-                      {h.userId !== "all" && <span className={on && !over ? "text-teal-100" : "text-slate-400"}>/{HANDLER_CAPACITY}</span>}
+                      {h.userId !== "all" && <span className={on && !over ? "text-teal-100" : "text-slate-600"}>/{HANDLER_CAPACITY}</span>}
                     </span>
                   </span>
-                  <span className="block whitespace-nowrap text-[10.5px]">
+                  <span className="block whitespace-nowrap text-[11px]">
                     <span className="font-semibold text-red-700">{st.breach}</span>
-                    <span className="text-slate-400"> breached · </span>
+                    <span className="text-slate-500"> breached · </span>
                     <span className="font-semibold text-amber-800">{st.risk}</span>
-                    <span className="text-slate-400"> at risk</span>
+                    <span className="text-slate-500"> at risk</span>
                   </span>
                 </span>
               </button>
@@ -643,7 +643,7 @@ function TeamQueuePage() {
                 <b className="font-semibold">{h.name}</b> is on leave ({h.leaveNote.replace("On leave · ", "")}) – {mine.length} open claims, <b className="font-semibold">{due.length} due today</b>.
               </span>
               {due.length > 0 && (
-                <button type="button" onClick={() => setDialog({ claims: due, reason: "Handler on leave" })} className="inline-flex h-7 items-center gap-1 rounded-md bg-amber-600 px-2.5 text-[12px] font-semibold text-white hover:bg-amber-700">
+                <button type="button" onClick={() => setDialog({ claims: due, reason: "Handler on leave" })} className="inline-flex h-7 items-center gap-1 rounded-md bg-amber-700 px-2.5 text-[12px] font-semibold text-white hover:bg-amber-800">
                   <Shuffle className="h-3.5 w-3.5" aria-hidden="true" /> Reallocate {due.length} due today
                 </button>
               )}
@@ -679,10 +679,10 @@ function TeamQueuePage() {
               <Pill icon={Layers} label="Stage" value={stage} options={stageOpts} onChange={(v) => { setStage(v); setPage(0); }} />
               <Pill icon={User} label="Pending with" value={pending} options={pendingOpts} onChange={(v) => { setPending(v); setPage(0); }} />
               <label className="flex h-8 min-w-[200px] flex-1 items-center gap-2 rounded-full border border-slate-300 px-3 focus-within:border-teal-600 focus-within:ring-2 focus-within:ring-teal-600/20 sm:max-w-[300px]">
-                <Search className="h-3.5 w-3.5 flex-none text-slate-400" aria-hidden="true" />
-                <input value={query} onChange={(e) => { setQuery(e.target.value); setPage(0); }} placeholder="Claim no, insured or vehicle no" aria-label="Search claims" className="h-full min-w-0 flex-1 bg-transparent text-[12.5px] outline-none placeholder:text-slate-400" />
+                <Search className="h-3.5 w-3.5 flex-none text-slate-500" aria-hidden="true" />
+                <input value={query} onChange={(e) => { setQuery(e.target.value); setPage(0); }} placeholder="Claim no, insured or vehicle no" aria-label="Search claims" className="h-full min-w-0 flex-1 bg-transparent text-[12.5px] outline-none placeholder:text-slate-500" />
                 {query && (
-                  <button type="button" onClick={() => setQuery("")} aria-label="Clear search" className="text-slate-400 hover:text-slate-600">
+                  <button type="button" onClick={() => setQuery("")} aria-label="Clear search" className="text-slate-500 hover:text-slate-600">
                     <X className="h-3.5 w-3.5" />
                   </button>
                 )}
@@ -699,7 +699,7 @@ function TeamQueuePage() {
         {/* Table */}
         <div className="min-h-0 flex-1 overflow-auto">
           <table className="w-full min-w-[960px] text-left text-[12.5px]">
-            <thead className="sticky top-0 z-10 bg-slate-50 text-[10.5px] uppercase tracking-wide text-slate-500">
+            <thead className="sticky top-0 z-10 bg-slate-50 text-[11px] uppercase tracking-wide text-slate-500">
               <tr>
                 <th className="w-9 py-2 pl-3">
                   <input type="checkbox" checked={allPageSelected} onChange={togglePage} aria-label="Select all claims on this page" className="h-4 w-4 accent-teal-700" />
@@ -726,17 +726,17 @@ function TeamQueuePage() {
                       <input type="checkbox" checked={sel} onChange={() => toggle(c.claimNo)} aria-label={`Select ${c.claimNo}`} className="h-4 w-4 accent-teal-700" />
                     </td>
                     <td className="py-1.5 pr-2">
-                      <button type="button" onClick={() => setPreview(c.claimNo)} className="font-mono text-[11.5px] font-semibold text-teal-800 hover:underline">
+                      <button type="button" onClick={() => setPreview(c.claimNo)} className="font-mono text-[12px] font-semibold text-teal-800 hover:underline">
                         {c.claimNo}
                       </button>
-                      {c.flags.length > 0 && <span className="ml-1 rounded bg-amber-50 px-1 text-[10px] font-semibold text-amber-800 ring-1 ring-inset ring-amber-200">{c.flags[0]}</span>}
+                      {c.flags.length > 0 && <span className="ml-1 rounded bg-amber-50 px-1 text-[11px] font-semibold text-amber-800 ring-1 ring-inset ring-amber-200">{c.flags[0]}</span>}
                     </td>
                     <td className="py-1.5 pr-2">
                       <span className="flex items-center gap-1 whitespace-nowrap text-slate-800">
                         {first(h.name)}
-                        {h.status === "leave" && <Plane className="h-3 w-3 text-slate-400" aria-label="On leave" />}
+                        {h.status === "leave" && <Plane className="h-3 w-3 text-slate-500" aria-label="On leave" />}
                       </span>
-                      {mv && <span className="block whitespace-nowrap text-[10.5px] font-semibold text-indigo-700">Moved from {first(HANDLER[mv.from].name)}</span>}
+                      {mv && <span className="block whitespace-nowrap text-[11px] font-semibold text-indigo-700">Moved from {first(HANDLER[mv.from].name)}</span>}
                     </td>
                     <td className="max-w-[160px] truncate py-1.5 pr-2 text-slate-700" title={`${c.insured} · ${c.vehicle} · ${c.regNo}`}>
                       {c.insured}
@@ -749,7 +749,7 @@ function TeamQueuePage() {
                     <td className="py-1.5 pr-2">
                       <span className="flex items-center gap-1">
                         <SlaChip sla={c.sla} />
-                        {c.dueToday && c.sla.status !== "breach" && <span className="rounded bg-slate-100 px-1 text-[10px] font-semibold text-slate-600">Today</span>}
+                        {c.dueToday && c.sla.status !== "breach" && <span className="rounded bg-slate-100 px-1 text-[11px] font-semibold text-slate-600">Today</span>}
                       </span>
                     </td>
                     <td className="py-1.5 pr-2 text-right tabular-nums text-slate-600">{c.ageDays} d</td>
