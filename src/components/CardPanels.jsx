@@ -3,10 +3,11 @@
 // "peek and pin":
 //   • Peek – hover a button in the card header (or tab onto it) and a quick preview drops down
 //     under it. Moving away closes it. Nothing on the page moves.
-//   • Pin – click the button (or "Pin" in the preview) and the panel stays open as a floating card
-//     over the right side of the form (the form keeps its full width), kept in view while the page
-//     scrolls. Several panels can be pinned;
-//     they stack. Click the button again, or the pin on the card, to unpin.
+//   • Pin – click the button (or "Pin" in the preview) and the panel opens in ONE floating card over
+//     the right side of the form (the form keeps its full width), kept in view while the page
+//     scrolls. Pinning more panels adds tabs to that card – it never grows taller than the screen;
+//     a long panel scrolls inside the card. Button click: not pinned → pin and show · pinned but on
+//     another tab → show · showing → unpin.
 //   Escape closes a preview. Pinned panels stay until unpinned – that is the point of pinning.
 // tools: [{ key, label, title, icon, status, content }]
 //   status – optional { tone: "green" | "amber" | "red" | "slate", text }: a number shows as a count,
@@ -20,7 +21,7 @@ const SHADOW = "shadow-[0_12px_32px_-8px_rgba(15,23,42,0.28),0_2px_6px_rgba(15,2
 const OPEN_DELAY = 180; // ms – a pointer just passing over the header should not flash previews
 const CLOSE_DELAY = 160; // ms – time to move the pointer from the button into the preview
 
-export function PanelButtons({ tools, pinned, onTogglePin }) {
+export function PanelButtons({ tools, pinned, active, onTogglePin }) {
   const [peek, setPeek] = useState(null);
   const timer = useRef(null);
   const clear = () => clearTimeout(timer.current);
@@ -43,6 +44,7 @@ export function PanelButtons({ tools, pinned, onTogglePin }) {
     <div role="group" aria-label="Side panels" className="flex flex-wrap items-center gap-1">
       {tools.map((t) => {
         const on = pinned.includes(t.key);
+        const showing = on && active === t.key;
         const peeking = peekTool?.key === t.key;
         const Icon = t.icon;
         const st = t.status;
@@ -66,12 +68,14 @@ export function PanelButtons({ tools, pinned, onTogglePin }) {
               onBlur={(e) => !e.currentTarget.parentElement.contains(e.relatedTarget) && setPeek(null)}
               aria-pressed={on}
               aria-expanded={on ? undefined : peeking}
-              aria-controls={on ? `card-panel-${t.key}` : peeking ? `card-peek-${t.key}` : undefined}
-              aria-label={`${name}${on ? " – pinned" : ""}`}
-              title={on ? `${name} – click to unpin` : `${name} – click to pin`}
+              aria-controls={showing ? `card-panel-${t.key}` : peeking ? `card-peek-${t.key}` : undefined}
+              aria-label={`${name}${showing ? " – pinned, showing" : on ? " – pinned" : ""}`}
+              title={showing ? `${name} – click to unpin` : on ? `${name} – click to show` : `${name} – click to pin`}
               className={`inline-flex h-7 items-center gap-1.5 rounded-md border px-2 text-[12px] font-semibold transition ${
-                on
+                showing
                   ? "border-[#0B1F3A] bg-[#0B1F3A] text-white"
+                  : on
+                  ? "border-[#0B1F3A]/40 bg-slate-100 text-[#0B1F3A] hover:bg-slate-200"
                   : peeking
                     ? "border-slate-300 bg-slate-100 text-slate-900"
                     : "border-slate-200 bg-white text-slate-700 hover:bg-slate-50"
@@ -80,7 +84,7 @@ export function PanelButtons({ tools, pinned, onTogglePin }) {
               <Icon className="h-3.5 w-3.5" aria-hidden="true" />
               {t.label}
               {count && (
-                <span className={`rounded px-1 text-[11px] font-bold leading-4 ${on ? "bg-white/20 text-white" : "bg-slate-100 text-slate-700"}`} aria-hidden="true">
+                <span className={`rounded px-1 text-[11px] font-bold leading-4 ${showing ? "bg-white/20 text-white" : on ? "bg-white text-slate-700" : "bg-slate-100 text-slate-700"}`} aria-hidden="true">
                   {st.text}
                 </span>
               )}
@@ -119,28 +123,67 @@ export function PanelButtons({ tools, pinned, onTogglePin }) {
   );
 }
 
-// The pinned panels, stacked in the order they were pinned
-export function PinnedPanels({ tools, onUnpin }) {
+// The pinned panels – one floating card; with more than one pinned, a tab per panel. The card is
+// never taller than the screen: the panel content scrolls inside it.
+export function PinnedPanels({ tools, active, onShow, onUnpin }) {
   if (!tools.length) return null;
+  const cur = tools.find((t) => t.key === active) || tools[tools.length - 1];
+  const many = tools.length > 1;
   return (
-    <div className="flex flex-col gap-2">
-      {tools.map((t) => (
-        <aside key={t.key} id={`card-panel-${t.key}`} aria-label={t.title} className={`flex w-full flex-none flex-col overflow-hidden rounded-lg border border-slate-200 bg-white ${SHADOW}`}>
-          <div className="flex min-h-9 flex-none items-center justify-between gap-2 border-b border-slate-100 px-3 py-1">
-            <h2 className="text-[13px] font-semibold text-[#0B1F3A]">{t.title}</h2>
-            <button
-              type="button"
-              onClick={() => onUnpin(t.key)}
-              aria-label={`Unpin ${t.title}`}
-              title="Unpin"
-              className="grid h-7 w-7 place-items-center rounded-md text-slate-500 hover:bg-slate-100 hover:text-slate-800"
-            >
-              <PinOff className="h-4 w-4" aria-hidden="true" />
-            </button>
-          </div>
-          <div>{t.content}</div>
-        </aside>
-      ))}
-    </div>
+    <aside
+      id={`card-panel-${cur.key}`}
+      aria-label={many ? "Pinned panels" : cur.title}
+      className={`flex w-full flex-col overflow-hidden rounded-lg border border-slate-200 bg-white lg:max-h-[calc(100vh-8.5rem)] ${SHADOW}`}
+    >
+      {many && (
+        <div role="tablist" aria-label="Pinned panels" className="flex flex-none gap-0.5 overflow-x-auto border-b border-slate-200 bg-slate-50 px-1.5 pt-1.5">
+          {tools.map((t) => {
+            const sel = t.key === cur.key;
+            const st = t.status;
+            const count = st && /^\d+$/.test(String(st.text));
+            return (
+              <button
+                key={t.key}
+                type="button"
+                role="tab"
+                id={`pin-tab-${t.key}`}
+                aria-selected={sel}
+                aria-controls={`pin-panel-${cur.key}`}
+                onClick={() => onShow(t.key)}
+                title={t.title}
+                className={`-mb-px inline-flex h-8 flex-none items-center gap-1 whitespace-nowrap rounded-t-md border px-2 text-[12px] font-semibold ${
+                  sel ? "border-slate-200 border-b-white bg-white text-[#0B1F3A]" : "border-transparent text-slate-600 hover:text-slate-900"
+                }`}
+              >
+                {t.label}
+                {count && <span className="rounded bg-slate-200 px-1 text-[10.5px] font-bold leading-4 text-slate-700">{st.text}</span>}
+                {st && !count && <span className={`h-1.5 w-1.5 rounded-full ${DOT[st.tone || "slate"]}`} aria-hidden="true" />}
+              </button>
+            );
+          })}
+        </div>
+      )}
+      <div className="flex min-h-9 flex-none items-center justify-between gap-2 border-b border-slate-100 px-3 py-1">
+        <h2 className="text-[13px] font-semibold text-[#0B1F3A]">{cur.title}</h2>
+        <button
+          type="button"
+          onClick={() => onUnpin(cur.key)}
+          aria-label={`Unpin ${cur.title}`}
+          title="Unpin"
+          className="grid h-7 w-7 place-items-center rounded-md text-slate-500 hover:bg-slate-100 hover:text-slate-800"
+        >
+          <PinOff className="h-4 w-4" aria-hidden="true" />
+        </button>
+      </div>
+      <div
+        id={`pin-panel-${cur.key}`}
+        role={many ? "tabpanel" : undefined}
+        aria-labelledby={many ? `pin-tab-${cur.key}` : undefined}
+        tabIndex={0}
+        className="min-h-0 flex-1 overflow-y-auto focus:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-teal-700/40"
+      >
+        {cur.content}
+      </div>
+    </aside>
   );
 }

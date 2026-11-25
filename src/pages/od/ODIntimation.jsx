@@ -388,13 +388,21 @@ export default function ODIntimation() {
   const [pins, setPins] = useState(() => {
     try { return JSON.parse(sessionStorage.getItem("smartclaims-intimation-pins")) || []; } catch { return []; }
   });
-  const togglePin = useCallback((key) => {
-    setPins((cur) => {
-      const next = cur.includes(key) ? cur.filter((k) => k !== key) : [...cur, key];
-      try { sessionStorage.setItem("smartclaims-intimation-pins", JSON.stringify(next)); } catch { /* storage off */ }
-      return next;
-    });
-  }, []);
+  const [activePin, setActivePin] = useState(null); // the pinned panel showing in the card
+  const savePins = (next) => {
+    try { sessionStorage.setItem("smartclaims-intimation-pins", JSON.stringify(next)); } catch { /* storage off */ }
+    return next;
+  };
+  const unpin = useCallback((key) => setPins((cur) => savePins(cur.filter((k) => k !== key))), []);
+  // header button: not pinned → pin and show · pinned on another tab → show · showing → unpin
+  const pressPin = useCallback(
+    (key, showingKey) => {
+      if (showingKey === key) return unpin(key);
+      setPins((cur) => (cur.includes(key) ? cur : savePins([...cur, key])));
+      setActivePin(key);
+    },
+    [unpin]
+  );
   // Sample vehicles stay hidden until asked for (kept for demos and testing)
   const [showSamples, setShowSamples] = useState(() => {
     try { return sessionStorage.getItem("smartclaims-show-samples") === "1"; } catch { return false; }
@@ -964,6 +972,8 @@ export default function ODIntimation() {
   ];
   // a pinned panel that no longer applies (e.g. "Search tips" once a policy is picked) is not shown
   const pinnedTools = pins.map((k) => tools.find((t) => t.key === k)).filter(Boolean);
+  // showing: the chosen tab, or the most recently pinned one still available
+  const showingPin = pinnedTools.some((t) => t.key === activePin) ? activePin : pinnedTools[pinnedTools.length - 1]?.key;
   // "NBNR to resolve" card (step 1)
   const nbnrCard = (
     <div className="flex max-h-96 min-h-0 flex-1 flex-col overflow-hidden rounded-md border border-amber-200 xl:max-h-none">
@@ -1024,18 +1034,19 @@ export default function ODIntimation() {
               <p className="text-[14px] font-semibold text-slate-900">{STEPS[step]}</p>
               <div className="flex flex-wrap items-center gap-3">
                 {/* side panels – hover to peek, click to pin over the form */}
-                <PanelButtons tools={tools} pinned={pinnedTools.map((t) => t.key)} onTogglePin={togglePin} />
+                <PanelButtons tools={tools} pinned={pinnedTools.map((t) => t.key)} active={showingPin} onTogglePin={(k) => pressPin(k, showingPin)} />
                 <span className="text-[12px] font-medium text-slate-500">
                   Step {step + 1} of {STEPS.length}
                 </span>
               </div>
             </div>
             <div className="relative flex min-w-0 flex-1 flex-col gap-3 p-3">
-              {/* Pinned panels – float over the form (top right), stacked, kept in view while scrolling */}
+              {/* Pinned panels – one floating card over the form (top right), a tab per panel, never taller
+                  than the screen; kept in view while scrolling */}
               {pinnedTools.length > 0 && (
                 <div className="z-20 lg:pointer-events-none lg:absolute lg:inset-y-3 lg:right-3 lg:w-[320px]">
                   <div className="lg:pointer-events-auto lg:sticky lg:top-3">
-                    <PinnedPanels tools={pinnedTools} onUnpin={togglePin} />
+                    <PinnedPanels tools={pinnedTools} active={showingPin} onShow={setActivePin} onUnpin={unpin} />
                   </div>
                 </div>
               )}
