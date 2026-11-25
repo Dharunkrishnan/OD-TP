@@ -125,7 +125,6 @@ const EMPTY = {
   files: [],
   remarks: "",
   // step 5
-  declaration: false,
 };
 
 // A new intimation starts with the loss date and time set to now – the handler changes them to when
@@ -328,9 +327,6 @@ function validateSection(step, f) {
     // Theft: vehicle is not traced, so no garage is needed
     if (f.cause !== "theft" && f.vehicleLocation === "garage" && !f.garage) e.garage = "Select the garage where the vehicle is / will be taken.";
     if (f.cause !== "theft" && f.garage === "other" && !f.otherGarage.trim()) e.otherGarage = "Enter the garage name and address.";
-  }
-  if (step === 4) {
-    if (!f.declaration) e.declaration = "Confirm the declaration to submit.";
   }
   return e;
 }
@@ -1819,15 +1815,6 @@ export default function ODIntimation() {
                     </Card>
                   ))}
                   </div>
-
-                  <label className={`flex items-start gap-2 rounded-md border px-3 py-2 text-[12.5px] ${err.declaration ? "border-red-400 bg-red-50" : "border-slate-200 bg-slate-50"}`}>
-                    <input type="checkbox" checked={f.declaration} onChange={(e) => set({ declaration: e.target.checked })} className="mt-0.5 h-4 w-4 accent-teal-700" />
-                    <span>
-                      Details were recorded as given by the {f.intimatedBy.toLowerCase()}, read back and confirmed. The caller was informed about the claim
-                      process and documents required.
-                      {err.declaration && <span data-field-error className="block text-red-700">{err.declaration}</span>}
-                    </span>
-                  </label>
                 </>
               )}
             </div>
