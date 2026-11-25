@@ -36,8 +36,10 @@ async function ocrWorker() {
   return workerPromise;
 }
 
-async function ocr(image) {
+// psm "3" = whole page with blocks; "11" = sparse text (scattered labels and values on ID cards)
+async function ocr(image, psm = "3") {
   const worker = await ocrWorker();
+  await worker.setParameters({ tessedit_pageseg_mode: psm });
   const { data } = await worker.recognize(image);
   return { text: data.text || "", confidence: Math.round(data.confidence || 0) };
 }
@@ -108,8 +110,22 @@ async function enhance(file) {
     const v = Math.max(0, Math.min(255, ((px[i] - lo) * 255) / span));
     px[i] = px[i + 1] = px[i + 2] = v;
   }
+  sharpen(px, w, h);
   ctx.putImageData(img, 0, 0);
   return canvas;
+}
+
+/** light unsharp (3×3) on a grayscale RGBA buffer – crisper small print for OCR */
+function sharpen(px, w, h) {
+  const src = new Uint8ClampedArray(w * h);
+  for (let i = 0; i < src.length; i++) src[i] = px[i * 4];
+  for (let y = 1; y < h - 1; y++) {
+    for (let x = 1; x < w - 1; x++) {
+      const i = y * w + x;
+      const v = 5 * src[i] - src[i - 1] - src[i + 1] - src[i - w] - src[i + w];
+      px[i * 4] = px[i * 4 + 1] = px[i * 4 + 2] = v < 0 ? 0 : v > 255 ? 255 : v;
+    }
+  }
 }
 
 /** { passes: [{ text, confidence (0–100), label }], source } */
@@ -125,23 +141,25 @@ export async function extractText(file, onProgress) {
       return { passes: [], source: "unsupported" };
     }
     onProgress?.("Preparing the reader…");
-    passLabel = "Reading (1 of 2)";
-    const a = await ocr(file);
-    let b = null;
+    passLabel = "Reading (1 of 3)";
+    const passes = [{ ...(await ocr(file)), label: "Photo" }];
     try {
-      passLabel = "Reading enhanced copy (2 of 2)";
-      b = await ocr(await enhance(file));
+      const better = await enhance(file);
+      passLabel = "Reading enhanced copy (2 of 3)";
+      passes.push({ ...(await ocr(better)), label: "Enhanced copy" });
+      passLabel = "Reading card fields (3 of 3)";
+      passes.push({ ...(await ocr(better, "11")), label: "Enhanced copy – card layout" });
     } catch {
       /* enhancement not supported in this browser – the first pass is enough */
     }
-    return { passes: [{ ...a, label: "Photo" }, ...(b ? [{ ...b, label: "Enhanced copy" }] : [])], source: "OCR" };
+    return { passes, source: "OCR" };
   } finally {
     progressCb = null;
     passLabel = "Reading text";
   }
 }
 
-/** merge parsed passes field by field: a value found in both passes wins; otherwise the value from
+/** merge parsed passes field by field: a value two passes agree on wins; otherwise the value from
  *  the more confident pass; a value found in only one pass is used as it is */
 function mergePasses(parsed, passes, keys) {
   const out = {};
@@ -197,49 +215,64 @@ const lines = (text) =>
 
 // a line that is only labels ("Engine No. Owner Sr. No.", "Maker's Name Model Name") – two-column cards
 // put the labels side by side with the values on the line below
-const LABELISH = /^(?:[A-Za-z'./()]+\s*){1,5}$/;
+const LABELISH = /^(?:[A-Za-z'./()]+\s*){1,8}$/;
 const LABEL_WORD = /\b(no|number|name|date|valid|till|validity|of|used|sr|owner|reg|regn|fuel|model|maker|class|issue|birth)\b/i;
 const isLabel = (s) => !!s && !/\d/.test(s) && LABELISH.test(s) && LABEL_WORD.test(s);
 
-/** value on the line of a label (after ":" / "-"), or on the next line when the label stands alone
- *  or shares its line only with other labels */
-function valueAfter(ls, labelRe, { skip } = {}) {
+/** value for a label: on the label's line (after ":" / "-"), else on one of the next lines. With a
+ *  `valid` test, noise lines between the label and its value are skipped (up to `ahead` lines). */
+function valueAfter(ls, labelRe, { skip, valid, ahead = 1 } = {}) {
+  const ok = valid || ((v) => !!v && !isLabel(v));
   for (let i = 0; i < ls.length; i++) {
     const m = ls[i].match(labelRe);
     if (!m || (skip && skip.test(ls[i]))) continue;
     const rest = ls[i].slice(m.index + m[0].length).replace(/^[\s:.\-–=]+/, "").trim();
-    if (rest && !isLabel(rest)) return rest;
-    if (ls[i + 1]) return ls[i + 1];
+    if (rest && ok(rest)) return rest;
+    for (let j = 1; j <= ahead && ls[i + j]; j++) {
+      if (ok(ls[i + j])) return ls[i + j];
+      if (!valid) break;
+    }
   }
   return "";
 }
-/** a date for a label; on a two-column row the right-hand label takes the right-hand date below */
+/** a date for a label. Labels side by side ("Date of Issue  Validity", on one line or on consecutive
+ *  lines) take the dates below in the same order; noise lines in between are skipped. */
 function dateAfter(ls, labelRe) {
   for (let i = 0; i < ls.length; i++) {
     const m = ls[i].match(labelRe);
     if (!m) continue;
     const same = datesIn(ls[i].slice(m.index));
     if (same.length) return same[0];
-    const below = datesIn(ls[i + 1] || "");
-    if (!below.length) continue;
-    const rightColumn = m.index > ls[i].length * 0.35;
-    return rightColumn ? below[below.length - 1] : below[0];
+    // position among labels: earlier labels on this line + label-only lines just above
+    let k = m.index > ls[i].length * 0.35 && /[A-Za-z]{3}/.test(ls[i].slice(0, m.index)) ? 1 : 0;
+    for (let j = i - 1; j >= 0 && isLabel(ls[j]) && !datesIn(ls[j]).length; j--) k++;
+    const below = [];
+    for (let j = i + 1; j < Math.min(ls.length, i + 7); j++) {
+      if (datesIn(ls[j]).length) below.push(...datesIn(ls[j]));
+      else if (below.length && isLabel(ls[j])) break; // next block of labels
+    }
+    if (below.length) return below[Math.min(k, below.length - 1)];
   }
   return "";
 }
+// a real name on a card: capital words with at least 4 letters in all ("MAHESH A", not "SO TN")
+const NAME_OK = (v) => {
+  const n = pickName(v);
+  return !!n && n.replace(/[^A-Z]/g, "").length >= 4;
+};
 const cleanName = (s) =>
   String(s)
     .replace(/[^A-Za-z .]/g, " ") // OCR noise: apostrophes, digits, symbols
     .replace(/\s+/g, " ")
     .trim()
-    .replace(/\b([A-Za-z])\b(?!\.)/g, "$1.") // "R ARUN" → "R. ARUN"
+    .replace(/\b([A-Za-z])\b(?!\.)(?=\s+[A-Za-z]{2})/g, "$1.") // leading initial: "R ARUN" → "R. ARUN"; "MAHESH A" stays
     .replace(/\.\./g, ".")
     .toUpperCase();
 /** the name in an OCR line: the longest run of capitalised words ("Zo. THIYAGARAJAN MANI =" → "THIYAGARAJAN MANI") */
 function pickName(s) {
   const runs = String(s).match(/\b[A-Z][A-Z.']*(?:\s+[A-Z][A-Z.']*)*/g) || [];
   const best = runs.map((r) => r.trim()).filter((r) => r.replace(/[^A-Z]/g, "").length >= 3).sort((a, b) => b.length - a.length)[0];
-  return best || s;
+  return best || "";
 }
 /** an ID in an OCR line (engine / chassis no): a letters-and-digits word of the right length */
 function pickId(s, min, max, prefer) {
@@ -273,7 +306,7 @@ export function parseDL(text) {
   const dl = up.replace(/[O](?=\d)/g, "0").match(DL_NO_RE);
   if (dl) out.dlNo = `${dl[1]}${dl[2]} ${dl[3]}${dl[4]}`;
 
-  const name = valueAfter(ls, /\b(holder'?s?\s+name|name)\b/i, { skip: /father|husband|s\/o|d\/o|w\/o|son of|daughter|wife|s\/d\/w/i });
+  const name = valueAfter(ls, /\b(holder'?s?\s+name|name)\b/i, { skip: /father|husband|s\/o|d\/o|w\/o|son of|daughter|wife|s\/d\/w/i, valid: NAME_OK, ahead: 4 });
   if (name && tokens(name).length) out.holder = cleanName(pickName(name.split(/\s{2,}|\b(?:s\/o|d\/o|w\/o|dob|date)\b/i)[0]));
 
   out.dob = dateAfter(ls, /\b(d\.?\s?o\.?\s?b|date of birth|birth)\b/i) || undefined;
@@ -312,6 +345,14 @@ function finishDL(out) {
 /* ------------------------------------------------------------------ */
 // Reg no: TN 09 DX 4410, KA01AB1234, DL 3C AB 1234, 22 BH 1234 AA (BH series)
 const REG_RE = /\b([A-Z]{2})[\s-]?(\d{1,2}[A-Z]?)[\s-]?([A-Z]{0,3})[\s-]?(\d{3,4})\b/;
+// district as digits first ("TN41AX5452" → TN 41 AX 5452); a letter after the digits only for
+// codes like Delhi's "DL 3C AB 1234"
+const REG_PLAIN_RE = /\b([A-Z]{2})[\s-]?(\d{1,2})[\s-]?([A-Z]{1,3})[\s-]?(\d{1,4})\b/;
+function regIn(s, seriesOnly) {
+  const u = String(s || "").toUpperCase();
+  const m = u.match(REG_PLAIN_RE) || u.match(REG_SERIES_RE) || (!seriesOnly && u.match(REG_RE));
+  return m ? [m[1], m[2], m[3], m[4]].filter(Boolean).join(" ") : "";
+}
 const REG_SERIES_RE = /\b([A-Z]{2})[\s-]?(\d{1,2}[A-Z]?)[\s-]?([A-Z]{1,3})[\s-]?(\d{3,4})\b/;
 const BH_RE = /\b(\d{2})[\s-]?BH[\s-]?(\d{4})[\s-]?([A-Z]{1,2})\b/;
 const VIN_RE = /\b([A-HJ-NPR-Z0-9]{17})\b/;
@@ -322,21 +363,20 @@ export function parseRC(text, policy) {
   const up = raw.toUpperCase();
   const out = {};
 
-  const regLine = valueAfter(ls, /\b(regn?\.?\s*(no|number)|registration\s*(no|number)|vehicle\s*(no|number))\b/i);
+  const regLine = valueAfter(ls, /\b(regn?\.?\s*(no|number)|registration\s*(no|number)|vehicle\s*(no|number))\b/i, { valid: (v) => regIn(v), ahead: 5 });
   // anywhere on the card only a full number with series letters counts – "TN 641023" in the
   // address is a pincode, not a registration number
-  const reg = regLine.toUpperCase().match(REG_RE) || up.match(REG_SERIES_RE);
   const bh = up.match(BH_RE);
   if (bh) out.regNo = `${bh[1]} BH ${bh[2]} ${bh[3]}`;
-  else if (reg) out.regNo = [reg[1], reg[2], reg[3], reg[4]].filter(Boolean).join(" ");
+  else out.regNo = regIn(regLine) || regIn(up, true) || undefined;
 
-  const owner = valueAfter(ls, /\b(owner'?s?\s*name|name of (the )?owner|registered owner)\b/i, { skip: /serial|sr\.?\s*no|no\.\s*of|number of/i });
+  const owner = valueAfter(ls, /\b(owner'?s?\s*name|name of (the )?owner|registered owner)\b/i, { skip: /serial|sr\.?\s*no|no\.\s*of|number of/i, valid: NAME_OK, ahead: 4 });
   if (owner && tokens(owner).length) out.owner = cleanName(pickName(owner.split(/\b(?:s\/o|d\/o|w\/o|son|address)\b/i)[0]));
 
-  const chassisLine = valueAfter(ls, /\b(chassis|ch\.?\s*no|vin)\b/i);
+  const chassisLine = valueAfter(ls, /\b(chassis|ch\.?\s*no|vin)\b/i, { valid: (v) => !!pickId(v, 10, 17, 17), ahead: 4 });
   const vin = pickId(chassisLine, 10, 17, 17) || (up.match(VIN_RE) || [])[0];
   if (vin) out.chassis = vin;
-  const engineLine = valueAfter(ls, /\b(engine|eng\.?|motor)\s*(no|number)?\b/i, { skip: /capacity|cubic|\bcc\b|type/i });
+  const engineLine = valueAfter(ls, /\b(engine|eng\.?|motor)\s*(no|number)?\b/i, { skip: /capacity|cubic|\bcc\b|type/i, valid: (v) => !!pickId(v, 6, 15), ahead: 4 });
   const eng = pickId(engineLine, 6, 15);
   if (eng && eng !== out.chassis) out.engine = eng;
 
@@ -352,8 +392,18 @@ export function parseRC(text, policy) {
       .trim()
       .slice(0, 60);
 
-  const fuel = up.match(/\b(PETROL\s*\/?\s*CNG|PETROL|DIESEL|CNG|LPG|ELECTRIC|EV|HYBRID)\b/);
-  if (fuel) out.fuel = fuel[1].replace(/\s+/g, "").replace("PETROL/CNG", "Petrol / CNG").replace(/^(\w)(\w*)$/, (_, a, b) => a + b.toLowerCase());
+  // fuel – also the partial readings OCR gives when the word sits on the chip / hologram ("ESEL", "ETROL")
+  const FUEL = [
+    [/\bPETROL\s*\/?\s*CNG\b/, "Petrol / CNG"],
+    [/\b[DO0]?I?ESEL\b/, "Diesel"],
+    [/\bP?ETROL\b/, "Petrol"],
+    [/\bCNG\b/, "CNG"],
+    [/\bLPG\b/, "LPG"],
+    [/\b(ELECTRIC|BATTERY|EV)\b/, "Electric"],
+    [/\bHYBRID\b/, "Hybrid"],
+  ];
+  const fuelHit = FUEL.find(([re]) => re.test(up));
+  if (fuelHit) out.fuel = fuelHit[1];
 
   out.regDate = dateAfter(ls, /\b(date of regn|date of reg\b|regn\.?\s*date|registration date|date of registration|reg\.?\s*date)/i) || undefined;
   out.validTill = dateAfter(ls, /\b(regn\.?\s*validity|reg\.?\s*valid|valid\s*(till|upto|up to)|validity|fitness\s*(upto|valid))\b/i) || undefined;
@@ -364,7 +414,7 @@ export function parseRC(text, policy) {
     const line = ls.find((l) => compact(l).includes(compact(out.regNo)));
     out.regDate = (line && datesIn(line)[0]) || undefined;
   }
-  if (!out.regDate && all.length) out.regDate = all[0];
+  if (!out.regDate && all.length && all[0] !== out.validTill && (!out.validTill || all[0] < out.validTill)) out.regDate = all[0];
   if (!out.validTill && out.regDate) out.validTill = all.find((d) => +d.slice(0, 4) >= +out.regDate.slice(0, 4) + 10);
   const fin = valueAfter(ls, /\b(financier|hypothecat\w*|hp\s*with|lease)\b/i);
   if (fin) out.hypothecation = fin.slice(0, 50);
