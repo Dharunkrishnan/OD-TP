@@ -1740,8 +1740,10 @@ export default function ODIntimation() {
               )}
 
               {/* ===== Step 3: Review ===== */}
+              {/* short sections side by side (equal height); Incident full width with its rows in two columns */}
               {show(4) && (
                 <>
+                  <div className="grid grid-cols-1 gap-3 lg:grid-cols-3">
                   {[
                     {
                       title: "Policy & vehicle",
@@ -1764,7 +1766,17 @@ export default function ODIntimation() {
                       ].filter(Boolean),
                     },
                     {
+                      title: "Additional information",
+                      to: 1,
+                      rows: [
+                        ["Vehicle location", f.cause === "theft" ? "Not traced" : f.vehicleLocation === "garage" ? (f.garage === "other" ? f.otherGarage : f.garage) : f.vehicleLocation === "spot" ? "At accident spot" : "At residence"],
+                        f.cause !== "theft" && ["Survey", f.surveyType === "spot" ? "Spot survey" : "Garage survey"],
+                        ["Attachments", f.files.length ? f.files.join(", ") : "None"],
+                      ].filter(Boolean),
+                    },
+                    {
                       title: "Incident",
+                      wide: true,
                       to: 1,
                       rows: [
                         ["Loss", `${dt(f.lossDate)} · ${f.lossTime}`],
@@ -1779,28 +1791,26 @@ export default function ODIntimation() {
                         f.lateReason && ["Late intimation reason", f.lateReason],
                       ].filter(Boolean),
                     },
-                    {
-                      title: "Additional information",
-                      to: 1,
-                      rows: [
-                        ["Vehicle location", f.cause === "theft" ? "Not traced" : f.vehicleLocation === "garage" ? (f.garage === "other" ? f.otherGarage : f.garage) : f.vehicleLocation === "spot" ? "At accident spot" : "At residence"],
-                        f.cause !== "theft" && ["Survey", f.surveyType === "spot" ? "Spot survey" : "Garage survey"],
-                        ["Attachments", f.files.length ? f.files.join(", ") : "None"],
-                      ].filter(Boolean),
-                    },
                   ].map((sec) => (
                     <Card
                       key={sec.title}
                       title={sec.title}
+                      className={sec.wide ? "lg:col-span-3" : "flex flex-col"}
                       action={
                         <button type="button" onClick={() => goTo(sec.to)} className="flex items-center gap-1 text-[12px] font-medium text-teal-700 hover:underline">
                           <Pencil className="h-3 w-3" aria-hidden="true" /> Edit
+                          <span className="sr-only"> {sec.title}</span>
                         </button>
                       }
                     >
-                      <dl className="divide-y divide-slate-50">
+                      <dl className={sec.wide ? "grid grid-cols-1 lg:grid-cols-2 lg:gap-x-6 lg:px-0" : ""}>
                         {sec.rows.map(([k, v]) => (
-                          <div key={k} className="grid grid-cols-[160px_minmax(0,1fr)] gap-3 px-3 py-1.5 text-[12.5px]">
+                          <div
+                            key={k}
+                            className={`grid gap-3 border-b border-slate-50 px-3 py-1.5 text-[12.5px] last:border-b-0 ${
+                              sec.wide ? "grid-cols-[150px_minmax(0,1fr)] lg:[&:nth-last-child(2):nth-child(odd)]:border-b-0" : "grid-cols-[118px_minmax(0,1fr)]"
+                            }`}
+                          >
                             <dt className="text-slate-500">{k}</dt>
                             <dd className="break-words text-slate-800">{v || "–"}</dd>
                           </div>
@@ -1808,6 +1818,7 @@ export default function ODIntimation() {
                       </dl>
                     </Card>
                   ))}
+                  </div>
 
                   <label className={`flex items-start gap-2 rounded-md border px-3 py-2 text-[12.5px] ${err.declaration ? "border-red-400 bg-red-50" : "border-slate-200 bg-slate-50"}`}>
                     <input type="checkbox" checked={f.declaration} onChange={(e) => set({ declaration: e.target.checked })} className="mt-0.5 h-4 w-4 accent-teal-700" />
