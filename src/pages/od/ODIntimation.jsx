@@ -40,7 +40,7 @@ import LocationPicker from "../../components/LocationPicker";
 import DocAutoFill from "../../components/DocAutoFill";
 import DocViewer from "../../components/DocViewer";
 import { putDoc, removeDoc, clearDocs } from "../../data/docStore";
-import { extractText, parseDL, parseRC, sameName } from "../../data/docReader";
+import { readDL, readRC, sameName } from "../../data/docReader";
 import { claimSlug } from "../../data/odClaimDetail";
 import { WORK_QUEUE, TAT_STAGES } from "../../data/odHandlerMock";
 import {
@@ -455,12 +455,13 @@ export default function ODIntimation() {
   async function onDocRead(kind, file, onProgress) {
     const tag = kind === "dl" ? "DL" : "RC";
     const name = `${tag} – ${file.name}`;
-    let res;
+    let read;
     try {
-      res = await extractText(file, onProgress);
+      read = kind === "dl" ? await readDL(file, onProgress) : await readRC(file, fRef.current.policy, onProgress);
     } catch {
-      res = { text: "", confidence: 0, source: "failed" };
+      read = { found: [], missing: [], checks: [], raw: "", confidence: 0, source: "failed" };
     }
+    const res = { confidence: read.confidence, source: read.source };
     const cur = fRef.current; // the form as it is now (the user may have typed while it was reading)
     cur.files.filter((n) => n.startsWith(`${tag} – `) && n !== name).forEach(removeDoc); // replaced document
     putDoc(name, file);
@@ -470,7 +471,7 @@ export default function ODIntimation() {
     const patch = { files, autoFill };
 
     if (kind === "dl") {
-      const d = parseDL(res.text);
+      const d = read;
       patch.dlRead = { ...d, ...meta };
       for (const [from, to] of [["dlNo", "dlNo"], ["validTill", "dlValidTill"], ["dob", "driverDob"], ["dlClass", "dlClass"]]) {
         if (d[from]) {
@@ -491,7 +492,7 @@ export default function ODIntimation() {
       if (!d.found.length) flash(res.source === "failed" ? "Could not read the licence – check the internet connection, or type the details." : "Nothing readable on this licence – try a clearer, straight photo, or type the details.");
       else flash(`Licence read – ${d.found.length} of 5 details filled${d.missing.length ? `; not found: ${d.missing.join(", ").toLowerCase()}` : ""}.`);
     } else {
-      const r = parseRC(res.text, cur.policy);
+      const r = read;
       patch.rcRead = { ...r, ...meta };
       // no policy found → the RC gives the vehicle details asked for on step 1
       if (cur.noPolicy) {

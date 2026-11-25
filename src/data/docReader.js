@@ -1,7 +1,10 @@
 // src/data/docReader.js
 // Reads an uploaded Driving licence / RC and pulls out the fields Claim Intimation needs.
 //   1. extractText(file)  – a PDF with a text layer (e.g. DigiLocker) is read directly; a photo
-//                           or scanned PDF goes through OCR (Tesseract, runs in the browser).
+//                           or scanned PDF goes through OCR (Tesseract, runs in the browser) twice:
+//                           the photo as it is, and an enhanced copy (rotation fixed, enlarged,
+//                           grayscale, contrast stretched). Each pass is parsed and the results are
+//                           merged field by field (readDL / readRC).
 //   2. parseDL(text)      – holder, DL no, DOB, validity (non-transport), class of vehicle, issue date
 //      parseRC(text, pol) – reg no, owner, maker / model, fuel, chassis, engine, reg date, validity,
 //                           financier – and checks them against the policy
@@ -15,6 +18,7 @@
 /* ------------------------------------------------------------------ */
 let workerPromise = null;
 let progressCb = null;
+let passLabel = "Reading text";
 
 async function ocrWorker() {
   if (!workerPromise) {
@@ -22,7 +26,7 @@ async function ocrWorker() {
       createWorker("eng", 1, {
         logger: (m) => {
           if (!progressCb) return;
-          if (m.status === "recognizing text") progressCb(`Reading text… ${Math.round(m.progress * 100)}%`);
+          if (m.status === "recognizing text") progressCb(`${passLabel}… ${Math.round(m.progress * 100)}%`);
           else if (/loading|initializ/.test(m.status)) progressCb("Preparing the reader (first time only)…");
         },
       })
@@ -69,20 +73,102 @@ async function pdfText(file, onProgress) {
   return { ...(await ocr(canvas)), source: "OCR (scanned PDF)" };
 }
 
-/** { text, confidence (0–100), source } */
+/** Enhanced copy of a photo for OCR: EXIF rotation applied, longest side ~2000 px, grayscale,
+ *  contrast stretched (2nd–98th percentile) – helps dim, washed-out or small phone photos. */
+async function enhance(file) {
+  const bmp = await createImageBitmap(file, { imageOrientation: "from-image" });
+  const scale = Math.min(3, 2000 / Math.max(bmp.width, bmp.height));
+  const w = Math.round(bmp.width * scale);
+  const h = Math.round(bmp.height * scale);
+  const canvas = document.createElement("canvas");
+  canvas.width = w;
+  canvas.height = h;
+  const ctx = canvas.getContext("2d", { willReadFrequently: true });
+  ctx.imageSmoothingQuality = "high";
+  ctx.drawImage(bmp, 0, 0, w, h);
+  bmp.close?.();
+  const img = ctx.getImageData(0, 0, w, h);
+  const px = img.data;
+  const hist = new Uint32Array(256);
+  for (let i = 0; i < px.length; i += 4) {
+    const g = (px[i] * 299 + px[i + 1] * 587 + px[i + 2] * 114) / 1000;
+    px[i] = g;
+    hist[g | 0]++;
+  }
+  const total = px.length / 4;
+  const cut = total * 0.02;
+  let lo = 0;
+  let below = hist[0];
+  while (lo < 254 && below < cut) below += hist[++lo];
+  let hi = 255;
+  let above = hist[255];
+  while (hi > lo + 1 && above < cut) above += hist[--hi];
+  const span = Math.max(1, hi - lo);
+  for (let i = 0; i < px.length; i += 4) {
+    const v = Math.max(0, Math.min(255, ((px[i] - lo) * 255) / span));
+    px[i] = px[i + 1] = px[i + 2] = v;
+  }
+  ctx.putImageData(img, 0, 0);
+  return canvas;
+}
+
+/** { passes: [{ text, confidence (0–100), label }], source } */
 export async function extractText(file, onProgress) {
   progressCb = onProgress || null;
   try {
     const isPdf = file.type === "application/pdf" || /\.pdf$/i.test(file.name);
-    if (isPdf) return await pdfText(file, onProgress);
+    if (isPdf) {
+      const r = await pdfText(file, onProgress);
+      return { passes: [{ text: r.text, confidence: r.confidence, label: r.source }], source: r.source };
+    }
     if (!file.type.startsWith("image/") && !/\.(jpe?g|png|webp|bmp|gif|tiff?)$/i.test(file.name)) {
-      return { text: "", confidence: 0, source: "unsupported" };
+      return { passes: [], source: "unsupported" };
     }
     onProgress?.("Preparing the reader…");
-    return { ...(await ocr(file)), source: "OCR" };
+    passLabel = "Reading (1 of 2)";
+    const a = await ocr(file);
+    let b = null;
+    try {
+      passLabel = "Reading enhanced copy (2 of 2)";
+      b = await ocr(await enhance(file));
+    } catch {
+      /* enhancement not supported in this browser – the first pass is enough */
+    }
+    return { passes: [{ ...a, label: "Photo" }, ...(b ? [{ ...b, label: "Enhanced copy" }] : [])], source: "OCR" };
   } finally {
     progressCb = null;
+    passLabel = "Reading text";
   }
+}
+
+/** merge parsed passes field by field: a value found in both passes wins; otherwise the value from
+ *  the more confident pass; a value found in only one pass is used as it is */
+function mergePasses(parsed, passes, keys) {
+  const out = {};
+  for (const k of keys) {
+    const cand = parsed.map((r, i) => ({ v: r[k], c: passes[i].confidence })).filter((x) => x.v);
+    if (!cand.length) continue;
+    const agreed = cand.find((x) => cand.filter((y) => compact(y.v) === compact(x.v)).length > 1);
+    out[k] = (agreed || cand.sort((x, y) => y.c - x.c)[0]).v;
+  }
+  return out;
+}
+const rawOf = (passes) => (passes.length > 1 ? passes.map((p) => `--- ${p.label} (${p.confidence}%) ---\n${p.text.trim()}`).join("\n\n") : passes[0]?.text || "");
+
+/** Driving licence: extract + parse + merge. → parseDL shape plus confidence and source */
+export async function readDL(file, onProgress) {
+  const ex = await extractText(file, onProgress);
+  const parsed = ex.passes.map((p) => parseDL(p.text));
+  const fields = mergePasses(parsed, ex.passes, DL_KEYS);
+  return { ...finishDL(fields), raw: rawOf(ex.passes), confidence: Math.max(0, ...ex.passes.map((p) => p.confidence)), source: ex.source };
+}
+
+/** RC: extract + parse + merge, checked against the policy. */
+export async function readRC(file, policy, onProgress) {
+  const ex = await extractText(file, onProgress);
+  const parsed = ex.passes.map((p) => parseRC(p.text, policy));
+  const fields = mergePasses(parsed, ex.passes, RC_KEYS);
+  return { ...finishRC(fields, policy), raw: rawOf(ex.passes), confidence: Math.max(0, ...ex.passes.map((p) => p.confidence)), source: ex.source };
 }
 
 /* ------------------------------------------------------------------ */
@@ -209,12 +295,15 @@ export function parseDL(text) {
   const rto = valueAfter(ls, /\b(issuing authority|licensing authority)\b/i) || valueAfter(ls, /\b(rto|issued by)\b/i);
   if (rto) out.rto = rto.slice(0, 40);
 
-  const FIELDS = { holder: "Name", dlNo: "DL no", dob: "Date of birth", validTill: "Valid till", dlClass: "Class of vehicle" };
+  return { ...finishDL(out), raw };
+}
+const DL_FIELDS = { holder: "Name", dlNo: "DL no", dob: "Date of birth", validTill: "Valid till", dlClass: "Class of vehicle" };
+const DL_KEYS = [...Object.keys(DL_FIELDS), "issueDate", "rto"];
+function finishDL(out) {
   return {
     ...Object.fromEntries(Object.entries(out).filter(([, v]) => v)),
-    found: Object.keys(FIELDS).filter((k) => out[k]),
-    missing: Object.keys(FIELDS).filter((k) => !out[k]).map((k) => FIELDS[k]),
-    raw,
+    found: Object.keys(DL_FIELDS).filter((k) => out[k]),
+    missing: Object.keys(DL_FIELDS).filter((k) => !out[k]).map((k) => DL_FIELDS[k]),
   };
 }
 
@@ -223,6 +312,7 @@ export function parseDL(text) {
 /* ------------------------------------------------------------------ */
 // Reg no: TN 09 DX 4410, KA01AB1234, DL 3C AB 1234, 22 BH 1234 AA (BH series)
 const REG_RE = /\b([A-Z]{2})[\s-]?(\d{1,2}[A-Z]?)[\s-]?([A-Z]{0,3})[\s-]?(\d{3,4})\b/;
+const REG_SERIES_RE = /\b([A-Z]{2})[\s-]?(\d{1,2}[A-Z]?)[\s-]?([A-Z]{1,3})[\s-]?(\d{3,4})\b/;
 const BH_RE = /\b(\d{2})[\s-]?BH[\s-]?(\d{4})[\s-]?([A-Z]{1,2})\b/;
 const VIN_RE = /\b([A-HJ-NPR-Z0-9]{17})\b/;
 
@@ -233,7 +323,9 @@ export function parseRC(text, policy) {
   const out = {};
 
   const regLine = valueAfter(ls, /\b(regn?\.?\s*(no|number)|registration\s*(no|number)|vehicle\s*(no|number))\b/i);
-  const reg = (regLine.toUpperCase().match(REG_RE) || up.match(REG_RE));
+  // anywhere on the card only a full number with series letters counts – "TN 641023" in the
+  // address is a pincode, not a registration number
+  const reg = regLine.toUpperCase().match(REG_RE) || up.match(REG_SERIES_RE);
   const bh = up.match(BH_RE);
   if (bh) out.regNo = `${bh[1]} BH ${bh[2]} ${bh[3]}`;
   else if (reg) out.regNo = [reg[1], reg[2], reg[3], reg[4]].filter(Boolean).join(" ");
@@ -265,9 +357,23 @@ export function parseRC(text, policy) {
 
   out.regDate = dateAfter(ls, /\b(date of regn|date of reg\b|regn\.?\s*date|registration date|date of registration|reg\.?\s*date)/i) || undefined;
   out.validTill = dateAfter(ls, /\b(regn\.?\s*validity|reg\.?\s*valid|valid\s*(till|upto|up to)|validity|fitness\s*(upto|valid))\b/i) || undefined;
+  // labels washed out (glare)? the date printed beside the registration number is the date of
+  // registration; a date 10+ years after it is the registration validity
+  const all = [...new Set(datesIn(raw))].sort();
+  if (!out.regDate && out.regNo) {
+    const line = ls.find((l) => compact(l).includes(compact(out.regNo)));
+    out.regDate = (line && datesIn(line)[0]) || undefined;
+  }
+  if (!out.regDate && all.length) out.regDate = all[0];
+  if (!out.validTill && out.regDate) out.validTill = all.find((d) => +d.slice(0, 4) >= +out.regDate.slice(0, 4) + 10);
   const fin = valueAfter(ls, /\b(financier|hypothecat\w*|hp\s*with|lease)\b/i);
   if (fin) out.hypothecation = fin.slice(0, 50);
 
+  return { ...finishRC(out, policy), raw };
+}
+const RC_FIELDS = { regNo: "Registration no", owner: "Owner", vehicle: "Make / model", chassis: "Chassis no", engine: "Engine no", regDate: "Registration date" };
+const RC_KEYS = [...Object.keys(RC_FIELDS), "fuel", "validTill", "hypothecation"];
+function finishRC(out, policy) {
   const has = (k) => !!out[k];
   // one check per field: found → matches / does not match the policy; not found → can't check
   const check = (key, what, against, same) =>
@@ -275,21 +381,29 @@ export function parseRC(text, policy) {
       ? { label: same() ? `${what} matches ${against}` : `${what} does not match ${against}`, ok: same() }
       : { label: `${what} not found on RC`, ok: null };
   const prefixOf = (masked) => compact(masked).replace(/X+$/, "");
+  // OCR mix-ups: 4/A, 0/O/D/Q, 1/I/L, 5/S, 8/B, 2/Z, 6/G – an ID that matches only after allowing
+  // for these is "check", not a hard mismatch
+  const fold = (x) => x.replace(/[A4]/g, "4").replace(/[0ODQ]/g, "0").replace(/[1IL]/g, "1").replace(/[5S]/g, "5").replace(/[8B]/g, "8").replace(/[2Z]/g, "2").replace(/[6G]/g, "6");
+  const idCheck = (key, what) => {
+    const want = prefixOf(policy[key] || "");
+    if (!has(key)) return { label: `${what} not found on RC`, ok: null };
+    const got = compact(out[key]);
+    if (!want || got.startsWith(want)) return { label: `${what} matches policy`, ok: true };
+    if (fold(got).startsWith(fold(want))) return { label: `${what} – check: matches policy except characters OCR often confuses`, ok: null };
+    return { label: `${what} does not match policy`, ok: false };
+  };
   const checks = policy
     ? [
         check("regNo", "Registration no", "policy", () => compact(out.regNo) === compact(policy.regNo)),
-        check("chassis", "Chassis no", "policy", () => !policy.chassis || compact(out.chassis).startsWith(prefixOf(policy.chassis))),
-        check("engine", "Engine no", "policy", () => !policy.engine || compact(out.engine).startsWith(prefixOf(policy.engine))),
+        idCheck("chassis", "Chassis no"),
+        idCheck("engine", "Engine no"),
         check("owner", "RC owner", "insured", () => sameName(out.owner, policy.insured)),
       ]
     : [{ label: "No policy to compare – vehicle details taken from the RC", ok: null }];
-
-  const FIELDS = { regNo: "Registration no", owner: "Owner", vehicle: "Make / model", chassis: "Chassis no", engine: "Engine no", regDate: "Registration date" };
   return {
     ...Object.fromEntries(Object.entries(out).filter(([, x]) => x)),
     checks,
-    found: Object.keys(FIELDS).filter((k) => out[k]),
-    missing: Object.keys(FIELDS).filter((k) => !out[k]).map((k) => FIELDS[k]),
-    raw,
+    found: Object.keys(RC_FIELDS).filter((k) => out[k]),
+    missing: Object.keys(RC_FIELDS).filter((k) => !out[k]).map((k) => RC_FIELDS[k]),
   };
 }
