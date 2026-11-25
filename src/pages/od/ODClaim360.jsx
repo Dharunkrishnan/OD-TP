@@ -535,7 +535,15 @@ function closureRec(cl) {
 // Header chip for a closed claim (replaces the stage name)
 const CLOSED_CHIP = { SETTLED: "Closed – paid", WITHDRAWN: "Withdrawn", CLOSED: "Closed – no payment", NBNR_CLOSED: "NBNR closed" };
 
+// Every claim opens fresh on Claim 360 → Claim details: moving from one claim to another without
+// leaving the page (a notification, browser Back) starts the page again, so the previous claim's
+// tab, stage view or open panel never carries over.
 export default function ODClaim360() {
+  const { id } = useParams();
+  return <ClaimPage key={id} />;
+}
+
+function ClaimPage() {
   const { id } = useParams();
   const navigate = useNavigate();
   const claimNo = claimFromSlug(id);
