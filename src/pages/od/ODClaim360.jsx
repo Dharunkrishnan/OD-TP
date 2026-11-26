@@ -324,31 +324,108 @@ function StageView({ c, index, label, documents, timeline, journey, onBack, onUp
     ];
   } else if (index === 1) {
     const sv = c.survey;
+    const theft = sv.surveyType === "Investigation (SIU)";
+    const ips = !!sv.surveyor && /IPS|panel/i.test(sv.surveyor.type || "");
+    const allocStep = journey?.find((x) => x.key === "allocate");
+    const surveyStep = journey?.find((x) => x.key === "survey");
+    const done = ev("Survey completed");
+    const doc = (n) => documents.find((d) => d.name === n);
+    const docState = (d) => (!d ? "Not needed" : /received|verified/i.test(d.status) ? `✓ ${d.status}${d.receivedOn ? ` ${dt(d.receivedOn)}` : ""}` : d.status);
+    // damage picture from the stated cause (demo: point of impact and the parts usually involved)
+    const cause = (c.loss.cause || "").toLowerCase();
+    const impact = /behind|rear|revers/.test(cause) ? "Rear" : /side|scrap|swipe|turn/.test(cause) ? "Left side" : /flood|water/.test(cause) ? "Under-body & cabin (water ingress)" : /fire/.test(cause) ? "Engine bay (fire)" : "Front";
+    const PARTS = {
+      Rear: "Rear bumper, tail lamp (L), boot lid, rear panel",
+      "Left side": "Left front door, left rear door, ORVM (L), side skirt",
+      Front: "Front bumper, headlamp (R), grille, bonnet, radiator support",
+      "Under-body & cabin (water ingress)": "Engine (hydrostatic lock check), wiring harness, seats & carpet, ECU",
+      "Engine bay (fire)": "Wiring harness, engine components, bonnet, battery",
+    };
+    const est = sv.estimate;
+    const pctIdv = est ? Math.round((est / c.policy.idv) * 100) : null;
+    const before = c.reserveHistory[0]?.amount;
+    const after = c.reserveHistory.find((r) => r.type === "Revision")?.amount;
+    const chipText = (st) => (st?.chip && st.chip.kind !== "none" ? `${st.chip.kind === "met" ? "✓ " : st.chip.kind === "due" ? "" : "✕ "}${st.chip.text}` : "–");
     sections = [
       {
-        title: c.survey.surveyType === "Investigation (SIU)" ? "Investigation" : "Surveyor appointment",
+        title: theft ? "Investigation arrangement" : "Survey arrangement",
         items: [
           ["Survey type", sv.surveyType],
           ["Surveyor", sv.surveyor ? sv.surveyor.name : "–"],
-          ["Licence no", sv.surveyor ? sv.surveyor.licence : "–", { mono: true }],
           ["Surveyor type", sv.surveyor ? sv.surveyor.type : "–"],
-          ["Appointed on", dt(sv.appointedOn)],
-          ["Survey done on", dt(sv.surveyDoneOn)],
+          ["IRDAI licence no", sv.surveyor?.licence || "–", { mono: true }],
+          [
+            "Why this surveyor",
+            ips
+              ? "External surveyor (IPS) – CAT / theft / total loss claim"
+              : est != null && est < 50000
+                ? "In-house – loss under ₹50,000, licensed surveyor not mandatory"
+                : "In-house – claims handler is a licensed surveyor",
+          ],
+          ["Allocated", allocStep?.when ? `${dt(allocStep.when.date)} · ${allocStep.when.time}` : dt(sv.appointedOn)],
+          ["IRDAI – allocation within 24 h", chipText(allocStep)],
+          ["Inspection mode", theft ? "Field investigation" : /spot/i.test(sv.surveyType) ? "Physical – at the spot" : "Physical – at the garage"],
         ],
       },
       {
-        title: "Inspection",
+        title: theft ? "Investigation" : "Inspection",
         items: [
-          ["Vehicle location", c.loss.vehicleLocation],
-          ["Garage", c.garage ? `${c.garage.name} (${c.garage.type})` : "–"],
-          ["Garage estimate", inrAmt(sv.estimate), { strong: true }],
+          ["Inspected on", done ? `${dt(done.date)} · ${done.time}` : dt(sv.surveyDoneOn)],
+          ["Location", c.loss.vehicleLocation],
+          c.garage && ["Garage", `${c.garage.name.split(",")[0]} · ${c.garage.type}`],
           ["Odometer", c.vehicle.odometer ? `${c.vehicle.odometer.toLocaleString("en-IN")} km` : "–"],
-          ["Photos", documents.find((d) => d.name === "Vehicle photos")?.status === "Received" ? "Uploaded" : "–"],
-          ["Survey report", documents.find((d) => d.name === "Survey report")?.status ?? "–"],
-          ["Red flags", c.flags.length ? c.flags.join(", ") : "None"],
+          ["Vehicle identity check", theft ? "Not applicable – vehicle not traced" : "✓ Reg no, chassis and engine no match RC and policy"],
+          ["Photos & video", docState(doc("Vehicle photos"))],
+          !theft && ["Pre-existing damage", "None noted"],
         ],
       },
-    ];
+      !theft && {
+        title: "Damage & cause",
+        items: [
+          ["Point of impact", impact],
+          ["Damaged parts", PARTS[impact]],
+          ["Stated cause", c.loss.cause],
+          ["Damage consistent with cause", c.flags.includes("Fraud flag") ? "✕ Doubtful – see red flags" : "✓ Yes"],
+        ],
+      },
+      !theft && {
+        title: "Estimate",
+        items: [
+          ["Garage estimate", inrAmt(est), { strong: true }],
+          est != null && ["Parts · labour · paint", `${inrAmt(Math.round(est * 0.6))} · ${inrAmt(Math.round(est * 0.25))} · ${inrAmt(est - Math.round(est * 0.6) - Math.round(est * 0.25))}`],
+          ["Estimate received", docState(doc("Garage estimate"))],
+          pctIdv != null && [
+            "Repair or total loss",
+            pctIdv > 75 ? `✕ ${pctIdv}% of IDV – constructive total loss (over 75%)` : `✓ Repairable – estimate is ${pctIdv}% of IDV (total loss above 75%)`,
+          ],
+        ],
+      },
+      {
+        title: "Survey report & IRDAI",
+        items: [
+          ["Report submitted", done ? `${dt(done.date)} · ${done.time}` : "–"],
+          ["Report status", docState(doc("Survey report"))],
+          ["IRDAI – report within 15 days", chipText(surveyStep)],
+          ["Recommendation", theft ? "Await police final report (non-traceable) before decision" : pctIdv > 75 ? "Settle as total loss" : "Repair at the garage – claim admissible on survey"],
+          ["Reserve after survey", after != null ? `${inrAmt(before)} → ${inrAmt(after)}` : inrAmt(before)],
+        ],
+      },
+      {
+        title: "Red flags & investigation",
+        items: [
+          ["Red flags", c.flags.length ? c.flags.join(", ") : "✓ None"],
+          ["SIU referral", c.flags.includes("Fraud flag") || theft ? "Referred to SIU" : "Not referred"],
+          ["Fraud rules", c.checks.find((k) => /fraud/i.test(k.label))?.note || "No red flags"],
+        ],
+      },
+      {
+        title: "Documents collected in this stage",
+        span: "lg:col-span-2 2xl:col-span-3",
+        items: ["Garage estimate", "Vehicle photos", "Survey report", "FIR / police report", "Fire brigade report"]
+          .map((n) => doc(n) && [n, docState(doc(n))])
+          .filter(Boolean),
+      },
+    ].filter(Boolean);
   } else if (index === 2) {
     const sv = c.survey;
     sections = [
