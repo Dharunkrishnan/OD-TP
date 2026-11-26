@@ -35,12 +35,12 @@ import {
 } from "lucide-react";
 import ODShell from "../../components/layout/ODShell";
 import { PanelButtons, PinnedPanels } from "../../components/CardPanels";
-import { formatINR } from "../../auth";
+import { formatINR, auditLog, useAuth } from "../../auth";
 import LocationPicker from "../../components/LocationPicker";
 import DocAutoFill from "../../components/DocAutoFill";
 import DocViewer from "../../components/DocViewer";
 import { putDoc, removeDoc, clearDocs } from "../../data/docStore";
-import { readDL, readRC, sameName } from "../../data/docReader";
+import { readDL, readDLBack, readRC, sameName } from "../../data/docReader";
 import { claimSlug } from "../../data/odClaimDetail";
 import { WORK_QUEUE, TAT_STAGES } from "../../data/odHandlerMock";
 import {
@@ -115,6 +115,7 @@ const EMPTY = {
   dlClass: "",
   // documents read on Incident Details (DL / RC) and which fields they filled
   dlRead: null,
+  dlBackRead: null,
   rcRead: null,
   autoFill: {},
   // step 4
@@ -223,17 +224,18 @@ const inputCls = (err) =>
     err ? "border-red-500 focus:border-red-600 focus:ring-red-600/15" : "border-slate-300 focus:border-teal-700 focus:ring-teal-700/15"
   }`;
 
-function Segmented({ value, onChange, options, name }) {
+function Segmented({ value, onChange, options, name, locked }) {
   return (
-    <div role="radiogroup" aria-label={name} className="inline-flex self-start rounded-md border border-slate-300 bg-white p-0.5">
+    <div role="radiogroup" aria-label={name} aria-disabled={locked || undefined} className={`inline-flex self-start rounded-md border border-slate-300 p-0.5 ${locked ? "bg-slate-50" : "bg-white"}`}>
       {options.map((o) => (
         <button
           key={o.value}
           type="button"
           role="radio"
           aria-checked={value === o.value}
-          onClick={() => onChange(o.value)}
-          className={`h-7 rounded px-3 text-[12.5px] font-medium ${value === o.value ? "bg-[#0B1F3A] text-white" : "text-slate-600 hover:bg-slate-100"}`}
+          disabled={locked && value !== o.value}
+          onClick={() => !locked && onChange(o.value)}
+          className={`h-7 rounded px-3 text-[12.5px] font-medium disabled:cursor-not-allowed disabled:text-slate-400 ${value === o.value ? "bg-[#0B1F3A] text-white" : "text-slate-600 hover:bg-slate-100"}`}
         >
           {o.label}
         </button>
@@ -337,6 +339,7 @@ const driverNeeded = (f) => f.beingDriven === "yes" && !["theft", "flood", "part
 /* Page                                                                */
 /* ------------------------------------------------------------------ */
 export default function ODIntimation() {
+  const { user: authUser } = useAuth() || {};
   const navigate = useNavigate();
   // Opened from the header search with ?q=<vehicle no> → search is pre-run
   const [params] = useSearchParams();
@@ -356,6 +359,7 @@ export default function ODIntimation() {
           lossTime: draft.f.lossTime || nowHHMM(),
           // results saved by the earlier demo reader (no found / missing lists) are dropped
           dlRead: draft.f.dlRead?.found ? draft.f.dlRead : null,
+          dlBackRead: draft.f.dlBackRead?.found ? draft.f.dlBackRead : null,
           rcRead: draft.f.rcRead?.found ? draft.f.rcRead : null,
         }
       : initQ
@@ -457,11 +461,11 @@ export default function ODIntimation() {
   // DL / RC uploaded on Incident Details → text extracted (OCR / PDF text) → the fields found on the
   // document fill the form; nothing is made up – what could not be read stays for the handler to type
   async function onDocRead(kind, file, onProgress) {
-    const tag = kind === "dl" ? "DL" : "RC";
+    const tag = kind === "dl" ? "DL" : kind === "dlBack" ? "DL back" : "RC";
     const name = `${tag} – ${file.name}`;
     let read;
     try {
-      read = kind === "dl" ? await readDL(file, onProgress) : await readRC(file, fRef.current.policy, onProgress);
+      read = kind === "dl" ? await readDL(file, onProgress) : kind === "dlBack" ? await readDLBack(file, onProgress) : await readRC(file, fRef.current.policy, onProgress);
     } catch {
       read = { found: [], missing: [], checks: [], raw: "", confidence: 0, source: "failed" };
     }
@@ -495,6 +499,17 @@ export default function ODIntimation() {
       setF((x) => ({ ...x, ...patch }));
       if (!d.found.length) flash(res.source === "failed" ? "Could not read the licence – check the internet connection, or type the details." : "Nothing readable on this licence – try a clearer, straight photo, or type the details.");
       else flash(`Licence read – ${d.found.length} of 5 details filled${d.missing.length ? `; not found: ${d.missing.join(", ").toLowerCase()}` : ""}.`);
+    } else if (kind === "dlBack") {
+      // back side: classes of vehicle with their issue dates – merged with any class read from the front
+      const b = read;
+      patch.dlBackRead = { ...b, ...meta };
+      if (b.dlClass) {
+        const merged = [...new Set([...(cur.dlClass ? cur.dlClass.split(/,\s*/) : []), ...b.dlClass.split(/,\s*/)])].filter(Boolean).join(", ");
+        patch.dlClass = merged;
+        autoFill.dlClass = "DL";
+      }
+      setF((x) => ({ ...x, ...patch }));
+      flash(b.dlClass ? `DL back side read – class of vehicle: ${b.dlClass}.` : res.source === "failed" ? "Could not read the back side – check the internet connection." : "No class of vehicle found – try a clearer photo, or type it.");
     } else {
       const r = read;
       patch.rcRead = { ...r, ...meta };
@@ -517,6 +532,20 @@ export default function ODIntimation() {
   // eye icon: open an uploaded file; a DL / RC opens with the details read from it alongside
   function openDoc(name) {
     const dl = f.dlRead && name === `DL – ${f.dlRead.fileName}` ? f.dlRead : null;
+    const back = f.dlBackRead && name === `DL back – ${f.dlBackRead.fileName}` ? f.dlBackRead : null;
+    if (back) {
+      setViewDoc({
+        name,
+        title: "Driving licence – back side",
+        details: {
+          title: `Read from the DL back side · ${back.source === "PDF text" ? "read from PDF text" : `${back.source} · ${back.confidence}% confidence`}`,
+          rows: back.classes.length ? back.classes.map((c) => [c.cov, c.date ? `Issued ${dt(c.date)}` : "Date not found"]) : [["Class of vehicle", "Not found"]],
+          note: "A private car needs LMV. Check the classes against the licence on the left.",
+          raw: back.raw,
+        },
+      });
+      return;
+    }
     const rc = f.rcRead && name === `RC – ${f.rcRead.fileName}` ? f.rcRead : null;
     const nf = (v) => v || "Not found";
     const how = (r) => (r.source === "PDF text" ? "read from PDF text" : `${r.source} · ${r.confidence}% confidence`);
@@ -619,11 +648,34 @@ export default function ODIntimation() {
       navigate("/od/worklist");
     }
   }
+  // FIR is mandatory for theft, fire and injury → "Reported to police?" is locked to Yes (catalogue 3)
+  const firLocked = f.cause === "theft" || f.cause === "fire" || f.injury === "yes";
   function submit() {
     const e = validate(STEPS.length - 1, f);
     setErrors(e);
     if (Object.keys(e).length) return;
-    setResult(submitIntimation(f));
+    const final = { ...f, policeReported: firLocked ? "yes" : f.policeReported };
+    const res = submitIntimation(final);
+    // audit trail (catalogue 171): who captured the intimation, when, through which channel, and the result
+    const at = new Date();
+    auditLog("CLAIM_INTIMATED", {
+      userId: authUser?.userId || authUser?.id || "–",
+      user: authUser?.name || "–",
+      claimNo: res.claimNo || res.ref || "–",
+      outcome: res.outcome,
+      policyNo: final.policy?.policyNo,
+      regNo: final.policy?.regNo,
+      lossDate: final.lossDate,
+      lossTime: final.lossTime,
+      cause: final.cause,
+      channel: final.channel || final.intimatedBy,
+      tpInvolved: final.tpInvolved,
+      policeReported: final.policeReported,
+      firNo: final.firNo || null,
+      dlRead: !!final.dlRead,
+      rcRead: !!final.rcRead,
+    });
+    setResult({ ...res, auditAt: at.toLocaleTimeString("en-IN", { hour: "2-digit", minute: "2-digit" }) });
   }
   function reset() {
     clearDraft();
@@ -663,6 +715,7 @@ export default function ODIntimation() {
                   ["Initial reserve (standard)", inr(result.reserve)],
                   ["Assigned to", result.assignedTo],
                   ["Next step", result.surveyRoute],
+                  ["Audit trail", `Recorded · ${authUser?.name || "you"} (${authUser?.userId || "–"}) · ${result.auditAt}`],
                 ].map(([k, v]) => (
                   <div key={k}>
                     <dt className="text-[11px] font-medium uppercase tracking-wide text-slate-500">{k}</dt>
@@ -708,6 +761,9 @@ export default function ODIntimation() {
                 <p className="mt-3 text-[12px] text-slate-500">
                   Next: resolve from the NBNR bucket – convert to a claim once fixed (e.g. premium realised, correct policy found), or close with
                   reason.
+                </p>
+                <p className="mt-1 text-[12px] text-slate-500">
+                  Audit trail: recorded · {authUser?.name || "you"} ({authUser?.userId || "–"}) · {result.auditAt}
                 </p>
               </div>
             </Card>
@@ -1472,7 +1528,7 @@ export default function ODIntimation() {
                         <Segmented name="Being driven" value={f.beingDriven} onChange={(v) => set({ beingDriven: v })} options={[{ value: "yes", label: "Yes" }, { value: "no", label: "No (parked)" }]} />
                       </Field>
                     )}
-                    <Field label="Third party involved?">
+                    <Field label="Third party involved? (vehicle, person or property)">
                       {/* no third party → no injury question; switching back to No clears the injury answer */}
                       <Segmented name="Third party" value={f.tpInvolved} onChange={(v) => set(v === "yes" ? { tpInvolved: v } : { tpInvolved: v, injury: "no" })} options={[{ value: "no", label: "No" }, { value: "yes", label: "Yes" }]} />
                     </Field>
@@ -1481,8 +1537,9 @@ export default function ODIntimation() {
                         <Segmented name="Injury" value={f.injury} onChange={(v) => set({ injury: v })} options={[{ value: "no", label: "No" }, { value: "yes", label: "Yes" }]} />
                       </Field>
                     )}
-                    <Field label="Reported to police?">
-                      <Segmented name="Police" value={f.policeReported} onChange={(v) => set({ policeReported: v })} options={[{ value: "no", label: "No" }, { value: "yes", label: "Yes" }]} />
+                    {/* theft, fire and injury need an FIR – the answer is locked to Yes */}
+                    <Field label="Reported to police?" hint={firLocked ? "Mandatory for theft, fire and injury" : undefined}>
+                      <Segmented name="Police" value={firLocked ? "yes" : f.policeReported} locked={firLocked} onChange={(v) => set({ policeReported: v })} options={[{ value: "no", label: "No" }, { value: "yes", label: "Yes" }]} />
                     </Field>
                   </div>
 
@@ -1515,7 +1572,7 @@ export default function ODIntimation() {
                     </div>
                     <DocAutoFill
                       onRead={onDocRead}
-                      onView={(k) => openDoc(k === "dl" ? `DL – ${f.dlRead.fileName}` : `RC – ${f.rcRead.fileName}`)}
+                      onView={(k) => openDoc(k === "dl" ? `DL – ${f.dlRead.fileName}` : k === "dlBack" ? `DL back – ${f.dlBackRead.fileName}` : `RC – ${f.rcRead.fileName}`)}
                       items={[
                         ...(driverNeeded(f)
                           ? [{
@@ -1530,6 +1587,19 @@ export default function ODIntimation() {
                                   ? [f.dlRead.holder && titleCase(f.dlRead.holder), f.dlRead.dlNo, f.dlRead.validTill && `valid till ${dt(f.dlRead.validTill)}`].filter(Boolean).join(" · ") +
                                     (f.dlRead.missing.length ? ` · not found: ${f.dlRead.missing.join(", ").toLowerCase()}` : "")
                                   : "Nothing readable – type the details below or upload a clearer photo",
+                              },
+                            },
+                            {
+                              key: "dlBack",
+                              title: "DL back side",
+                              icon: IdCard,
+                              hint: "Reads the classes of vehicle (LMV, MCWG …) and their issue dates",
+                              done: f.dlBackRead && {
+                                fileName: f.dlBackRead.fileName,
+                                warn: !f.dlBackRead.classes.length,
+                                summary: f.dlBackRead.classes.length
+                                  ? f.dlBackRead.classes.map((c) => `${c.cov}${c.date ? ` (${dt(c.date)})` : ""}`).join(" · ")
+                                  : "No class of vehicle found – type it below",
                               },
                             }]
                           : []),

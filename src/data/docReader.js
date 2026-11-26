@@ -181,6 +181,51 @@ export async function readDL(file, onProgress) {
   return { ...finishDL(fields), raw: rawOf(ex.passes), confidence: Math.max(0, ...ex.passes.map((p) => p.confidence)), source: ex.source };
 }
 
+/** DL back side: classes of vehicle (LMV, MCWG …) with the date each class was issued. */
+export function parseDLBack(text) {
+  const raw = String(text || "");
+  const classes = [];
+  for (const line of lines(raw)) {
+    const up = line.toUpperCase();
+    // each class takes the first date written after it on the same line (one class per line is the usual layout)
+    for (const m of up.matchAll(COV_RE)) {
+      const after = line.slice(m.index + m[0].length);
+      const next = after.search(COV_RE);
+      const d = datesIn(next >= 0 ? after.slice(0, next) : after)[0] || datesIn(line)[0];
+      classes.push({ cov: m[0].replace("LMV-NT", "LMV"), date: d || null });
+    }
+  }
+  const uniq = [];
+  classes.forEach((c) => {
+    const have = uniq.find((u) => u.cov === c.cov);
+    if (!have) uniq.push(c);
+    else if (!have.date && c.date) have.date = c.date;
+  });
+  return { classes: uniq, raw };
+}
+export async function readDLBack(file, onProgress) {
+  const ex = await extractText(file, onProgress);
+  const parsed = ex.passes.map((p) => parseDLBack(p.text));
+  const classes = [];
+  parsed.forEach((p) =>
+    p.classes.forEach((c) => {
+      const have = classes.find((u) => u.cov === c.cov);
+      if (!have) classes.push({ ...c });
+      else if (!have.date && c.date) have.date = c.date;
+    })
+  );
+  const dlClass = classes.map((c) => c.cov).join(", ");
+  return {
+    classes,
+    dlClass: dlClass || undefined,
+    found: dlClass ? ["dlClass"] : [],
+    missing: dlClass ? [] : ["Class of vehicle"],
+    raw: rawOf(ex.passes),
+    confidence: Math.max(0, ...ex.passes.map((p) => p.confidence)),
+    source: ex.source,
+  };
+}
+
 /** RC: extract + parse + merge, checked against the policy. */
 export async function readRC(file, policy, onProgress) {
   const ex = await extractText(file, onProgress);

@@ -1,7 +1,7 @@
 // src/data/claimWork.js
 // Everyday work on an OD claim in Claim 360 (Phase 2B) – kept for this browser session (sessionStorage).
 //   19  Reserve revision with reason – above the handler's ₹1 L authority an increase goes to the Claims Manager
-//   94  Reserve vs estimate / assessment variance alert (above 20 %)
+//   94  Reserve vs estimate / net liability variance alert (above 20 %)
 //   145 Query management – insured, garage, surveyor; due date, reminders, close with reply
 //   153 Document upload with document type
 //   154 Document verification – Verified / Rejected (reason) per document
@@ -86,12 +86,13 @@ export function useClaimWork(claimNo) {
   return [rec, update];
 }
 
-/** Reserve vs assessed (or estimate) – null when there is nothing to compare */
+/** Reserve vs net liability after assessment (reserve = expected payout), or vs the garage estimate
+    before assessment – null when there is nothing to compare */
 export function reserveVariance(reserve, survey) {
-  const basis = survey?.assessed ?? survey?.estimate;
+  const basis = survey?.netLiability ?? survey?.estimate;
   if (!basis || !reserve) return null;
   const pct = Math.round((Math.abs(reserve - basis) / basis) * 100);
-  return { basis, basisLabel: survey.assessed != null ? "assessed loss" : "garage estimate", pct, over: reserve > basis, alert: pct > VARIANCE_PCT };
+  return { basis, basisLabel: survey?.netLiability != null ? "net liability" : "garage estimate", pct, over: reserve > basis, alert: pct > VARIANCE_PCT };
 }
 
 /* ---------- quick actions from My Work Queue (no need to open the claim) ---------- */

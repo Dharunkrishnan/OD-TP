@@ -383,7 +383,7 @@ export default function ODWorkQueue() {
   const openClaim = (claimNo) => navigate(`/od/claims/${claimSlug(claimNo)}`);
   // row click → open, unless the click was on a control in the row or the user was selecting text
   const rowOpens = (e) => !e.target.closest("button, a, input, select, textarea, label, [role=menu], [role=dialog]") && !window.getSelection()?.toString();
-  const editClaim = (claimNo) => navigate(`/od/claims/${claimSlug(claimNo)}?mode=edit`);
+  const editClaim = (claimNo) => navigate(`/od/claims/${claimSlug(claimNo)}?view=work&mode=edit`);
   const initialTab = TABS.some((t) => t.key === params.get("tab")) ? params.get("tab") : "all";
   // Bucket from the URL; a dashboard link with only ?tab= opens the bucket with most of those claims
   // Opens on "All"; ?bucket= picks a lifecycle bucket (dashboard links with ?tab= open All with that filter)
@@ -820,7 +820,7 @@ export default function ODWorkQueue() {
             </div>
           )}
           {view === "closed" ? (
-            <ClosedClaimsTable rows={closed} onOpen={(no, edit) => navigate(`/od/claims/${claimSlug(no)}${edit ? "?mode=edit" : ""}`)} />
+            <ClosedClaimsTable rows={closed} onOpen={(no, edit) => navigate(`/od/claims/${claimSlug(no)}${edit ? "?view=work&mode=edit" : ""}`)} />
           ) : (
           <>
           {/* Main buckets – claim lifecycle */}

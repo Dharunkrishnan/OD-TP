@@ -119,7 +119,7 @@ export default function ODSearch() {
     window.clearTimeout(notBuilt.t);
     notBuilt.t = window.setTimeout(() => setToast(""), 2600);
   }
-  const openClaim = (no, edit) => navigate(`/od/claims/${claimSlug(no)}${edit ? "?mode=edit" : ""}`);
+  const openClaim = (no, edit) => navigate(`/od/claims/${claimSlug(no)}${edit ? "?view=work&mode=edit" : ""}`);
 
   // summary of what was searched, shown above the results
   const LABEL = { claim: "Claim", policy: "Policy", vehicle: "Vehicle", mobile: "Mobile", name: "Customer", garage: "Garage", svType: "Surveyor type", svName: "Surveyor", status: "Status", loss: "Loss type", from: "From", to: "To" };

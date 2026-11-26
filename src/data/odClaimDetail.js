@@ -279,10 +279,12 @@ export function getClaimDetail(claimNo) {
   // external surveyor (IPS), appointed by the handler once the claim is registered.
   const ips = needsIps(row);
   const surveyor = isNbnr || step < 1 ? null : ips ? (step >= 2 ? IPS_SURVEYORS[seedOf(claimNo + "|ips") % IPS_SURVEYORS.length] : null) : HANDLER_AS_SURVEYOR;
-  const estimate = round(row.reserve * (1.12 + r() * 0.2));
-  const assessed = step >= 3 && step !== 4 ? row.reserve : step >= 4 ? row.reserve : null;
-  let depreciation = assessed == null ? null : zeroDep ? 0 : round(assessed * (0.06 + r() * 0.08));
-  let salvage = assessed == null ? null : round(assessed * 0.015);
+  const estK = 1.12 + r() * 0.2;
+  const reached = step >= 3; // survey done → assessed
+  let depreciation = !reached ? null : zeroDep ? 0 : round(row.reserve * (0.06 + r() * 0.08)); // r() kept for the demo sequence
+  let salvage = !reached ? null : round(row.reserve * 0.015);
+  let assessed = reached ? row.reserve : null;
+  let estimate = round(row.reserve * estK);
   // compulsory deductible follows engine capacity (private car: ₹1,000 up to 1500 cc, ₹2,000 above)
   policy.compulsoryDeductible = compulsoryDeductible(vehicle.cc);
   const deductible = policy.compulsoryDeductible + policy.voluntaryDeductible;
@@ -299,8 +301,24 @@ export function getClaimDetail(claimNo) {
       depreciation = 0;
       salvage = assessment.best;
     } else {
-      assessment = partialAssessment({ estimate, assessed, zeroDep, yom: year, lossDate: row.lossDate, cause: loss.cause, lossType: row.lossType, addOns: policy.addOns, salvage, deductibles: deductible });
+      // Reserve = expected payout (net liability). The assessed loss is worked back from it so that
+      // assessed − depreciation − salvage − deductibles = reserve, and the garage estimate sits above it.
+      const run = (A) =>
+        partialAssessment({ estimate: round(A * estK, 10), assessed: A, zeroDep, yom: year, lossDate: row.lossDate, cause: loss.cause, lossType: row.lossType, addOns: policy.addOns, salvage: round(A * 0.015, 10), deductibles: deductible });
+      let A = round((row.reserve + deductible) / (zeroDep ? 0.985 : 0.82), 10);
+      for (let i = 0; i < 5; i++) {
+        const t = run(A);
+        const net = A - t.dep - round(A * 0.015, 10) - deductible;
+        const eff = 1 - t.dep / A - 0.015;
+        A = Math.max(10, A + round((row.reserve - net) / eff, 10));
+      }
+      assessment = run(A);
+      assessed = A;
+      estimate = assessment.estimate;
       depreciation = assessment.dep;
+      // salvage absorbs the last few rupees of rounding so the net payable equals the reserve exactly
+      salvage = Math.max(0, A - depreciation - deductible - row.reserve);
+      assessment.net = Math.max(0, A - depreciation - salvage - deductible);
     }
   }
   const netLiability =
@@ -389,7 +407,7 @@ export function getClaimDetail(claimNo) {
       type: "Revision",
       amount: row.reserve,
       by: surveyor ? surveyor.name : "Claims handler",
-      reason: "Revised to assessed loss after survey",
+      reason: "Revised to net liability after assessment",
     });
   }
   const payments = row.closure?.type === "Paid"

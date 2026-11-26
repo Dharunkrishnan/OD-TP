@@ -34,11 +34,13 @@ import {
   History,
   Milestone,
   Pencil,
+  ClipboardCheck,
+  Calculator,
 } from "lucide-react";
 import ODShell from "../../components/layout/ODShell";
 import { TAT_STAGES, needsIps } from "../../data/odHandlerMock";
 import { getClaimDetail, claimFromSlug, LIFECYCLE, STAGE_TO_STEP } from "../../data/odClaimDetail";
-import { impactOf, damagedParts, DEP_TEXT, CTL_THRESHOLD } from "../../data/odAssessment";
+import { impactOf, damagedParts, DEP_TEXT, CTL_THRESHOLD, partialAssessment } from "../../data/odAssessment";
 import { ClaimStatusBanner, ClaimActionsMenu, ClaimStatusDialog } from "../../components/ClaimStatusActions";
 import ClaimDetailSections from "../../components/ClaimDetailSections";
 import ClaimTimeline from "../../components/ClaimTimeline";
@@ -49,6 +51,9 @@ import SettlementPanel, { InvoiceDialog, PayeeDialog, ConsentDialog, DeliveryDia
 import { settlementState, INVOICE_TOLERANCE_PCT } from "../../data/claimSettlement";
 import { ReserveDialog, VarianceBanner, QueryDialog, ReplyDialog, QueriesPanel, UploadDialog, RejectDocDialog } from "../../components/ClaimWorkDialogs";
 import AppointSurveyorDialog from "../../components/AppointSurveyorDialog";
+import { ScheduleInspectionDialog, SurveyReportDialog, AssessmentDialog, ReferSiuDialog } from "../../components/HandlerStageDialogs";
+import { HANDLER_AS_SURVEYOR } from "../../data/odHandlerMock";
+import { HANDLER_AUTHORITY, MANAGER_AUTHORITY } from "../../data/odTeamMock";
 import { useClaimSurvey, daysLeft } from "../../data/claimSurvey";
 
 const inr = (n) => (n == null ? "–" : "₹" + Number(n).toLocaleString("en-IN"));
@@ -191,12 +196,135 @@ function Modal({ title, onClose, children }) {
 /* ------------------------------------------------------------------ */
 const STAGE_EVENTS = [
   ["Claim intimated", "Parked as NBNR", "Policy & coverage validated", "Claim registered", "Assigned to handler"],
-  ["Surveyor appointed", "Survey completed", "Flag raised"],
-  ["Reserve revised", "Document requested", "Document received"],
-  ["Sent for approval", "Repair authorised", "Approved", "Repudiated"],
-  ["Repair authorised", "Payment requested", "Payment made"],
+  ["Surveyor appointed", "Inspection scheduled", "Survey completed", "Flag raised"],
+  ["Reserve revised", "Assessment saved", "Document requested", "Document received"],
+  ["Sent for approval", "Repair authorised", "Approved", "Repudiated", "Referred to SIU"],
+  ["Repair authorised", "Final invoice received", "Surveyor confirmed final bill", "Re-inspection done", "Salvage collected", "Delivery order issued", "Payee set", "Settlement consent received", "Vehicle delivered", "Payment requested", "Payment made", "Claim closed"],
 ];
+// work that belongs to whatever stage the claim is in when it is done (documents, queries, notes)
+const ANY_STAGE_EVENTS = ["Document", "Query", "Note added", "Reserve increase sent for approval", "Referred to SIU"];
+const eventsOfStage = (timeline, index, current) =>
+  timeline.filter((e) => STAGE_EVENTS[index].some((k) => e.event.startsWith(k)) || (current && ANY_STAGE_EVENTS.some((k) => e.event.startsWith(k))));
 const inrAmt = (n) => (n == null ? "–" : "₹" + Number(n).toLocaleString("en-IN"));
+
+// Stage bar – the same on every stage: "Stage n · name · status" with Timeline, Activity (this stage) and
+// Upload; a completed stage also has "Back to current stage". Timeline / Activity open as floating cards.
+function StageBarHeader({ index, label, status, done, panel, toggle, count, onUpload, onBack }) {
+  const btn = (on) =>
+    `flex h-7 items-center gap-1.5 rounded-md border px-2.5 text-[12px] font-semibold ${on ? "border-[#0B1F3A] bg-[#0B1F3A] text-white" : "border-slate-300 bg-white text-slate-700 hover:bg-slate-50"}`;
+  return (
+    <div className={`flex flex-wrap items-center justify-between gap-2 border-b border-slate-100 px-3 py-2 ${done ? "bg-teal-50/60" : "bg-sky-50/60"}`}>
+      <p className="flex items-center gap-2 text-[13px] text-slate-700">
+        <span className={`grid h-6 w-6 place-items-center rounded-full text-white ${done ? "bg-teal-600" : "bg-[#0B1F3A]"}`}>
+          {done ? <CheckCircle2 className="h-3.5 w-3.5" aria-hidden="true" /> : <span className="text-[11px] font-bold">{index + 1}</span>}
+        </span>
+        <span>
+          <span className="font-semibold text-[#0B1F3A]">
+            Stage {index + 1} · {label}
+          </span>{" "}
+          · {status}
+        </span>
+      </p>
+      <div className="flex items-center gap-2">
+        <button type="button" onClick={() => toggle("timeline")} aria-expanded={panel === "timeline"} aria-controls={panel === "timeline" ? "stage-timeline" : undefined} className={btn(panel === "timeline")}>
+          <Milestone className="h-3.5 w-3.5" aria-hidden="true" />
+          Timeline
+        </button>
+        <button type="button" onClick={() => toggle("activity")} aria-expanded={panel === "activity"} aria-controls={panel === "activity" ? "stage-activity" : undefined} className={btn(panel === "activity")}>
+          <History className="h-3.5 w-3.5" aria-hidden="true" />
+          Activity
+          <span className={`rounded px-1 text-[11px] font-bold leading-4 ${panel === "activity" ? "bg-white/20" : "bg-slate-100"}`}>{count}</span>
+        </button>
+        {/* Upload a document for this claim (edit mode, open claim) – same dialog as the header Upload */}
+        {onUpload && (
+          <button type="button" onClick={onUpload} title={`Upload a document – ${label} stage`} className={btn(false)}>
+            <Upload className="h-3.5 w-3.5" aria-hidden="true" />
+            Upload
+          </button>
+        )}
+        {onBack && (
+          <button type="button" onClick={onBack} className="flex h-7 items-center gap-1.5 rounded-md bg-teal-700 px-2.5 text-[12px] font-semibold text-white hover:bg-teal-800">
+            <ArrowLeft className="h-3.5 w-3.5" aria-hidden="true" />
+            Back to current stage
+          </button>
+        )}
+      </div>
+    </div>
+  );
+}
+
+function StagePanels({ panel, setPanel, events, journey, index, className = "lg:right-3 lg:top-2" }) {
+  const floating = `z-30 mt-2 flex flex-col overflow-hidden rounded-lg border border-slate-200 bg-white shadow-[0_12px_32px_-8px_rgba(15,23,42,0.28),0_2px_6px_rgba(15,23,42,0.08)] lg:absolute lg:mt-0 lg:max-h-[calc(100vh-14rem)] ${className}`;
+  const head = (title, close) => (
+    <div className="flex min-h-9 flex-none items-center justify-between gap-2 border-b border-slate-100 px-3 py-1">
+      <h3 className="text-[12.5px] font-semibold text-[#0B1F3A]">{title}</h3>
+      <button type="button" onClick={() => setPanel(null)} aria-label={close} className="grid h-7 w-7 place-items-center rounded-md text-slate-500 hover:bg-slate-100 hover:text-slate-800">
+        <X className="h-4 w-4" aria-hidden="true" />
+      </button>
+    </div>
+  );
+  const scroll = "min-h-0 flex-1 overflow-y-auto focus:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-teal-700/40";
+  if (panel === "activity")
+    return (
+      <section id="stage-activity" aria-label="Activity in this stage" className={`${floating} lg:w-[340px]`}>
+        {head("Activity in this stage", "Close activity")}
+        <div tabIndex={0} className={scroll}>
+          {events.length === 0 ? (
+            <p className="px-3 py-4 text-[12px] text-slate-500">No recorded activity yet.</p>
+          ) : (
+            <ol className="divide-y divide-slate-100">
+              {events.map((e, k) => (
+                <li key={k} className="px-3 py-2">
+                  <p className="flex items-baseline justify-between gap-2 text-[12.5px] font-semibold text-slate-800">
+                    {e.event}
+                    <span className="flex-none text-[12px] font-normal text-slate-500">
+                      {dt(e.date)} {e.time}
+                    </span>
+                  </p>
+                  <p className="text-[12px] text-slate-600">{e.detail}</p>
+                  <p className="text-[12px] text-slate-500">by {e.by}</p>
+                </li>
+              ))}
+            </ol>
+          )}
+        </div>
+      </section>
+    );
+  if (panel === "timeline")
+    return (
+      <section id="stage-timeline" aria-label="Claim timeline" className={`${floating} lg:w-[520px]`}>
+        {head("Claim timeline", "Close timeline")}
+        <div tabIndex={0} className={scroll}>
+          <ClaimTimeline steps={journey} highlight={index} compact />
+        </div>
+      </section>
+    );
+  return null;
+}
+
+// Current stage: the same bar above the work tabs (no "Back" – this is the current stage)
+function CurrentStageBar({ c, index, label, timeline, journey, onUpload }) {
+  const [panel, setPanel] = useState(null);
+  const toggle = (k) => setPanel((p) => (p === k ? null : k));
+  useEffect(() => {
+    if (!panel) return undefined;
+    const onKey = (e) => e.key === "Escape" && setPanel(null);
+    document.addEventListener("keydown", onKey);
+    return () => document.removeEventListener("keydown", onKey);
+  }, [panel]);
+  const events = eventsOfStage(timeline, index, true);
+  const status = c.lifecycle?.closed
+    ? "Closed"
+    : `In progress${c.pendingWith ? ` · pending with ${c.pendingWith}` : ""}${c.sla?.label ? ` · ${c.sla.label}` : ""}`;
+  return (
+    <div className="relative z-20">
+      <Card>
+        <StageBarHeader index={index} label={label} status={status} panel={panel} toggle={toggle} count={events.length} onUpload={onUpload} />
+      </Card>
+      <StagePanels panel={panel} setPanel={setPanel} events={events} journey={journey} index={index} className="lg:right-3 lg:top-full lg:mt-1" />
+    </div>
+  );
+}
 
 // Line-item table inside a stage card (Assessment: part-wise assessment)
 function StageTable({ t }) {
@@ -241,12 +369,10 @@ function StageTable({ t }) {
 }
 
 function StageView({ c, index, label, documents, timeline, journey, onBack, onUpload }) {
-  const events = timeline.filter((e) => STAGE_EVENTS[index].some((k) => e.event.startsWith(k)));
+  const events = eventsOfStage(timeline, index, false);
   // "Activity in this stage" stays hidden until asked for – opens as a floating card over the right side
   // panel open over the right side: "activity" (this stage) or "timeline" (whole claim journey), one at a time
   const [panel, setPanel] = useState(null);
-  const showActivity = panel === "activity";
-  const showTimeline = panel === "timeline";
   const toggle = (k) => setPanel((p) => (p === k ? null : k));
   useEffect(() => {
     if (!panel) return undefined;
@@ -287,6 +413,7 @@ function StageView({ c, index, label, documents, timeline, journey, onBack, onUp
             registered ? `SMS & email with claim no sent · ${dt(registered.date)} ${registered.time}` : "Sent on registration",
           ],
           ["Customer KYC", c.profile.insured.kyc],
+          ["E-claim form", `✓ Generated at intimation · ECF/${c.claimNo.replace(/\//g, "").slice(-8)} · emailed to the insured`],
         ],
       },
       {
@@ -319,7 +446,12 @@ function StageView({ c, index, label, documents, timeline, journey, onBack, onUp
         items: [
           ["Claim no", c.claimNo, { mono: true }],
           ["Registered on", registered ? `${dt(registered.date)} · ${registered.time}` : "–"],
+          [
+            "Claim type",
+            `${{ "Accident – partial": "Partial loss · accident", "Total loss / CTL": "Total loss / CTL", Theft: "Theft (whole vehicle)", "Partial theft": "Partial theft", "Flood – CAT": "Partial loss · flood (natural peril, CAT)", Fire: "Partial loss · fire" }[c.lossType] || c.lossType} · ${c.garage && !/non-network/i.test(c.garage.type) ? "cashless (network garage)" : "reimbursement"}`,
+          ],
           ["Initial reserve", inrAmt(c.reserveHistory[0]?.amount), { strong: true }],
+          ["Major loss alert", (c.reserveHistory[0]?.amount || 0) > 500000 ? "Raised – reserve above ₹5,00,000, manager informed" : "Not triggered (threshold ₹5,00,000)"],
           ["Reserve basis", c.reserveHistory[0]?.reason],
           ["Assigned to", `${assigned?.detail || "Karthik Subramanian · Chennai"} · auto (branch & territory rule)`],
           [
@@ -350,7 +482,11 @@ function StageView({ c, index, label, documents, timeline, journey, onBack, onUp
       },
       {
         title: "Policy & coverage validation",
-        items: c.checks.filter((k) => !/reserve/i.test(k.label)).map((k) => [k.label, `${tick(k.ok)}${k.note}`]),
+        items: [
+          ...c.checks.filter((k) => !/reserve/i.test(k.label)).map((k) => [k.label, `${tick(k.ok)}${k.note}`]),
+          ["Endorsement & ownership transfer", "✓ No mid-term endorsement · insured is the RC owner on the loss date"],
+          ["Claim history (IIB)", c.policy.previousClaims ? `${c.policy.previousClaims} earlier claim(s) on this vehicle · no adverse match` : "✓ No earlier claims on this vehicle"],
+        ],
       },
       {
         title: "Documents asked at intimation",
@@ -390,16 +526,19 @@ function StageView({ c, index, label, documents, timeline, journey, onBack, onUp
           ["Surveyor type", sv.surveyor ? sv.surveyor.type : "–"],
           ["IRDAI licence no", sv.surveyor?.licence || "–", { mono: true }],
           [
-            "Why this surveyor",
+            "Licence check (loss ₹50,000 and above)",
             ips
-              ? "External surveyor (IPS) – CAT / theft / total loss claim"
+              ? "✓ External surveyor (IPS) – licensed"
               : est != null && est < 50000
-                ? "In-house – loss under ₹50,000, licensed surveyor not mandatory"
-                : "In-house – claims handler is a licensed surveyor",
+                ? "Not needed – loss under ₹50,000"
+                : sv.surveyor?.licence
+                  ? `✓ Handler holds a surveyor licence (${sv.surveyor.licence})`
+                  : "✕ Licensed surveyor or IPS needed",
           ],
           ["Allocated", allocStep?.when ? `${dt(allocStep.when.date)} · ${allocStep.when.time}` : dt(sv.appointedOn)],
           ["IRDAI – allocation within 24 h", chipText(allocStep)],
           ["Inspection mode", theft ? "Field investigation" : /spot/i.test(sv.surveyType) ? "Physical – at the spot" : "Physical – at the garage"],
+          !theft && ["Inspection scheduled", `${dt(allocStep?.when?.date || sv.appointedOn)} · 11:00 · ${c.loss.vehicleLocation}`],
         ],
       },
       {
@@ -411,7 +550,22 @@ function StageView({ c, index, label, documents, timeline, journey, onBack, onUp
           ["Odometer", c.vehicle.odometer ? `${c.vehicle.odometer.toLocaleString("en-IN")} km` : "–"],
           ["Vehicle identity check", theft ? "Not applicable – vehicle not traced" : "✓ Reg no, chassis and engine no match RC and policy"],
           ["Photos & video", docState(doc("Vehicle photos"))],
-          !theft && ["Pre-existing damage", "None noted"],
+          !theft && [
+            "Surveyor remarks",
+            c.flags.includes("Fraud flag")
+              ? "Damage pattern doubtful against the stated cause – referred to SIU"
+              : /water/.test(impact)
+                ? "Water level up to the seats, engine and wiring affected – consistent with the flood"
+                : /fire/.test(impact)
+                  ? "Fire damage in the engine bay – consistent with the fire brigade report"
+                  : impact === "Parts stolen"
+                    ? "Parts missing as reported – FIR on file"
+                    : `Fresh damage on the ${impact.toLowerCase()}, consistent with the stated cause · no old or rusted damage`,
+          ],
+          !theft && [
+            "Follow-up inspection",
+            /water/.test(impact) ? `Done ${dt(sv.surveyDoneOn)} – engine opened at the garage, damage confirmed` : "Not needed – no hidden damage found on dismantling",
+          ],
         ],
       },
       !theft && {
@@ -428,6 +582,7 @@ function StageView({ c, index, label, documents, timeline, journey, onBack, onUp
         items: [
           ["Garage estimate", inrAmt(est), { strong: true }],
           est != null && ["Parts · labour · paint", `${inrAmt(Math.round(est * 0.6))} · ${inrAmt(Math.round(est * 0.25))} · ${inrAmt(est - Math.round(est * 0.6) - Math.round(est * 0.25))}`],
+          ["GST", "Included line-wise · CGST + SGST"],
           ["Estimate received", docState(doc("Garage estimate"))],
           pctIdv != null && [
             "Repair or total loss",
@@ -440,6 +595,14 @@ function StageView({ c, index, label, documents, timeline, journey, onBack, onUp
         items: [
           ["Report submitted", done ? `${dt(done.date)} · ${done.time}` : "–"],
           ["Report status", docState(doc("Survey report"))],
+          !theft && ["Assessed loss in report", sv.assessed != null ? inrAmt(sv.assessed) : "–", { strong: true }],
+          ips && [
+            "IPS fee bill",
+            (() => {
+              const fee = Math.min(15000, Math.max(1500, Math.round(((est || c.reserve) * 0.02) / 100) * 100));
+              return `Professional fee ${inrAmt(fee)} + conveyance ${inrAmt(750)} – as per fee schedule · ${done ? "bill raised" : "after the report"}`;
+            })(),
+          ],
           ["IRDAI – report within 15 days", chipText(surveyStep)],
           ["Recommendation", theft ? "Await police final report (non-traceable) before decision" : pctIdv > 75 ? "Settle as total loss" : "Repair at the garage – claim admissible on survey"],
           ["Reserve after survey", after != null ? `${inrAmt(before)} → ${inrAmt(after)}` : inrAmt(before)],
@@ -474,7 +637,7 @@ function StageView({ c, index, label, documents, timeline, journey, onBack, onUp
     const fraud = c.flags.includes("Fraud flag");
     const reserveNow = c.reserveHistory[c.reserveHistory.length - 1]?.amount;
     const payable = sv.netLiability;
-    const gap = reserveNow && payable != null ? (reserveNow - (a?.basis === "partial" ? sv.assessed : payable)) / reserveNow : 0;
+    const gap = reserveNow && payable != null ? (reserveNow - payable) / reserveNow : 0;
     const assessedOn = ev("Reserve revised") || ev("Survey completed");
     const dlOk = c.driver ? c.driver.dlValidTill >= c.loss.date : null;
     const coverLine =
@@ -505,10 +668,10 @@ function StageView({ c, index, label, documents, timeline, journey, onBack, onUp
         ...c.reserveHistory.map((h) => [`${h.type} · ${dt(h.date)}`, `${inrAmt(h.amount)} – ${h.reason}`]),
         reserveNow != null &&
           payable != null && [
-            a?.basis === "partial" ? "Reserve vs assessed loss" : "Reserve vs net payable",
+            "Reserve vs net liability",
             Math.abs(gap) <= 0.2
               ? `✓ Within 20% (${pct(Math.abs(gap))}) – no revision needed`
-              : `✕ ${pct(Math.abs(gap))} ${gap < 0 ? "short" : "over"} – revise reserve to ${inrAmt(a?.basis === "partial" ? sv.assessed : payable)}`,
+              : `✕ ${pct(Math.abs(gap))} ${gap < 0 ? "short" : "over"} – revise reserve to ${inrAmt(payable)}`,
           ],
       ],
     };
@@ -828,62 +991,7 @@ function StageView({ c, index, label, documents, timeline, journey, onBack, onUp
 
   return (
     <Card>
-      <div className="flex flex-wrap items-center justify-between gap-2 border-b border-slate-100 bg-teal-50/60 px-3 py-2">
-        <p className="flex items-center gap-2 text-[13px] text-slate-700">
-          <span className="grid h-6 w-6 place-items-center rounded-full bg-teal-600 text-white">
-            <CheckCircle2 className="h-3.5 w-3.5" aria-hidden="true" />
-          </span>
-          <span>
-            <span className="font-semibold text-[#0B1F3A]">
-              Stage {index + 1} · {label}
-            </span>{" "}
-            · Completed{completedOn ? ` on ${dt(completedOn.date)}` : ""} · <span className="text-slate-500">read only</span>
-          </span>
-        </p>
-        <div className="flex items-center gap-2">
-          <button
-            type="button"
-            onClick={() => toggle("timeline")}
-            aria-expanded={showTimeline}
-            aria-controls={showTimeline ? "stage-timeline" : undefined}
-            className={`flex h-7 items-center gap-1.5 rounded-md border px-2.5 text-[12px] font-semibold ${
-              showTimeline ? "border-[#0B1F3A] bg-[#0B1F3A] text-white" : "border-slate-300 bg-white text-slate-700 hover:bg-slate-50"
-            }`}
-          >
-            <Milestone className="h-3.5 w-3.5" aria-hidden="true" />
-            Timeline
-          </button>
-          <button
-            type="button"
-            onClick={() => toggle("activity")}
-            aria-expanded={showActivity}
-            aria-controls={showActivity ? "stage-activity" : undefined}
-            className={`flex h-7 items-center gap-1.5 rounded-md border px-2.5 text-[12px] font-semibold ${
-              showActivity ? "border-[#0B1F3A] bg-[#0B1F3A] text-white" : "border-slate-300 bg-white text-slate-700 hover:bg-slate-50"
-            }`}
-          >
-            <History className="h-3.5 w-3.5" aria-hidden="true" />
-            Activity
-            <span className={`rounded px-1 text-[11px] font-bold leading-4 ${showActivity ? "bg-white/20" : "bg-slate-100"}`}>{events.length}</span>
-          </button>
-          {/* Upload a document for this claim (edit mode, open claim) – same dialog as the header Upload */}
-          {onUpload && (
-            <button
-              type="button"
-              onClick={onUpload}
-              title={`Upload a document – ${label} stage`}
-              className="flex h-7 items-center gap-1.5 rounded-md border border-slate-300 bg-white px-2.5 text-[12px] font-semibold text-slate-700 hover:bg-slate-50"
-            >
-              <Upload className="h-3.5 w-3.5" aria-hidden="true" />
-              Upload
-            </button>
-          )}
-          <button type="button" onClick={onBack} className="flex h-7 items-center gap-1.5 rounded-md bg-teal-700 px-2.5 text-[12px] font-semibold text-white hover:bg-teal-800">
-            <ArrowLeft className="h-3.5 w-3.5" aria-hidden="true" />
-            Back to current stage
-          </button>
-        </div>
-      </div>
+      <StageBarHeader index={index} label={label} status={<>Completed{completedOn ? ` on ${dt(completedOn.date)}` : ""} · <span className="text-slate-500">read only</span></>} done panel={panel} toggle={toggle} count={events.length} onUpload={onUpload} onBack={onBack} />
 
       {/* sections use the full width (two side by side on wide screens); activity floats over the right when opened */}
       <div className="relative p-2">
@@ -897,57 +1005,7 @@ function StageView({ c, index, label, documents, timeline, journey, onBack, onUp
             </section>
           ))}
         </div>
-        {showActivity && (
-        <section
-          id="stage-activity"
-          aria-label="Activity in this stage"
-          className="z-20 mt-2 flex flex-col overflow-hidden rounded-lg border border-slate-200 bg-white shadow-[0_12px_32px_-8px_rgba(15,23,42,0.28),0_2px_6px_rgba(15,23,42,0.08)] lg:absolute lg:right-3 lg:top-2 lg:mt-0 lg:max-h-[calc(100vh-14rem)] lg:w-[340px]"
-        >
-          <div className="flex min-h-9 flex-none items-center justify-between gap-2 border-b border-slate-100 px-3 py-1">
-            <h3 className="text-[12.5px] font-semibold text-[#0B1F3A]">Activity in this stage</h3>
-            <button type="button" onClick={() => setPanel(null)} aria-label="Close activity" className="grid h-7 w-7 place-items-center rounded-md text-slate-500 hover:bg-slate-100 hover:text-slate-800">
-              <X className="h-4 w-4" aria-hidden="true" />
-            </button>
-          </div>
-          <div tabIndex={0} className="min-h-0 flex-1 overflow-y-auto focus:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-teal-700/40">
-          {events.length === 0 ? (
-            <p className="px-3 py-4 text-[12px] text-slate-500">No recorded activity.</p>
-          ) : (
-            <ol className="divide-y divide-slate-100">
-              {events.map((e, k) => (
-                <li key={k} className="px-3 py-2">
-                  <p className="flex items-baseline justify-between gap-2 text-[12.5px] font-semibold text-slate-800">
-                    {e.event}
-                    <span className="flex-none text-[12px] font-normal text-slate-500">
-                      {dt(e.date)} {e.time}
-                    </span>
-                  </p>
-                  <p className="text-[12px] text-slate-600">{e.detail}</p>
-                  <p className="text-[12px] text-slate-500">by {e.by}</p>
-                </li>
-              ))}
-            </ol>
-          )}
-          </div>
-        </section>
-        )}
-        {showTimeline && (
-          <section
-            id="stage-timeline"
-            aria-label="Claim timeline"
-            className="z-20 mt-2 flex flex-col overflow-hidden rounded-lg border border-slate-200 bg-white shadow-[0_12px_32px_-8px_rgba(15,23,42,0.28),0_2px_6px_rgba(15,23,42,0.08)] lg:absolute lg:right-3 lg:top-2 lg:mt-0 lg:max-h-[calc(100vh-14rem)] lg:w-[520px]"
-          >
-            <div className="flex min-h-9 flex-none items-center justify-between gap-2 border-b border-slate-100 px-3 py-1">
-              <h3 className="text-[12.5px] font-semibold text-[#0B1F3A]">Claim timeline</h3>
-              <button type="button" onClick={() => setPanel(null)} aria-label="Close timeline" className="grid h-7 w-7 place-items-center rounded-md text-slate-500 hover:bg-slate-100 hover:text-slate-800">
-                <X className="h-4 w-4" aria-hidden="true" />
-              </button>
-            </div>
-            <div tabIndex={0} className="min-h-0 flex-1 overflow-y-auto focus:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-teal-700/40">
-              <ClaimTimeline steps={journey} highlight={index} compact />
-            </div>
-          </section>
-        )}
+        <StagePanels panel={panel} setPanel={setPanel} events={events} journey={journey} index={index} />
       </div>
     </Card>
   );
@@ -1003,6 +1061,8 @@ function ClaimPage() {
   // Phase 2B – reserve, queries, documents, notes (catalogue 19, 94, 145, 153, 154, 173)
   const [work, updateWork] = useClaimWork(claimNo);
   const [workDialog, setWorkDialog] = useState(null); // "reserve" | "query" | "upload" | { reply } | { reject }
+  // Current-stage work by the handler (who is also the surveyor): inspection, report, assessment, decision, SIU
+  const [flowDialog, setFlowDialog] = useState(null); // "inspect" | "report" | "assess" | "siu"
   const [noteVis, setNoteVis] = useState("team");
 
   function flash(msg) {
@@ -1044,12 +1104,65 @@ function ClaimPage() {
     REOPEN_PENDING: "Awaiting manager approval",
   };
   // Surveyor appointed in this session → Registered claim moves to Survey pending
-  const surveyed = !!surveyRec && (st.stage === "Registered" || st.stage === "Survey pending");
+  // once the survey report is in (work.flow.report) the claim has moved on to Assessment
+  const surveyed = !!surveyRec && !work.flow?.report && (st.stage === "Registered" || st.stage === "Survey pending");
   // Settlement (Repair / DO, Payment): payment requested → Payment; paid & closed → Closed
   const settled = st.state === "SETTLED";
-  const settle = ["Repair / DO", "Payment"].includes(base.stage) ? settlementState(base, work.settlement || {}) : null;
-  const stage = surveyed ? "Survey pending" : settled ? "Closed" : settle?.payment && base.stage === "Repair / DO" ? "Payment" : st.stage;
-  const baseLife = settled
+  // ---- handler's own stage work saved in this session (work.flow) ----
+  // report → Assessment · assessment → new figures + reserve at net liability · decision → Repair / DO or Approval
+  const flow = work.flow || {};
+  const fa = flow.assessment;
+  const flowSurvey = fa
+    ? {
+        ...base.survey,
+        estimate: fa.estimate,
+        assessed: fa.assessed,
+        depreciation: fa.dep,
+        salvage: fa.sal,
+        deductible: fa.deductible,
+        netLiability: fa.net,
+        assessment: {
+          ...fa.meta,
+          basis: "partial",
+          lines: fa.ls,
+          estimate: fa.estimate,
+          assessed: fa.assessed,
+          dep: fa.dep,
+          net: fa.net,
+          disallowed: fa.ls.filter((l) => l.assessed === 0).reduce((t, l) => t + l.estimate, 0),
+          rateCut: fa.ls.filter((l) => l.assessed > 0).reduce((t, l) => t + (l.estimate - l.assessed), 0),
+        },
+      }
+    : null;
+  const flowSelfApproved = flow.decision?.type === "self";
+  const settleBase = flowSelfApproved
+    ? {
+        ...base,
+        stage: "Repair / DO",
+        nextAction: "Track repair progress",
+        survey: flowSurvey || base.survey,
+        timeline: [{ date: flow.decision.on, time: flow.decision.time, event: "Repair authorised", by: flow.decision.by, detail: "" }, ...base.timeline],
+      }
+    : base;
+  const settle = ["Repair / DO", "Payment"].includes(settleBase.stage) ? settlementState(settleBase, work.settlement || {}) : null;
+  const stage0 = surveyed ? "Survey pending" : settled ? "Closed" : settle?.payment && settleBase.stage === "Repair / DO" ? "Payment" : st.stage;
+  const EARLY = ["Registered", "Survey pending", "Assessment", "Documents pending", "Approval"];
+  const flowStage =
+    st.closed || st.waiting || !EARLY.includes(stage0)
+      ? null
+      : flowSelfApproved
+        ? settle?.payment
+          ? "Payment"
+          : "Repair / DO"
+        : flow.decision?.type === "sent"
+          ? "Approval"
+          : flow.report && ["Registered", "Survey pending"].includes(stage0)
+            ? "Assessment"
+            : null;
+  const stage = flowStage || stage0;
+  const baseLife = flowStage
+    ? { ...STAGE_TO_STEP[flowStage], note: flowStage === "Approval" ? `Awaiting ${flow.decision.to}` : STAGE_TO_STEP[flowStage].note }
+    : settled
     ? STAGE_TO_STEP.Closed
     : stage === "Payment" && base.stage !== "Payment"
       ? STAGE_TO_STEP.Payment
@@ -1063,13 +1176,23 @@ function ClaimPage() {
   const released = st.closed && base.reserve > 0;
   // Reserve revised in this session (catalogue 19) – latest revision is the current reserve
   const revised = work.revisions.length > 0;
+  const flowChanged = !!(flowStage || fa || flow.siu || flow.report);
   const c =
-    stage === base.stage && lifecycle === base.lifecycle && !released && !surveyed && !revised
+    stage === base.stage && lifecycle === base.lifecycle && !released && !surveyed && !revised && !flowChanged
       ? base
       : {
           ...base,
           stage,
           lifecycle,
+          ...(flow.report && {
+            survey: { ...base.survey, surveyor: base.survey.surveyor || surveyRec?.surveyor || HANDLER_AS_SURVEYOR, appointedOn: base.survey.appointedOn || surveyRec?.at, surveyDoneOn: flow.report.on },
+          }),
+          ...(flowSurvey && { survey: { ...flowSurvey, surveyDoneOn: flow.report?.on || base.survey.surveyDoneOn } }),
+          ...(flowStage === "Assessment" && { pendingWith: "Me (handler)", nextAction: fa ? "Approve or send for approval" : "Assess the loss – part-wise assessment", sla: { status: "ok", label: "Decision within 7 days" } }),
+          ...(fa && flowStage !== "Repair / DO" && flowStage !== "Payment" && flowStage !== "Approval" && { nextAction: fa.net <= HANDLER_AUTHORITY ? `Approve within my authority – ₹${fa.net.toLocaleString("en-IN")}` : `Send for approval – ₹${fa.net.toLocaleString("en-IN")}` }),
+          ...(flowStage === "Approval" && { pendingWith: flow.decision.to, nextAction: `Await decision – ${flow.decision.to}`, sla: { status: "ok", label: "2 working days" } }),
+          ...(flowStage === "Repair / DO" && { pendingWith: "Garage / dealer", nextAction: "Track repair progress", sla: { status: "ok", label: "Repair in progress" } }),
+          ...(flow.siu && { flags: [...new Set([...base.flags, "Referred to SIU"])], ...(!flowStage || flowStage === "Assessment" ? { nextAction: "Await SIU findings before the decision" } : {}) }),
           ...(revised && {
             reserve: work.revisions[work.revisions.length - 1].amount,
             reserveHistory: [...base.reserveHistory, ...work.revisions],
@@ -1134,7 +1257,7 @@ function ClaimPage() {
   // Variance alert (catalogue 94) – reserve vs assessed loss, or garage estimate before assessment
   const variance = active ? reserveVariance(c.reserve, c.survey) : null;
   const checks = variance
-    ? [...c.checks, { label: "Reserve vs estimate", ok: !variance.alert, note: variance.pct === 0 ? `Matches the ${variance.basisLabel}` : `${variance.pct}% ${variance.over ? "above" : "below"} the ${variance.basisLabel}${variance.alert ? " – revise" : ""}` }]
+    ? [...c.checks, { label: variance.basisLabel === "net liability" ? "Reserve vs net liability" : "Reserve vs estimate", ok: !variance.alert, note: variance.pct === 0 ? `Matches the ${variance.basisLabel}` : `${variance.pct}% ${variance.over ? "above" : "below"} the ${variance.basisLabel}${variance.alert ? " – revise" : ""}` }]
     : c.checks;
   const timeline = [...(statusRec?.events || []), ...(surveyRec?.events || []), ...work.events, ...c.timeline].sort((a, b) =>
     `${b.date} ${b.time}`.localeCompare(`${a.date} ${a.time}`)
@@ -1229,6 +1352,95 @@ function ClaimPage() {
       queries: w.queries.map((x) => (x.id === q.id ? { ...x, status: "CLOSED", reply, closedOn: isoToday() } : x)),
     }));
     flash("Query closed.");
+  }
+
+  // ----- Handler's stage work: inspection → report → assessment → decision; SIU referral -----
+  const PARTIAL_TYPES = ["Accident – partial", "Flood – CAT", "Fire", "Partial theft"];
+  const canAssess = active && editMode && (c.stage === "Assessment" || c.stage === "Documents pending") && PARTIAL_TYPES.includes(c.lossType);
+  const decisionAmt = c.survey.netLiability ?? c.reserve;
+  const assessedReady = fa || (c.survey.assessed != null && (c.stage !== "Survey pending"));
+  const canDecide =
+    active &&
+    editMode &&
+    !flow.siu &&
+    !flow.decision &&
+    assessedReady &&
+    ((c.stage === "Assessment" || c.stage === "Documents pending") ? true : c.stage === "Approval" && /me \(handler\)/i.test(c.pendingWith || ""));
+  function scheduleInspection(rec) {
+    setFlowDialog(null);
+    setSurveyRec({ ...rec, events: [{ ...nowStamp(), event: "Inspection scheduled", by: HANDLER, detail: `${dt(rec.visitDate)} ${rec.time} · ${rec.location} · report due ${dt(rec.reportDue)}` }] });
+    flash(`Inspection scheduled for ${dt(rec.visitDate)} at ${rec.time}.`);
+  }
+  function submitReport(r) {
+    setFlowDialog(null);
+    logWork(
+      "Survey completed",
+      `${dt(r.on)} · odometer ${r.odometer.toLocaleString("en-IN")} km · ${r.consistent ? "damage consistent with the cause" : "damage doubtful"} · ${r.recommend}${r.followUp ? " · follow-up inspection needed" : ""} · ${r.remarks}`,
+      (w) => ({ ...w, flow: { ...(w.flow || {}), report: r } })
+    );
+    flash(r.consistent ? "Survey report submitted – assess the loss next." : "Survey report submitted – refer the claim to SIU.");
+    if (!r.consistent) setFlowDialog("siu");
+  }
+  // base lines for the assessment dialog: this session's assessment, the claim's, or built from the estimate
+  const assessBase = (() => {
+    if (!canAssess) return null;
+    const a = c.survey.assessment;
+    if (a?.basis === "partial" && a.lines) return { lines: a.lines, zeroDep: a.zeroDep ?? c.survey.zeroDep, metalRate: a.metalRate ?? 0, age: a.age, impact: a.impact, split: a.split, salvage: c.survey.salvage };
+    const est = c.survey.estimate ?? Math.round(c.reserve * 1.25);
+    const t = partialAssessment({
+      estimate: est,
+      assessed: Math.round(est * 0.85),
+      zeroDep: !!c.survey.zeroDep,
+      yom: c.vehicle.yearOfMfg,
+      lossDate: c.loss.date,
+      cause: c.loss.cause,
+      lossType: c.lossType,
+      addOns: c.policy.addOns,
+      salvage: 0,
+      deductibles: c.policy.compulsoryDeductible + c.policy.voluntaryDeductible,
+    });
+    return { lines: t.lines, zeroDep: t.zeroDep, metalRate: t.metalRate, age: t.age, impact: t.impact, split: t.split, salvage: Math.round((est * 0.85 * 0.015) / 10) * 10 };
+  })();
+  function saveAssessment(x) {
+    setFlowDialog(null);
+    const meta = { zeroDep: assessBase.zeroDep, metalRate: assessBase.metalRate, age: assessBase.age, impact: assessBase.impact, split: assessBase.split };
+    logWork(
+      "Assessment saved",
+      `Assessed ${amtF(x.assessed)} · depreciation ${amtF(x.dep)} · salvage ${amtF(x.sal)} · deductibles ${amtF(x.deductible)} · net liability ${amtF(x.net)}`,
+      (w) => ({
+        ...w,
+        flow: { ...(w.flow || {}), assessment: { ...x, meta } },
+        // reserve follows the expected payout (catalogue 19)
+        revisions:
+          x.net === c.reserve
+            ? w.revisions
+            : [...w.revisions, { date: isoToday(), type: x.net > c.reserve ? "Revised (increase)" : "Revised (decrease)", amount: x.net, by: HANDLER, reason: "Revised to net liability after assessment" }],
+      })
+    );
+    flash(`Assessment saved – net liability ${amtF(x.net)}${x.net === c.reserve ? "" : ", reserve revised"}.`);
+  }
+  function approveSelf() {
+    const stamp = nowStamp();
+    logWork(
+      "Repair authorised",
+      `Within own authority (up to ${amtF(HANDLER_AUTHORITY)}) · insurer pays ${amtF(decisionAmt)} · authorisation sent to ${c.garage?.name.split(",")[0] || "the insured"}`,
+      (w) => ({ ...w, flow: { ...(w.flow || {}), decision: { type: "self", on: stamp.date, time: stamp.time, by: `${HANDLER} · Claims Handler (within own authority)` } } })
+    );
+    flash(`Approved ${amtF(decisionAmt)} – repair authorisation sent.`);
+  }
+  function sendForApproval() {
+    const to = decisionAmt > MANAGER_AUTHORITY ? "R. Venkatesh · Zonal Claims Head" : "Priya Raghavan · Claims Manager";
+    const stamp = nowStamp();
+    logWork("Sent for approval", `Net liability ${amtF(decisionAmt)} · to ${to} (above your authority of ${amtF(HANDLER_AUTHORITY)})`, (w) => ({
+      ...w,
+      flow: { ...(w.flow || {}), decision: { type: "sent", on: stamp.date, time: stamp.time, to } },
+    }));
+    flash(`Sent to ${to.split(" · ")[0]} for approval.`);
+  }
+  function referSiu(x) {
+    setFlowDialog(null);
+    logWork("Referred to SIU", `${x.reason} · ${x.remarks}`, (w) => ({ ...w, flow: { ...(w.flow || {}), siu: { ...x, on: isoToday() } } }));
+    flash("Referred to SIU – the claim cannot be approved until SIU sends its findings.");
   }
 
   // ----- Settlement (DO → invoice → payee → discharge → payment → close) -----
@@ -1519,8 +1731,13 @@ function ClaimPage() {
                   </ActionButton>
                 )}
                 {c.stage === "Registered" && !needsIps(c) && (
-                  <ActionButton icon={UserCheck} soon>
+                  <ActionButton icon={UserCheck} onClick={() => setFlowDialog("inspect")} primary>
                     Schedule inspection
+                  </ActionButton>
+                )}
+                {c.stage === "Survey pending" && !flow.report && (
+                  <ActionButton icon={ClipboardCheck} onClick={() => setFlowDialog("report")} primary>
+                    {needsIps(c) ? "Record IPS survey report" : "Submit survey report"}
                   </ActionButton>
                 )}
                 {c.stage === "NBNR" && (
@@ -1528,14 +1745,30 @@ function ClaimPage() {
                     Resolve NBNR
                   </ActionButton>
                 )}
-                {(c.stage === "Assessment" || c.stage === "Documents pending") && (
-                  <ActionButton icon={Send} soon>
+                {canAssess && (
+                  <ActionButton icon={Calculator} onClick={() => setFlowDialog("assess")} primary={!fa}>
+                    {fa ? "Edit assessment" : "Assess the loss"}
+                  </ActionButton>
+                )}
+                {canDecide && decisionAmt <= HANDLER_AUTHORITY && (
+                  <ActionButton icon={CheckCircle2} onClick={approveSelf} primary>
+                    Approve within my authority
+                  </ActionButton>
+                )}
+                {canDecide && decisionAmt > HANDLER_AUTHORITY && (
+                  <ActionButton icon={Send} onClick={sendForApproval} primary>
                     Send for approval
                   </ActionButton>
                 )}
-                <ActionButton icon={ShieldAlert} soon>
-                  Refer to SIU
-                </ActionButton>
+                {flow.siu ? (
+                  <span className="flex h-7 items-center gap-1.5 rounded-md bg-amber-50 px-2.5 text-[12px] font-semibold text-amber-900 ring-1 ring-amber-200">
+                    <ShieldAlert className="h-3.5 w-3.5" aria-hidden="true" /> Referred to SIU
+                  </span>
+                ) : (
+                  <ActionButton icon={ShieldAlert} onClick={() => setFlowDialog("siu")}>
+                    Refer to SIU
+                  </ActionButton>
+                )}
                   </>
                 )}
                 <ClaimActionsMenu
@@ -1572,6 +1805,18 @@ function ClaimPage() {
             onUpload={editMode && active ? () => setWorkDialog("upload") : undefined}
           />
         ) : (
+        <>
+        {/* current stage: same stage bar as a completed stage (Timeline · Activity · Upload) */}
+        {c.lifecycle.step < LIFECYCLE.length && (
+          <CurrentStageBar
+            c={c}
+            index={c.lifecycle.step}
+            label={LIFECYCLE[c.lifecycle.step].label}
+            timeline={timeline}
+            journey={journey}
+            onUpload={editMode && active ? () => setWorkDialog("upload") : undefined}
+          />
+        )}
         <div className="grid grid-cols-[minmax(0,1fr)] items-start gap-2 lg:grid-cols-[minmax(0,1fr)_290px]">
           <Card>
             <div role="tablist" aria-label="Claim sections" className="flex flex-wrap gap-1 border-b border-slate-100 px-2 py-1.5">
@@ -1944,6 +2189,7 @@ function ClaimPage() {
             </Card>
           </div>
         </div>
+        </>
         )}
       </div>
 
@@ -1962,6 +2208,10 @@ function ClaimPage() {
         />
       )}
 
+      {flowDialog === "inspect" && <ScheduleInspectionDialog claim={c} surveyor={HANDLER_AS_SURVEYOR} onCancel={() => setFlowDialog(null)} onDone={scheduleInspection} />}
+      {flowDialog === "report" && <SurveyReportDialog claim={c} onCancel={() => setFlowDialog(null)} onDone={submitReport} />}
+      {flowDialog === "assess" && assessBase && <AssessmentDialog claim={c} base={assessBase} handlerLimit={HANDLER_AUTHORITY} onCancel={() => setFlowDialog(null)} onDone={saveAssessment} />}
+      {flowDialog === "siu" && <ReferSiuDialog claim={c} onCancel={() => setFlowDialog(null)} onDone={referSiu} />}
       {surveyDialog && (
         <AppointSurveyorDialog
           claim={c}

@@ -140,7 +140,7 @@ export default function HandlerMyDay() {
     setDiary(next);
     saveDiary(next);
   }
-  const openClaim = (no, edit) => navigate(`/od/claims/${claimSlug(no)}${edit ? "?mode=edit" : ""}`);
+  const openClaim = (no, edit) => navigate(`/od/claims/${claimSlug(no)}${edit ? "?view=work&mode=edit" : ""}`);
 
   // Row quick actions – same behaviour as My Work Queue
   function doQuick({ docs: picked, time, date, text, vis, outcome }) {
