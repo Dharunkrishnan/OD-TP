@@ -33,6 +33,7 @@ import {
   CircleDot,
   History,
   Milestone,
+  Pencil,
 } from "lucide-react";
 import ODShell from "../../components/layout/ODShell";
 import { TAT_STAGES, needsIps } from "../../data/odHandlerMock";
@@ -550,7 +551,10 @@ function ClaimPage() {
   const base = useMemo(() => getClaimDetail(claimNo), [claimNo]);
   // View (eye icon / row click) = read only. Edit (paper-and-pen icon, ?mode=edit) = work on the claim.
   const [params] = useSearchParams();
-  const editMode = params.get("mode") === "edit";
+  // Opening a claim lands on the Claim 360 summary (all claim details, normal sidebar). "Work on claim"
+  // opens the work view (?view=work) with the lifecycle stepper, the current stage's work and the tabs.
+  const workView = params.get("view") === "work";
+  const editMode = workView && params.get("mode") === "edit";
 
   const [tab, setTab] = useState("details");
   const [timelineView, setTimelineView] = useState("journey"); // Timeline tab: claim journey | all activity (audit trail)
@@ -871,33 +875,8 @@ function ClaimPage() {
     flash(`${name} rejected${rerequest ? " and requested again" : ""}.`);
   }
 
-  return (
-    <ODShell
-      active="queue"
-      // Claim no, insured and vehicle are shown once – in the claim card below – so the page header
-      // carries only the screen name and the mode (edit / view only)
-      title="Claim 360"
-      subtitle={editMode ? "Edit mode · actions are saved to the claim" : "View only · use the pen icon in My Work Queue to work on this claim"}
-      onNavigateMissing={notBuilt}
-      claimNav={{ backTo: "/od/worklist", backLabel: "Back to My Work Queue", steps: lifecycleSteps }}
-    >
-      <div className="flex flex-col gap-2">
-        {/* ---------------- Back (small screens only) ---------------- */}
-        <div className="flex items-center lg:hidden">
-          <button
-            type="button"
-            onClick={() => navigate("/od/worklist")}
-            className="flex h-8 items-center gap-1 rounded-md px-1.5 text-[12.5px] font-medium text-slate-600 hover:bg-white hover:text-slate-900"
-          >
-            <ArrowLeft className="h-4 w-4" aria-hidden="true" />
-            Back to queue
-          </button>
-        </div>
-
-        {/* ---------------- Claim header ---------------- */}
-        <Card>
-          {/* Row 1: claim no + status chips (left) · actions (edit mode only) + policy status (right) */}
-          <div className="flex flex-wrap items-center justify-between gap-2 border-b border-slate-100 px-4 py-2">
+  // shared by the summary and the work view
+  const claimChips = (
             <div className="flex flex-wrap items-center gap-2">
               <span className="text-[15px] font-semibold leading-6 tracking-wide text-[#0B1F3A] tabular-nums">{c.claimNo}</span>
               {/* Closed claims show the closure type instead of the stage; SLA stops once closed or on hold */}
@@ -914,6 +893,162 @@ function ClaimPage() {
               ))}
               {c.loss.catEvent && <span className={`${CHIP} bg-sky-50 text-sky-800`}>CAT event</span>}
             </div>
+  );
+  const keyFacts = (
+    <>
+          {/* Row 2: key facts – one line each, same font, same baseline */}
+          <dl className="flex flex-wrap justify-between gap-x-5 gap-y-3 px-4 py-2.5">
+            {[
+              ["Insured", c.insured],
+              ["Vehicle no", c.regNo],
+              ["Make / model", c.vehicle.makeModel],
+              ["Loss type", c.lossType],
+              ["Loss date", dt(c.lossDate)],
+              ["Claim raised", dt(c.regDate)],
+              ["Reserve", inr(c.reserve), true],
+              ["Pending with", c.pendingWith],
+              ["Age", `${c.ageDays} days`],
+            ].map(([k, v, strong]) => (
+              <div key={k} className="flex-none">
+                <dt className="whitespace-nowrap text-[11px] font-medium uppercase leading-4 tracking-wide text-slate-500">{k}</dt>
+                <dd
+                  className={`mt-0.5 whitespace-nowrap text-[13px] leading-5 tabular-nums ${strong ? "font-semibold text-slate-900" : "text-slate-800"}`}
+                  title={String(v)}
+                >
+                  {v}
+                </dd>
+              </div>
+            ))}
+          </dl>
+    </>
+  );
+  const policyChip = (
+              <span
+                className={`${CHIP} ${c.policy.status === "In force" ? "bg-emerald-50 text-emerald-800" : "bg-amber-50 text-amber-900"}`}
+                title={c.policy.policyNo}
+              >
+                {c.policy.status === "In force" ? <CheckCircle2 className="h-3.5 w-3.5" aria-hidden="true" /> : <Clock className="h-3.5 w-3.5" aria-hidden="true" />}
+                Policy · {c.policy.status}
+              </span>
+  );
+  const nextActionRow = (
+    <>
+          {/* Row 3: next action */}
+          {active && (
+          <div className="flex items-center gap-2 border-t border-slate-100 bg-amber-50/60 px-4 py-2 text-[12.5px] leading-5">
+            <CircleDot className="h-4 w-4 flex-none text-amber-700" aria-hidden="true" />
+            <span className="font-semibold text-slate-800">Next action:</span>
+            <span className="truncate text-slate-700" title={c.nextAction}>
+              {st.hold ? `Review on ${dt(statusRec.reviewDate)} – then release the hold` : c.nextAction}
+            </span>
+          </div>
+          )}
+    </>
+  );
+
+  /* ---------------- Claim 360 summary (first screen) ---------------- */
+  if (!workView) {
+    const goWork = (edit) => navigate(`/od/claims/${id}?view=work${edit ? "&mode=edit" : ""}`);
+    return (
+      <ODShell active="queue" title="Claim 360" subtitle="Claim summary · all claim details" onNavigateMissing={notBuilt}>
+        <div className="flex flex-col gap-2">
+          <Card>
+            <div className="flex flex-wrap items-center justify-between gap-2 border-b border-slate-100 px-4 py-2">
+              <div className="flex flex-wrap items-center gap-2">
+                <button
+                  type="button"
+                  onClick={() => navigate("/od/worklist")}
+                  aria-label="Back to My Work Queue"
+                  title="Back to My Work Queue"
+                  className="grid h-8 w-8 place-items-center rounded-md text-slate-500 hover:bg-slate-100 hover:text-slate-900"
+                >
+                  <ArrowLeft className="h-4 w-4" aria-hidden="true" />
+                </button>
+                <span className="text-[15px] font-semibold leading-6 tracking-wide text-[#0B1F3A] tabular-nums">{c.claimNo}</span>
+                {/* Closed claims show the closure type instead of the stage; SLA stops once closed or on hold */}
+                <span className={`${CHIP} ${st.closed ? "bg-slate-200 text-slate-800" : "bg-[#0B1F3A] text-white"}`}>
+                  {CLOSED_CHIP[st.state] || c.stage}
+                </span>
+                {st.hold && <span className={`${CHIP} bg-amber-100 text-amber-900`}>On hold</span>}
+                {!st.closed && !st.hold && <SlaChip sla={c.sla} />}
+                {!st.closed && !st.hold && c.dueToday && <span className={`${CHIP} bg-teal-50 text-teal-800`}>Due today</span>}
+                {c.flags.map((f) => (
+                  <span key={f} className={`${CHIP} ${f === "Fraud flag" ? "bg-red-600 text-white" : "bg-slate-100 text-slate-700"}`}>
+                    {f}
+                  </span>
+                ))}
+                {c.loss.catEvent && <span className={`${CHIP} bg-sky-50 text-sky-800`}>CAT event</span>}
+              </div>
+              <div className="flex flex-wrap items-center justify-end gap-1.5">
+                {policyChip}
+                <span className="mx-0.5 h-5 w-px bg-slate-200" aria-hidden="true" />
+                <button
+                  type="button"
+                  onClick={() => goWork(false)}
+                  className="inline-flex h-8 items-center gap-1.5 rounded-md border border-slate-300 bg-white px-3 text-[12.5px] font-semibold text-slate-700 hover:bg-slate-50"
+                >
+                  <Milestone className="h-4 w-4" aria-hidden="true" />
+                  View lifecycle
+                </button>
+                {active && (
+                  <button
+                    type="button"
+                    onClick={() => goWork(true)}
+                    className="inline-flex h-8 items-center gap-1.5 rounded-md bg-teal-700 px-3 text-[12.5px] font-semibold text-white hover:bg-teal-800"
+                  >
+                    <Pencil className="h-4 w-4" aria-hidden="true" />
+                    Work on claim
+                  </button>
+                )}
+              </div>
+            </div>
+            {keyFacts}
+            <ClaimStatusBanner rec={surveyed && statusNow?.state === "NBNR_CONVERTED" ? null : statusNow} />
+            {nextActionRow}
+          </Card>
+          <Card>
+            <div className="p-3">
+              <ClaimDetailSections c={c} editMode={false} onSoon={notBuilt} />
+            </div>
+          </Card>
+        </div>
+        {toast && (
+          <div role="status" className="fixed bottom-5 left-1/2 z-50 -translate-x-1/2 rounded-lg bg-[#0B1F3A] px-4 py-2.5 text-sm text-white shadow-lg">
+            {toast}
+          </div>
+        )}
+      </ODShell>
+    );
+  }
+
+  return (
+    <ODShell
+      active="queue"
+      // Claim no, insured and vehicle are shown once – in the claim card below – so the page header
+      // carries only the screen name and the mode (edit / view only)
+      title="Claim 360"
+      subtitle={editMode ? "Working on the claim · actions are saved to the claim" : "Lifecycle · view only"}
+      onNavigateMissing={notBuilt}
+      claimNav={{ backTo: `/od/claims/${id}`, backLabel: "Back to claim summary", steps: lifecycleSteps }}
+    >
+      <div className="flex flex-col gap-2">
+        {/* ---------------- Back (small screens only) ---------------- */}
+        <div className="flex items-center lg:hidden">
+          <button
+            type="button"
+            onClick={() => navigate(`/od/claims/${id}`)}
+            className="flex h-8 items-center gap-1 rounded-md px-1.5 text-[12.5px] font-medium text-slate-600 hover:bg-white hover:text-slate-900"
+          >
+            <ArrowLeft className="h-4 w-4" aria-hidden="true" />
+            Back to claim summary
+          </button>
+        </div>
+
+        {/* ---------------- Claim header ---------------- */}
+        <Card>
+          {/* Row 1: claim no + status chips (left) · actions (edit mode only) + policy status (right) */}
+          <div className="flex flex-wrap items-center justify-between gap-2 border-b border-slate-100 px-4 py-2">
+            {claimChips}
             <div className="flex flex-wrap items-center justify-end gap-1.5">
               {/* Actions show only in edit mode (paper-and-pen icon in My Work Queue) */}
               {editMode && (
@@ -964,54 +1099,16 @@ function ClaimPage() {
                   <span className="mx-0.5 h-5 w-px bg-slate-200" aria-hidden="true" />
                 </>
               )}
-              <span
-                className={`${CHIP} ${c.policy.status === "In force" ? "bg-emerald-50 text-emerald-800" : "bg-amber-50 text-amber-900"}`}
-                title={c.policy.policyNo}
-              >
-                {c.policy.status === "In force" ? <CheckCircle2 className="h-3.5 w-3.5" aria-hidden="true" /> : <Clock className="h-3.5 w-3.5" aria-hidden="true" />}
-                Policy · {c.policy.status}
-              </span>
+              {policyChip}
             </div>
           </div>
 
-          {/* Row 2: key facts – one line each, same font, same baseline */}
-          <dl className="flex flex-wrap justify-between gap-x-5 gap-y-3 px-4 py-2.5">
-            {[
-              ["Insured", c.insured],
-              ["Vehicle no", c.regNo],
-              ["Make / model", c.vehicle.makeModel],
-              ["Loss type", c.lossType],
-              ["Loss date", dt(c.lossDate)],
-              ["Claim raised", dt(c.regDate)],
-              ["Reserve", inr(c.reserve), true],
-              ["Pending with", c.pendingWith],
-              ["Age", `${c.ageDays} days`],
-            ].map(([k, v, strong]) => (
-              <div key={k} className="flex-none">
-                <dt className="whitespace-nowrap text-[11px] font-medium uppercase leading-4 tracking-wide text-slate-500">{k}</dt>
-                <dd
-                  className={`mt-0.5 whitespace-nowrap text-[13px] leading-5 tabular-nums ${strong ? "font-semibold text-slate-900" : "text-slate-800"}`}
-                  title={String(v)}
-                >
-                  {v}
-                </dd>
-              </div>
-            ))}
-          </dl>
+          {keyFacts}
 
           {/* Status after a claim action (hold, withdrawn, closed, waiting for approval, NBNR resolved) */}
           <ClaimStatusBanner rec={surveyed && statusNow?.state === "NBNR_CONVERTED" ? null : statusNow} />
 
-          {/* Row 3: next action */}
-          {active && (
-          <div className="flex items-center gap-2 border-t border-slate-100 bg-amber-50/60 px-4 py-2 text-[12.5px] leading-5">
-            <CircleDot className="h-4 w-4 flex-none text-amber-700" aria-hidden="true" />
-            <span className="font-semibold text-slate-800">Next action:</span>
-            <span className="truncate text-slate-700" title={c.nextAction}>
-              {st.hold ? `Review on ${dt(statusRec.reviewDate)} – then release the hold` : c.nextAction}
-            </span>
-          </div>
-          )}
+          {nextActionRow}
         </Card>
 
         {/* ---------------- Completed stage (read only) – or the normal tabs ---------------- */}
