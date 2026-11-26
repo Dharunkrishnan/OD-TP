@@ -1,19 +1,22 @@
 // src/components/SettlementPanel.jsx
 // Settlement on Claim 360 (Claims Handler) – the handler drives the steps other teams complete:
-//   1 Delivery order (DO) + liability working sheet to repairer / insured / agent – catalogue 91
-//   2 Final invoice: type, GSTIN, in favour of; vs approved amount, 5 % tolerance – 79–83
-//   3 Payee & bank account validation (name match)                               – 120, 122
-//   4 Settlement consent: OTP / e-sign / signed voucher                          – 121
-//   5 Delivery & satisfaction – cashless, BEFORE payment                         – 77
-//   6 Payment request to Finance → paid (UTR)                                    – 125, 126
-//   7 Auto-close after full settlement, reserve to nil                           – 130
+//   1 Repair authorisation (from the Decision stage)                               – catalogue 73
+//   2 Final invoice: type, GSTIN, in favour of; vs assessed loss, 5 % tolerance;
+//     estimate → assessed → bill variance                                           – 78–83
+//   3 Re-inspection after repair, replaced parts and salvage                        – 47
+//   4 Delivery order (DO) + liability working sheet to repairer / insured / agent    – 84–91
+//   5 Payee & bank account validation (name match)                                 – 120, 122
+//   6 Settlement consent: OTP / e-sign / signed voucher                            – 121
+//   7 Delivery & satisfaction – cashless, BEFORE payment                           – 77
+//   8 Payment request to Finance → paid (UTR)                                      – 125, 126
+//   9 Auto-close after full settlement, reserve to nil                             – 130
 // Steps done by the garage, surveyor or Finance are recorded here by the handler until those
 // personas have their own screens (demo).
 
 import { useEffect, useRef, useState } from "react";
 import FilePicker from "./FilePicker";
 import { INVOICE_TOLERANCE_PCT, INVOICE_TYPES, CONSENT_MODES, GSTIN_RE } from "../data/claimSettlement";
-import { X, Check, FileCheck2, Landmark, ReceiptText, Send, BadgeCheck, Lock, Truck, AlertTriangle, CarFront } from "lucide-react";
+import { X, Check, FileCheck2, Landmark, ReceiptText, Send, BadgeCheck, Lock, Truck, AlertTriangle, CarFront, ShieldCheck, ScanSearch } from "lucide-react";
 
 const inr = (n) => "₹" + Number(n || 0).toLocaleString("en-IN");
 const fmt = (iso) => (iso ? new Date(iso + "T00:00:00").toLocaleDateString("en-IN", { day: "2-digit", month: "short", year: "numeric" }) : "–");
@@ -74,7 +77,7 @@ export function InvoiceDialog({ c, s, onCancel, onDone }) {
   const [favour, setFavour] = useState(s.cashless ? "Insurer" : "Insured");
   const [tried, setTried] = useState(false);
   const n = Number(String(amount).replace(/[^\d]/g, ""));
-  const over = n ? Math.round(((n - s.approved) / s.approved) * 100) : 0;
+  const over = n ? Math.round(((n - s.assessed) / s.assessed) * 1000) / 10 : 0;
   const errors = {};
   if (no.trim().length < 3) errors.no = "Enter the invoice number.";
   if (!date) errors.date = "Enter the invoice date.";
@@ -97,7 +100,7 @@ export function InvoiceDialog({ c, s, onCancel, onDone }) {
       submitLabel="Save invoice"
     >
       <p className="rounded-lg bg-slate-50 px-3 py-2 text-[12px] text-slate-600">
-        Approved amount <b className="text-slate-900">{inr(s.approved)}</b> · tolerance {INVOICE_TOLERANCE_PCT}% (up to {inr(Math.round(s.approved * (1 + INVOICE_TOLERANCE_PCT / 100)))})
+        Assessed loss <b className="text-slate-900">{inr(s.assessed)}</b> · tolerance {INVOICE_TOLERANCE_PCT}% (up to {inr(Math.round(s.assessed * (1 + INVOICE_TOLERANCE_PCT / 100)))}) · insurer pays up to <b className="text-slate-900">{inr(s.approved)}</b>
       </p>
       <div className="grid grid-cols-2 gap-3">
         <label className="block">
@@ -141,10 +144,12 @@ export function InvoiceDialog({ c, s, onCancel, onDone }) {
         {n > 0 && (
           <span className={`mt-1 block text-[12px] ${over > INVOICE_TOLERANCE_PCT ? "text-red-700" : "text-emerald-700"}`}>
             {over > INVOICE_TOLERANCE_PCT
-              ? `${over}% above the approved amount – goes to the surveyor for re-check`
+              ? `${over}% above the assessed loss – goes to the surveyor for re-check`
               : over > 0
-                ? `${over}% above approved – within tolerance`
-                : "Within the approved amount"}
+                ? `${over}% above assessed – within tolerance, excess paid by the insured`
+                : over < 0
+                  ? `${-over}% below assessed – insurer's share reduces by ${inr(s.assessed - n)}`
+                  : "Matches the assessed loss"}
           </span>
         )}
         <Err msg={err("amount")} />
@@ -230,6 +235,7 @@ export function WorkingSheetDialog({ c, s, onCancel }) {
   const rows = [
     ["Garage estimate", w.estimate, ""],
     ["Assessed loss (surveyor)", w.assessed, ""],
+    ...(s.invoice ? [["Final bill (garage)", s.invoice.amount, s.invoice.amount > w.assessed ? "Above the assessment – excess paid by the insured" : s.invoice.amount < w.assessed ? "Below the assessment – insurer's share reduced" : ""]] : []),
     ["Less: depreciation on parts", -w.depreciation, w.zeroDep ? "Nil – Zero depreciation add-on" : "As per IRDAI depreciation schedule"],
     ["Less: salvage value", -w.salvage, "Retained by the insured"],
     ["Less: compulsory deductible", -w.compulsory, ""],
@@ -249,8 +255,8 @@ export function WorkingSheetDialog({ c, s, onCancel }) {
             </tr>
           ))}
           <tr>
-            <td className="pt-2 font-semibold text-slate-900">Net liability (approved)</td>
-            <td className="pt-2 text-right text-[14px] font-semibold tabular-nums text-slate-900">{inr(w.net)}</td>
+            <td className="pt-2 font-semibold text-slate-900">Insurer pays</td>
+            <td className="pt-2 text-right text-[14px] font-semibold tabular-nums text-slate-900">{inr(s.payable)}</td>
           </tr>
         </tbody>
       </table>
@@ -361,16 +367,15 @@ export function DeliveryDialog({ c, onCancel, onDone }) {
 }
 
 /* ---------- the panel ---------- */
-export default function SettlementPanel({ s, canAct, closed, onViewSheet, onInvoice, onSurveyorOk, onPayee, onConsent, onDelivery, onRequestPayment, onMarkPaid }) {
+export default function SettlementPanel({ s, canAct, closed, onViewSheet, onInvoice, onSurveyorOk, onReinspect, onIssueDo, onPayee, onConsent, onDelivery, onRequestPayment, onMarkPaid }) {
   const paid = s.payment?.status === "PAID";
   const steps = [
     {
-      key: "do",
-      Icon: Truck,
-      title: "Delivery order",
+      key: "auth",
+      Icon: ShieldCheck,
+      title: "Repair authorisation",
       done: true,
-      text: s.cashless ? `${s.do.no} · ${fmt(s.do.date)} · approved ${inr(s.approved)} · sent to ${s.do.sentTo.join(", ").toLowerCase()}` : `Reimbursement – approved ${inr(s.approved)}`,
-      action: ["Working sheet", onViewSheet, false, true],
+      text: `${s.cashless ? "Cashless – network garage" : "Reimbursement"} · ${fmt(s.authorisation.date)} · insurer pays up to ${inr(s.approved)} (assessed loss ${inr(s.assessed)})`,
     },
     {
       key: "invoice",
@@ -379,9 +384,27 @@ export default function SettlementPanel({ s, canAct, closed, onViewSheet, onInvo
       done: s.invoiceOk,
       warn: s.invoice && s.overTolerance && !s.invoice.surveyorOk,
       text: s.invoice
-        ? `${s.invoice.no} · ${s.invoice.type || "–"} · GSTIN ${s.invoice.gstin || "–"} · in favour of ${s.invoice.favour || "–"} · ${inr(s.invoice.amount)} · ${s.overPct > 0 ? `${s.overPct}% above approved` : "within approved"}${s.invoice.surveyorOk ? ` · surveyor confirmed – payable ${inr(s.payable)}` : s.overTolerance ? ` – above ${INVOICE_TOLERANCE_PCT}%, surveyor to re-check` : ""}`
-        : `${s.cashless ? "From the garage" : "Repair bills from the insured"} – compared with ${inr(s.approved)}`,
+        ? `${s.invoice.no} · ${fmt(s.invoice.date)} · ${s.invoice.type || "–"} · GSTIN ${s.invoice.gstin || "–"} · in favour of ${s.invoice.favour || "–"} · ${inr(s.invoice.amount)}${s.estimate ? ` · estimate ${inr(s.estimate)} → assessed ${inr(s.assessed)} → bill ${inr(s.invoice.amount)}` : ""} · ${s.overPct > 0 ? `${s.overPct}% above assessed` : s.overPct < 0 ? `${-s.overPct}% below assessed` : "matches assessed"}${s.invoice.surveyorOk ? " · surveyor confirmed" : s.overTolerance ? ` – above ${INVOICE_TOLERANCE_PCT}%, surveyor to re-check` : s.overPct > 0 ? " – within tolerance" : ""}`
+        : `${s.cashless ? "From the garage after the repair" : "Repair bills from the insured"} – compared with the assessed loss ${inr(s.assessed)}`,
       action: !s.invoice ? ["Record invoice", onInvoice] : s.overTolerance && !s.invoice.surveyorOk ? ["Surveyor confirmed", onSurveyorOk] : null,
+    },
+    {
+      key: "reinspect",
+      Icon: ScanSearch,
+      title: "Re-inspection after repair",
+      done: !!s.reinspection && s.reinspection.salvageCollected !== false,
+      text: s.reinspection
+        ? `${fmt(s.reinspection.on)} · ${s.reinspection.by} · repairs done as authorised · replaced parts seen${s.reinspection.salvageCollected === false ? " · salvage (replaced parts) still to be collected" : " · salvage collected"}`
+        : "Surveyor checks the repair and the replaced parts before the delivery order",
+      action: !s.reinspection ? ["Record re-inspection", onReinspect, !s.invoiceOk] : s.reinspection.salvageCollected === false ? ["Salvage collected", onReinspect] : null,
+    },
+    s.cashless && {
+      key: "do",
+      Icon: Truck,
+      title: "Delivery order & working sheet",
+      done: !!s.do,
+      text: s.do ? `${s.do.no} · ${fmt(s.do.date)} · insurer pays ${inr(s.payable)} · sent to ${s.do.sentTo.join(", ").toLowerCase()}` : `Liability on the final bill – insurer pays ${inr(s.payable)}${s.insuredShare != null ? `, insured pays the garage ${inr(s.insuredShare)}` : ""}`,
+      action: s.do ? ["Working sheet", onViewSheet, false, true] : ["Issue delivery order", onIssueDo, !s.invoiceOk || !s.reinspected || s.reinspection?.salvageCollected === false],
     },
     {
       key: "payee",
@@ -413,7 +436,7 @@ export default function SettlementPanel({ s, canAct, closed, onViewSheet, onInvo
       title: "Payment",
       done: paid,
       text: !s.payment
-        ? `${inr(s.payable)} by NEFT – needs invoice, payee, consent${s.cashless ? " and delivery" : ""}`
+        ? `${inr(s.payable)} by NEFT – needs invoice, re-inspection${s.cashless ? ", delivery order" : ""}, payee, consent${s.cashless ? " and delivery" : ""}`
         : paid
           ? `Paid ${inr(s.payment.amount)} · UTR ${s.payment.utr} · ${fmt(s.payment.paidOn)}`
           : `${inr(s.payment.amount)} sent to Finance ${fmt(s.payment.requestedOn)} – awaiting UTR`,
@@ -440,7 +463,12 @@ export default function SettlementPanel({ s, canAct, closed, onViewSheet, onInvo
           </span>
         </h3>
         <span className="text-[12px] text-slate-600">
-          Approved <b className="text-slate-900">{inr(s.approved)}</b> · payable <b className="text-slate-900">{inr(s.payable)}</b>
+          Assessed <b className="text-slate-900">{inr(s.assessed)}</b> · insurer pays <b className="text-slate-900">{inr(s.payable)}</b>
+          {s.insuredShare != null && (
+            <>
+              {" "}· insured pays the garage <b className="text-slate-900">{inr(s.insuredShare)}</b>
+            </>
+          )}
         </span>
       </div>
       <ol className="divide-y divide-slate-100">

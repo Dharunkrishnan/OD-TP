@@ -818,7 +818,7 @@ function StageView({ c, index, label, documents, timeline, journey, onBack, onUp
       {
         title: "Settlement",
         items: [
-          ["Delivery order", authorised ? `Issued ${dt(authorised.date)}` : "–"],
+          ["Repair authorisation", authorised ? `Issued ${dt(authorised.date)}` : "–"],
           ["Garage", c.garage ? c.garage.name : "–"],
           ...c.payments.map((x) => [`Payment · ${dt(x.date)}`, `${inrAmt(x.amount)} to ${x.payee} · ${x.mode} · ${x.status}`]),
         ],
@@ -1236,18 +1236,35 @@ function ClaimPage() {
   const saveSettle = (patch, event, detail) => logWork(event, detail, (w) => ({ ...w, settlement: { ...w.settlement, ...patch } }));
   function recordInvoice(inv) {
     setWorkDialog(null);
-    const over = Math.round(((inv.amount - settle.approved) / settle.approved) * 100);
-    const flag = inv.amount > settle.approved * (1 + INVOICE_TOLERANCE_PCT / 100);
-    saveSettle({ invoice: inv }, "Final invoice received", `${inv.no} · ${inv.type} · GSTIN ${inv.gstin} · in favour of ${inv.favour} · ${amtF(inv.amount)} · ${over > 0 ? `${over}% above` : "within"} approved ${amtF(settle.approved)}${flag ? " – sent to the surveyor for re-check" : ""}`);
-    flash(flag ? `Invoice is ${over}% above approved – sent to the surveyor for re-check.` : "Final invoice recorded.");
+    const over = Math.round(((inv.amount - settle.assessed) / settle.assessed) * 1000) / 10;
+    const flag = inv.amount > settle.assessed * (1 + INVOICE_TOLERANCE_PCT / 100);
+    saveSettle({ invoice: inv }, "Final invoice received", `${inv.no} · ${inv.type} · GSTIN ${inv.gstin} · in favour of ${inv.favour} · ${amtF(inv.amount)} · ${over > 0 ? `${over}% above` : over < 0 ? `${-over}% below` : "matches"} assessed ${amtF(settle.assessed)}${flag ? " – sent to the surveyor for re-check" : ""}`);
+    flash(flag ? `Invoice is ${over}% above the assessed loss – sent to the surveyor for re-check.` : "Final invoice recorded.");
   }
   function surveyorConfirmed() {
     saveSettle(
       { invoice: { ...settle.invoice, surveyorOk: true } },
       "Surveyor confirmed final bill",
-      `Payable limited to the approved ${amtF(settle.approved)}; excess ${amtF(settle.invoice.amount - settle.approved)} to be collected by the garage from the insured`
+      `Insurer pays ${amtF(settle.payable)}; bill above the assessed loss (${amtF(settle.invoice.amount - settle.assessed)}) to be collected by the garage from the insured`
     );
     flash("Surveyor confirmation recorded.");
+  }
+  // Re-inspection after repair (catalogue 47) – second click records the salvage (replaced parts) as collected
+  function recordReinspection() {
+    if (settle.reinspection) {
+      saveSettle({ reinspection: { ...settle.reinspection, salvageCollected: true } }, "Salvage collected", "Replaced parts collected from the garage");
+      flash("Salvage collection recorded.");
+      return;
+    }
+    const by = c.survey?.surveyor?.name || "Karthik Subramanian";
+    saveSettle({ reinspection: { on: isoToday(), by, partsVerified: true, salvageCollected: true } }, "Re-inspection done", `${by} · repairs done as authorised · replaced parts seen and collected as salvage`);
+    flash("Re-inspection recorded.");
+  }
+  // Delivery order with the liability working sheet (catalogue 91)
+  function issueDo() {
+    const no = `DO/${c.claimNo.replace(/\//g, "").slice(-8)}`;
+    saveSettle({ do: { no, date: isoToday(), sentTo: ["Repairer", "Insured", "Agent"] } }, "Delivery order issued", `${no} · insurer pays ${amtF(settle.payable)} · working sheet sent to repairer, insured and agent`);
+    flash(`Delivery order ${no} issued.`);
   }
   function savePayee(p) {
     setWorkDialog(null);
@@ -1569,7 +1586,7 @@ function ClaimPage() {
                     tab === t.key ? "bg-[#0B1F3A] text-white" : "text-slate-600 hover:bg-slate-100"
                   }`}
                 >
-                  {t.label}
+                  {t.key === "details" && settle ? "Settlement" : t.label}
                   {t.key === "docs" && pendingDocs.length + toVerify.length > 0 && (
                     <span className={`rounded px-1.5 text-[11px] font-semibold ${tab === t.key ? "bg-white/15" : "bg-amber-100 text-amber-900"}`}>
                       {pendingDocs.length + toVerify.length}
@@ -1600,6 +1617,8 @@ function ClaimPage() {
                       closed={settled}
                       onInvoice={() => setWorkDialog("invoice")}
                       onSurveyorOk={surveyorConfirmed}
+                      onReinspect={recordReinspection}
+                      onIssueDo={issueDo}
                       onPayee={() => setWorkDialog("payee")}
                       onConsent={() => setWorkDialog("consent")}
                       onDelivery={() => setWorkDialog("delivery")}
@@ -1609,7 +1628,19 @@ function ClaimPage() {
                     />
                   </div>
                 )}
-                <ClaimDetailSections c={c} editMode={editMode} onSoon={notBuilt} />
+                {/* Settlement stage: only the settlement work here – policy, insured, vehicle and loss details
+                    are already on the Claim 360 summary the claim opens on, so they are not repeated */}
+                {settle ? (
+                  <p className="text-[12px] text-slate-500">
+                    Policy, insured, vehicle and loss details are on the{" "}
+                    <Link to={`/od/claims/${id}`} className="font-medium text-teal-700 hover:underline">
+                      Claim 360 summary
+                    </Link>
+                    .
+                  </p>
+                ) : (
+                  <ClaimDetailSections c={c} editMode={editMode} onSoon={notBuilt} />
+                )}
               </div>
             )}
 
