@@ -38,6 +38,7 @@ import {
 import ODShell from "../../components/layout/ODShell";
 import { TAT_STAGES, needsIps } from "../../data/odHandlerMock";
 import { getClaimDetail, claimFromSlug, LIFECYCLE, STAGE_TO_STEP } from "../../data/odClaimDetail";
+import { impactOf, damagedParts, DEP_TEXT, CTL_THRESHOLD } from "../../data/odAssessment";
 import { ClaimStatusBanner, ClaimActionsMenu, ClaimStatusDialog } from "../../components/ClaimStatusActions";
 import ClaimDetailSections from "../../components/ClaimDetailSections";
 import ClaimTimeline from "../../components/ClaimTimeline";
@@ -197,6 +198,48 @@ const STAGE_EVENTS = [
 ];
 const inrAmt = (n) => (n == null ? "–" : "₹" + Number(n).toLocaleString("en-IN"));
 
+// Line-item table inside a stage card (Assessment: part-wise assessment)
+function StageTable({ t }) {
+  const right = (k) => t.num?.includes(k);
+  return (
+    <div className="overflow-x-auto">
+      <table className="w-full text-[12px] tabular-nums">
+        <thead>
+          <tr className="border-b border-slate-100 text-left text-[11px] uppercase tracking-wide text-slate-500">
+            {t.cols.map((h, k) => (
+              <th key={h} scope="col" className={`whitespace-nowrap px-3 py-1.5 font-semibold ${right(k) ? "text-right" : ""}`}>
+                {h}
+              </th>
+            ))}
+          </tr>
+        </thead>
+        <tbody className="divide-y divide-slate-100">
+          {t.rows.map((r, i) => (
+            <tr key={i} className={t.dim?.[i] ? "bg-rose-50/40" : ""}>
+              {r.map((v, k) => (
+                <td key={k} className={`px-3 py-1 ${right(k) ? "whitespace-nowrap text-right" : ""} ${k === 0 ? "font-medium text-slate-800" : k === r.length - 1 ? (t.dim?.[i] ? "text-rose-700" : "text-slate-500") : "text-slate-700"}`}>
+                  {v}
+                </td>
+              ))}
+            </tr>
+          ))}
+        </tbody>
+        {t.foot && (
+          <tfoot className="border-t border-slate-200">
+            <tr className="font-semibold text-[#0B1F3A]">
+              {t.foot.map((v, k) => (
+                <td key={k} className={`px-3 py-1.5 ${right(k) ? "whitespace-nowrap text-right" : ""} ${k === t.foot.length - 1 ? "font-normal text-rose-700" : ""}`}>
+                  {v}
+                </td>
+              ))}
+            </tr>
+          </tfoot>
+        )}
+      </table>
+    </div>
+  );
+}
+
 function StageView({ c, index, label, documents, timeline, journey, onBack, onUpload }) {
   const events = timeline.filter((e) => STAGE_EVENTS[index].some((k) => e.event.startsWith(k)));
   // "Activity in this stage" stays hidden until asked for – opens as a floating card over the right side
@@ -331,16 +374,8 @@ function StageView({ c, index, label, documents, timeline, journey, onBack, onUp
     const done = ev("Survey completed");
     const doc = (n) => documents.find((d) => d.name === n);
     const docState = (d) => (!d ? "Not needed" : /received|verified/i.test(d.status) ? `✓ ${d.status}${d.receivedOn ? ` ${dt(d.receivedOn)}` : ""}` : d.status);
-    // damage picture from the stated cause (demo: point of impact and the parts usually involved)
-    const cause = (c.loss.cause || "").toLowerCase();
-    const impact = /behind|rear|revers/.test(cause) ? "Rear" : /side|scrap|swipe|turn/.test(cause) ? "Left side" : /flood|water/.test(cause) ? "Under-body & cabin (water ingress)" : /fire/.test(cause) ? "Engine bay (fire)" : "Front";
-    const PARTS = {
-      Rear: "Rear bumper, tail lamp (L), boot lid, rear panel",
-      "Left side": "Left front door, left rear door, ORVM (L), side skirt",
-      Front: "Front bumper, headlamp (R), grille, bonnet, radiator support",
-      "Under-body & cabin (water ingress)": "Engine (hydrostatic lock check), wiring harness, seats & carpet, ECU",
-      "Engine bay (fire)": "Wiring harness, engine components, bonnet, battery",
-    };
+    // damage picture from the stated cause – same parts list as the Assessment stage (odAssessment.js)
+    const impact = impactOf(c.loss.cause, c.lossType);
     const est = sv.estimate;
     const pctIdv = est ? Math.round((est / c.policy.idv) * 100) : null;
     const before = c.reserveHistory[0]?.amount;
@@ -383,7 +418,7 @@ function StageView({ c, index, label, documents, timeline, journey, onBack, onUp
         title: "Damage & cause",
         items: [
           ["Point of impact", impact],
-          ["Damaged parts", PARTS[impact]],
+          ["Damaged parts", damagedParts(impact)],
           ["Stated cause", c.loss.cause],
           ["Damage consistent with cause", c.flags.includes("Fraud flag") ? "✕ Doubtful – see red flags" : "✓ Yes"],
         ],
@@ -427,27 +462,242 @@ function StageView({ c, index, label, documents, timeline, journey, onBack, onUp
       },
     ].filter(Boolean);
   } else if (index === 2) {
+    // Assessment – catalogue 52–61 (estimate, part-wise assessment, add-ons, depreciation, deductibles,
+    // summary, admissibility), 88 GST type, 94–101 variance & total loss, 104–108 theft, 152–154 documents
     const sv = c.survey;
-    sections = [
-      {
-        title: "Assessment",
-        items: [
-          ["Garage estimate", inrAmt(sv.estimate)],
-          ["Assessed loss", inrAmt(sv.assessed), { strong: true }],
-          [sv.zeroDep ? "Depreciation (zero dep)" : "Depreciation", inrAmt(sv.depreciation)],
-          ["Salvage", inrAmt(sv.salvage)],
-          ["Deductible", inrAmt(sv.deductible)],
-          ["Net liability", inrAmt(sv.netLiability), { strong: true }],
-        ],
-      },
-      {
-        title: "Reserve & documents",
-        items: [
-          ...c.reserveHistory.map((h) => [`${h.type} · ${dt(h.date)}`, `${inrAmt(h.amount)} – ${h.reason}`]),
-          ["Documents received", `${documents.filter((d) => d.status === "Received").length} of ${documents.length}`],
-        ],
-      },
-    ];
+    const a = sv.assessment;
+    const doc = (n) => documents.find((d) => d.name === n);
+    const docState = (d) => (!d ? "Not needed" : /received|verified/i.test(d.status) ? `✓ ${d.status}${d.receivedOn ? ` ${dt(d.receivedOn)}` : ""}` : d.status);
+    const tick = (ok) => (ok ? "✓ " : "✕ ");
+    const pct = (x) => `${Math.round(x * 1000) / 10}%`;
+    const has = (x) => c.policy.addOns.includes(x);
+    const fraud = c.flags.includes("Fraud flag");
+    const reserveNow = c.reserveHistory[c.reserveHistory.length - 1]?.amount;
+    const payable = sv.netLiability;
+    const gap = reserveNow && payable != null ? (reserveNow - (a?.basis === "partial" ? sv.assessed : payable)) / reserveNow : 0;
+    const assessedOn = ev("Reserve revised") || ev("Survey completed");
+    const dlOk = c.driver ? c.driver.dlValidTill >= c.loss.date : null;
+    const coverLine =
+      a?.basis === "theft"
+        ? "✓ Theft of the vehicle – covered under Section I (Own Damage)"
+        : /water/.test(a?.impact || "")
+          ? "✓ Flood / inundation – natural peril, covered under Section I"
+          : /fire/.test(a?.impact || "")
+            ? "✓ Fire – covered under Section I"
+            : a?.impact === "Parts stolen"
+              ? "✓ Theft of parts – covered (FIR registered)"
+              : "✓ Accidental external means – covered under Section I (Own Damage)";
+    const admissibility = {
+      title: "Admissibility",
+      items: [
+        ["Cause vs policy cover", coverLine],
+        ["Driving licence on loss date", c.driver ? `${tick(dlOk)}${dlOk ? "Valid" : "Expired"} till ${dt(c.driver.dlValidTill)} · ${c.driver.dlClass} matches private car` : "Not applicable – vehicle not being driven"],
+        c.driver && ["Driving under influence", "✓ No indication in FIR, photos or survey"],
+        ["Use of vehicle", "✓ Private use as per policy – no hire or reward"],
+        ["Wear & tear / breakdown", a?.basis === "partial" ? "✓ Not claimed – unrelated items disallowed in the part-wise table" : "Not applicable"],
+        ["Rule check (red / amber / green)", fraud ? "Amber – red flag referred to SIU" : "Green – no admissibility risk"],
+        ["Result", fraud ? "Pending SIU outcome" : "Admissible under Section I – Own Damage", { strong: true }],
+      ],
+    };
+    const reserve = {
+      title: "Reserve",
+      items: [
+        ...c.reserveHistory.map((h) => [`${h.type} · ${dt(h.date)}`, `${inrAmt(h.amount)} – ${h.reason}`]),
+        reserveNow != null &&
+          payable != null && [
+            a?.basis === "partial" ? "Reserve vs assessed loss" : "Reserve vs net payable",
+            Math.abs(gap) <= 0.2
+              ? `✓ Within 20% (${pct(Math.abs(gap))}) – no revision needed`
+              : `✕ ${pct(Math.abs(gap))} ${gap < 0 ? "short" : "over"} – revise reserve to ${inrAmt(a?.basis === "partial" ? sv.assessed : payable)}`,
+          ],
+      ],
+    };
+    const docsSec = (names) => ({
+      title: "Documents in this stage",
+      items: names.map((n) => doc(n) && [n, docState(doc(n))]).filter(Boolean),
+    });
+
+    if (!a) {
+      sections = [{ title: "Assessment", items: [["Status", "Assessment not recorded for this claim"]] }, reserve];
+    } else if (a.basis === "partial") {
+      const sumDep = a.lines.reduce((s2, l) => s2 + l.dep, 0);
+      sections = [
+        {
+          title: "Estimate",
+          items: [
+            ["Garage estimate", inrAmt(a.estimate), { strong: true }],
+            c.garage && ["Estimate from", `${c.garage.name.split(",")[0]} · ${c.garage.type}`],
+            ["Captured", "Uploaded by the garage · line items read by OCR, checked by the handler"],
+            ["Parts · labour · paint", `${inrAmt(a.split.parts)} · ${inrAmt(a.split.labour)} · ${inrAmt(a.split.paint)}`],
+            ["Consumables", inrAmt(a.split.consumables)],
+            ["GST", "Included line-wise · CGST + SGST (garage and insurer GSTIN both Tamil Nadu)"],
+            ["Estimate document", docState(doc("Garage estimate"))],
+          ],
+        },
+        {
+          title: "Assessment summary",
+          items: [
+            ["Garage estimate", inrAmt(a.estimate)],
+            ["Less disallowed items", a.disallowed ? `– ${inrAmt(a.disallowed)}` : "Nil"],
+            ["Less rate difference (price list / labour rate)", a.rateCut ? `– ${inrAmt(a.rateCut)}` : "Nil"],
+            ["Assessed loss", inrAmt(a.assessed), { strong: true }],
+            ["Less depreciation", a.dep ? `– ${inrAmt(a.dep)}` : "Nil (zero depreciation)"],
+            ["Less salvage", `– ${inrAmt(sv.salvage)}`],
+            ["Less deductibles", `– ${inrAmt(sv.deductible)}`],
+            ["Net liability (insurer pays)", inrAmt(sv.netLiability), { strong: true }],
+            ["Insured's share", `${inrAmt(a.estimate - sv.netLiability)} (estimate less net liability)`],
+            ["Estimate vs assessed", `${pct((a.estimate - a.assessed) / a.estimate)} lower than the estimate`],
+            assessedOn && ["Assessed on", `${dt(assessedOn.date)} · ${assessedOn.by}`],
+          ],
+        },
+        {
+          title: "Deductibles & salvage",
+          span: "lg:col-span-2 2xl:col-span-1",
+          items: [
+            ["Compulsory deductible", `${inrAmt(c.policy.compulsoryDeductible)} (${c.vehicle.cc > 1500 ? "above" : "up to"} 1500 cc · ${c.vehicle.cc} cc)`],
+            ["Voluntary deductible", c.policy.voluntaryDeductible ? inrAmt(c.policy.voluntaryDeductible) : "Nil"],
+            ["Imposed deductible", "Nil"],
+            ["Salvage of replaced parts", `${inrAmt(sv.salvage)} · retained by the garage`],
+            ["Total deduction", inrAmt(a.dep + sv.salvage + sv.deductible), { strong: true }],
+          ],
+        },
+        {
+          title: "Part-wise assessment",
+          span: "lg:col-span-2 2xl:col-span-3",
+          table: {
+            cols: ["Item", "Type", "Action", "Estimate", "Assessed", "Dep. %", "Depreciation", "Remarks"],
+            num: [3, 4, 5, 6],
+            rows: a.lines.map((l) => [
+              l.item,
+              DEP_TEXT[l.type],
+              l.action,
+              inrAmt(l.estimate),
+              l.assessed ? inrAmt(l.assessed) : "Nil",
+              l.depRate ? `${Math.round(l.depRate * 1000) / 10}%` : "–",
+              l.dep ? inrAmt(l.dep) : "–",
+              l.remark,
+            ]),
+            foot: ["Total", "", "", inrAmt(a.estimate), inrAmt(a.assessed), "", sumDep ? inrAmt(sumDep) : "–", a.disallowed ? `${inrAmt(a.disallowed)} disallowed` : ""],
+            dim: a.lines.map((l) => l.assessed === 0),
+          },
+        },
+        {
+          title: "Add-on covers applied",
+          items: [
+            ["Zero depreciation", has("Zero depreciation") ? "✓ Applied – no depreciation on parts" : "Not opted – depreciation applied"],
+            ["Consumables", has("Consumables") ? `✓ Applied – ${inrAmt(a.split.consumables)} allowed` : `Not opted – ${inrAmt(a.split.consumables)} disallowed`],
+            ["Engine protect", has("Engine protect") ? (/water/.test(a.impact) ? "✓ Applied – engine repair allowed" : "Opted – not triggered (no engine damage)") : /water/.test(a.impact) ? "Not opted – engine damage reviewed on survey findings" : "Not opted"],
+            has("Return to invoice") && ["Return to invoice", "Opted – not applicable (applies to total loss / theft)"],
+            has("Roadside assistance") && ["Roadside assistance", "Opted – service add-on, not part of the assessment"],
+          ],
+        },
+        {
+          title: "Depreciation",
+          items: [
+            ["Basis", a.zeroDep ? "Nil – Zero depreciation add-on" : "Policy depreciation schedule (IRDAI / Indian Motor Tariff)"],
+            ["Vehicle age", `${a.age.label} (year of manufacture ${c.vehicle.yearOfMfg})`],
+            ["Metal & electrical parts", a.zeroDep ? "Nil" : pct(a.metalRate)],
+            ["Plastic / rubber / battery", a.zeroDep ? "Nil" : "50%"],
+            ["Glass", "Nil"],
+            ["Painting", a.zeroDep ? "Nil" : "12.5% (50% on paint material, taken as 25% of the paint bill)"],
+            ["Labour", "Nil"],
+            ["Total depreciation", inrAmt(a.dep), { strong: true }],
+          ],
+        },
+        admissibility,
+        {
+          title: "Repair or total loss",
+          items: [
+            ["Assessed loss vs IDV", `${inrAmt(a.assessed)} of ${inrAmt(c.policy.idv)} · ${pct(a.assessed / c.policy.idv)}`],
+            ["Total loss threshold", `${CTL_THRESHOLD * 100}% of IDV`],
+            ["Result", a.assessed / c.policy.idv > CTL_THRESHOLD ? "✕ Above threshold – cost benefit analysis needed" : "✓ Repair basis – cost benefit analysis not needed"],
+          ],
+        },
+        reserve,
+        docsSec(["Garage estimate", "Survey report", "Vehicle photos", "FIR / police report", "Fire brigade report", "KYC – PAN / Aadhaar", "Cancelled cheque / bank details"]),
+      ];
+    } else if (a.basis === "ctl") {
+      sections = [
+        {
+          title: "Total loss / CTL determination",
+          items: [
+            ["IDV", inrAmt(c.policy.idv), { strong: true }],
+            ["Repair estimate", inrAmt(a.repairCost)],
+            ["Repair cost vs IDV", `${a.pctIdv}% (threshold ${CTL_THRESHOLD * 100}%)`],
+            ["Result", "✕ Constructive total loss – cost benefit analysis triggered", { strong: true }],
+            ["Estimate document", docState(doc("Garage estimate"))],
+          ],
+        },
+        {
+          title: "Wreck quotes – online auction",
+          items: [
+            ...a.quotes.map((q, k) => [q.bidder, `${inrAmt(q.amount)}${k === 0 ? " · highest" : ""}`, k === 0 ? { strong: true } : undefined]),
+            ["Basis", "As-is-where-is, wreck at the garage"],
+          ],
+        },
+        {
+          title: "Cost benefit analysis",
+          items: [
+            ["Repair basis", inrAmt(a.repairCost)],
+            ["Total loss – net of salvage", inrAmt(a.netOfSalvage)],
+            ["Total loss – insurer takes salvage", `${inrAmt(a.withSalvage)} less wreck sale ${inrAmt(a.best)}`],
+            ["Recommended", a.recommended, { strong: true }],
+            ["Saving vs repair", inrAmt(a.repairCost - a.netOfSalvage)],
+            ["Approval", "Claims Approver decides the settlement type – Decision stage"],
+          ],
+        },
+        {
+          title: "Total loss working",
+          items: [
+            ["IDV", inrAmt(c.policy.idv)],
+            ["Less compulsory deductible", `– ${inrAmt(c.policy.compulsoryDeductible)}`],
+            ["Less wreck value (insured keeps wreck)", `– ${inrAmt(a.best)}`],
+            ["Net payable – net of salvage", inrAmt(a.netOfSalvage), { strong: true }],
+            ["Alternative – insurer takes wreck", `${inrAmt(a.withSalvage)} · RC, keys and Form 28/29/30 handed over`],
+            ["Depreciation", "Not applicable – settled on IDV"],
+            ["Financier", c.policy.financier ? `${c.policy.financier} – paid first up to the loan outstanding (NOC needed)` : "None"],
+          ],
+        },
+        admissibility,
+        reserve,
+        { span: "lg:col-span-2 2xl:col-span-3", ...docsSec(["Garage estimate", "Survey report", "Vehicle photos", "FIR / police report", "Original keys & Form 28/29/30", "KYC – PAN / Aadhaar", "Cancelled cheque / bank details"]) },
+      ];
+    } else {
+      sections = [
+        {
+          title: "Investigation outcome",
+          items: [
+            ["Investigator", sv.surveyor ? sv.surveyor.name : "–"],
+            ["Investigation report", fraud ? "Received – red flags, referred to SIU" : "✓ Received – theft genuine, no adverse findings"],
+            ["Police final report (non-traceable)", docState(doc("Non-traceable report (police)"))],
+            ["Delay in intimation", `${c.loss.intimationDelayDays} day(s)${c.loss.intimationDelayDays > 2 ? " – explained in claim form" : " – within norms"}`],
+          ],
+        },
+        {
+          title: "Theft formalities checklist",
+          items: [
+            ...["FIR / police report", "Non-traceable report (police)", "Original keys & Form 28/29/30", "RC copy", "Claim form (signed)"].map((n) => doc(n) && [n, docState(doc(n))]).filter(Boolean),
+            ["Financier NOC & loan statement", c.policy.financier ? `Needed – ${c.policy.financier}` : "Not applicable"],
+            ["Subrogation letter & indemnity", "Signed at settlement"],
+            ["RTO intimation", "Theft reported to RTO – RC marked"],
+          ],
+        },
+        {
+          title: "Theft settlement working",
+          items: [
+            ["IDV", inrAmt(a.idv), { strong: true }],
+            ["Less compulsory deductible", `– ${inrAmt(a.deductible)}`],
+            ["Net payable", inrAmt(a.net), { strong: true }],
+            ["Payee", a.financier ? `${a.financier} up to the loan outstanding, balance to the insured` : "Insured"],
+            ["Return to invoice", has("Return to invoice") ? "Opted – gap between invoice value and IDV payable on invoice copy" : "Not opted"],
+            ["Depreciation", "Not applicable – settled on IDV"],
+          ],
+        },
+        admissibility,
+        reserve,
+        docsSec(["KYC – PAN / Aadhaar", "Cancelled cheque / bank details"]),
+      ];
+    }
   } else if (index === 3) {
     sections = [
       {
@@ -542,7 +792,7 @@ function StageView({ c, index, label, documents, timeline, journey, onBack, onUp
           {sections.map((sec) => (
             <section key={sec.title} className={`@container flex flex-col rounded-lg border border-slate-200 bg-white ${sec.span || ""}`}>
               <h3 className="border-b border-slate-100 px-3 py-1.5 text-[12.5px] font-semibold text-[#0B1F3A]">{sec.title}</h3>
-              <Facts items={sec.items} cols="@md:grid-cols-2 @3xl:grid-cols-3 @5xl:grid-cols-4" />
+              {sec.table ? <StageTable t={sec.table} /> : <Facts items={sec.items} cols="@md:grid-cols-2 @3xl:grid-cols-3 @5xl:grid-cols-4" />}
             </section>
           ))}
         </div>

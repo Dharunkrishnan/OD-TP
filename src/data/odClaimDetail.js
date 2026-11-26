@@ -8,6 +8,7 @@
 
 import { WORK_QUEUE, needsIps, HANDLER_AS_SURVEYOR } from "./odHandlerMock";
 import { CLOSED_CLAIMS } from "./odClosedClaims";
+import { partialAssessment, ctlAssessment, theftAssessment, compulsoryDeductible } from "./odAssessment";
 
 /* ---------------- URL helpers: claim no has "/" so use "-" in URLs ---------------- */
 export const claimSlug = (claimNo) => claimNo.replaceAll("/", "-");
@@ -279,10 +280,30 @@ export function getClaimDetail(claimNo) {
   const surveyor = isNbnr || step < 1 ? null : ips ? (step >= 2 ? IPS_SURVEYORS[seedOf(claimNo + "|ips") % IPS_SURVEYORS.length] : null) : HANDLER_AS_SURVEYOR;
   const estimate = round(row.reserve * (1.12 + r() * 0.2));
   const assessed = step >= 3 && step !== 4 ? row.reserve : step >= 4 ? row.reserve : null;
-  const depreciation = assessed == null ? null : zeroDep ? 0 : round(assessed * (0.06 + r() * 0.08));
-  const salvage = assessed == null ? null : round(assessed * 0.015);
+  let depreciation = assessed == null ? null : zeroDep ? 0 : round(assessed * (0.06 + r() * 0.08));
+  let salvage = assessed == null ? null : round(assessed * 0.015);
+  // compulsory deductible follows engine capacity (private car: ₹1,000 up to 1500 cc, ₹2,000 above)
+  policy.compulsoryDeductible = compulsoryDeductible(vehicle.cc);
   const deductible = policy.compulsoryDeductible + policy.voluntaryDeductible;
-  const netLiability = assessed == null ? null : Math.max(0, assessed - depreciation - salvage - deductible);
+  // Assessment working (odAssessment.js) – depreciation and net liability come from the part-wise
+  // lines / total loss / theft working, so every screen shows the same reconciled numbers
+  let assessment = null;
+  if (assessed != null) {
+    if (lossIsTheft) {
+      assessment = theftAssessment({ idv, deductible: policy.compulsoryDeductible, financier: policy.financier });
+      depreciation = 0;
+      salvage = 0;
+    } else if (row.lossType === "Total loss / CTL") {
+      assessment = ctlAssessment({ claimNo, idv, estimate, deductible: policy.compulsoryDeductible });
+      depreciation = 0;
+      salvage = assessment.best;
+    } else {
+      assessment = partialAssessment({ estimate, assessed, zeroDep, yom: year, lossDate: row.lossDate, cause: loss.cause, lossType: row.lossType, addOns: policy.addOns, salvage, deductibles: deductible });
+      depreciation = assessment.dep;
+    }
+  }
+  const netLiability =
+    assessed == null ? null : assessment?.basis === "theft" ? assessment.net : assessment?.basis === "ctl" ? assessment.netOfSalvage : Math.max(0, assessed - depreciation - salvage - deductible);
   const survey = {
     surveyor,
     appointedOn: step >= 2 ? addDays(row.regDate, 1) : null,
@@ -295,6 +316,7 @@ export function getClaimDetail(claimNo) {
     deductible,
     netLiability,
     zeroDep,
+    assessment,
   };
 
   /* ---- documents ---- */
