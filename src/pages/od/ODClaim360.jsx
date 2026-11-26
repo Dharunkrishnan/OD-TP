@@ -272,25 +272,6 @@ function StageView({ c, index, label, documents, timeline, journey, onBack, onUp
           : [["Driver", "Not applicable – vehicle was parked / not being driven"]],
       },
       {
-        title: "Vehicle & policy on the loss date",
-        items: [
-          ["Vehicle", `${c.vehicle.regNo} · ${c.vehicle.makeModel}`],
-          ["Year · fuel", `${c.vehicle.yearOfMfg} · ${c.vehicle.fuel}`],
-          ["Chassis / engine no", `${c.vehicle.chassis} / ${c.vehicle.engine}`, { mono: true }],
-          ["Policy no", c.policy.policyNo, { mono: true }],
-          ["Policy period", `${dt(c.policy.periodFrom)} – ${dt(c.policy.periodTo)}`],
-          ["Product", c.policy.product],
-          ["IDV · NCB", `${inrAmt(c.policy.idv)} · ${c.policy.ncb}`, { strong: true }],
-          ["Add-on covers", c.policy.addOns.length ? c.policy.addOns.join(", ") : "None"],
-          ["Deductibles", `Compulsory ${inrAmt(c.policy.compulsoryDeductible)} · voluntary ${inrAmt(c.policy.voluntaryDeductible)}`],
-          ["Financier", c.policy.financier ?? "None"],
-        ],
-      },
-      {
-        title: "Policy & coverage validation",
-        items: c.checks.filter((k) => !/reserve/i.test(k.label)).map((k) => [k.label, `${tick(k.ok)}${k.note}`]),
-      },
-      {
         title: "Registration & allocation",
         items: [
           ["Claim no", c.claimNo, { mono: true }],
@@ -309,7 +290,28 @@ function StageView({ c, index, label, documents, timeline, journey, onBack, onUp
         ],
       },
       {
+        title: "Vehicle & policy on the loss date",
+        span: "lg:col-span-2",
+        items: [
+          ["Vehicle", `${c.vehicle.regNo} · ${c.vehicle.makeModel}`],
+          ["Year · fuel", `${c.vehicle.yearOfMfg} · ${c.vehicle.fuel}`],
+          ["Chassis / engine no", `${c.vehicle.chassis} / ${c.vehicle.engine}`, { mono: true }],
+          ["Policy no", c.policy.policyNo, { mono: true }],
+          ["Policy period", `${dt(c.policy.periodFrom)} – ${dt(c.policy.periodTo)}`],
+          ["Product", c.policy.product],
+          ["IDV · NCB", `${inrAmt(c.policy.idv)} · ${c.policy.ncb}`, { strong: true }],
+          ["Add-on covers", c.policy.addOns.length ? c.policy.addOns.join(", ") : "None"],
+          ["Deductibles", `Compulsory ${inrAmt(c.policy.compulsoryDeductible)} · voluntary ${inrAmt(c.policy.voluntaryDeductible)}`],
+          ["Financier", c.policy.financier ?? "None"],
+        ],
+      },
+      {
+        title: "Policy & coverage validation",
+        items: c.checks.filter((k) => !/reserve/i.test(k.label)).map((k) => [k.label, `${tick(k.ok)}${k.note}`]),
+      },
+      {
         title: "Documents asked at intimation",
+        span: "2xl:col-span-2",
         items: askedDocs.map((d) => [
           d.name,
           /received|verified/i.test(d.status)
@@ -457,12 +459,13 @@ function StageView({ c, index, label, documents, timeline, journey, onBack, onUp
 
       {/* sections use the full width (two side by side on wide screens); activity floats over the right when opened */}
       <div className="relative p-2">
-        {/* two balanced columns on wide screens – each section sits right under the previous one, no gaps */}
-        <div className="gap-2 xl:columns-2">
+        {/* structured grid: cards in rows, equal height within a row (edges line up); 2 columns from
+            1024 px, 3 on wide screens; big cards span 2. Fields follow the card's own width. */}
+        <div className="grid grid-cols-1 gap-2 lg:grid-cols-2 2xl:grid-cols-3">
           {sections.map((sec) => (
-            <section key={sec.title} className="mb-2 break-inside-avoid rounded-lg border border-slate-200">
+            <section key={sec.title} className={`@container flex flex-col rounded-lg border border-slate-200 bg-white ${sec.span || ""}`}>
               <h3 className="border-b border-slate-100 px-3 py-1.5 text-[12.5px] font-semibold text-[#0B1F3A]">{sec.title}</h3>
-              <Facts items={sec.items} />
+              <Facts items={sec.items} cols="@md:grid-cols-2 @3xl:grid-cols-3 @5xl:grid-cols-4" />
             </section>
           ))}
         </div>
