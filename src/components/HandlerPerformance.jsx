@@ -14,10 +14,15 @@ import { dashboardSummary, lossTypes, queueLink, PERIODS, PERIOD_TEXT } from "..
 import { DATA_EVENT } from "../data/claimWork";
 import { ViewSwitch, PieView, BarView, ColumnView } from "./DashCharts";
 
-// Colours: ageing = one ordered teal ramp; parties and outcomes = fixed colour per category
-const AGE_COLOURS = ["#5eead4", "#2dd4bf", "#14b8a6", "#0d9488", "#115e59"];
-const PARTY_COLOURS = { "Me (handler)": "#0d9488", Insured: "#0284c7", "Garage / dealer": "#d97706", "Claims approver": "#7c3aed", "External surveyor (IPS)": "#0891b2", Finance: "#16a34a", "PAS / underwriting": "#64748b", "SIU / investigator": "#dc2626" };
-const OUTCOME_COLOURS = { Paid: "#16a34a", Withdrawn: "#94a3b8", Repudiated: "#dc2626", "Closed without payment": "#d97706", "NBNR closed": "#7c3aed" };
+// Colours carry one meaning across the whole dashboard:
+//   teal = within SLA / paid · amber = due within 24 h / closed without payment · red = breached / repudiated
+//   navy-teal = "Me" (the handler's own work) · slate shades = everyone else, darker = more claims
+const OK = "#0f766e";
+const RISK = "#d97706";
+const LATE = "#b91c1c";
+const AGE_COLOURS = ["#99f6e4", "#5eead4", "#14b8a6", "#0f766e", "#134e4a"]; // young → old
+const SLATE_RAMP = ["#334155", "#475569", "#64748b", "#7c8aa0", "#94a3b8", "#b4bfcc", "#cbd5e1"];
+const OUTCOME_COLOURS = { Paid: OK, Withdrawn: "#94a3b8", Repudiated: LATE, "Closed without payment": RISK, "NBNR closed": "#475569" };
 // chart views offered per panel (first = default)
 const VIEWS = { ageing: ["column", "bar", "pie", "donut"], pending: ["bar", "pie", "donut"], outcome: ["table", "donut", "bar"], tat: ["table", "column"] };
 
@@ -44,16 +49,39 @@ const timeNow = () => new Date().toLocaleString("en-IN", { day: "2-digit", month
 
 function Panel({ title, sub, right, children, className = "" }) {
   return (
-    <section className={`flex min-w-0 flex-col rounded-lg border border-slate-200 bg-white ${className}`}>
-      <header className="flex min-h-[44px] items-center justify-between gap-3 border-b border-slate-100 px-4 py-1.5">
+    <section className={`flex min-w-0 flex-col rounded-xl border border-slate-200/80 bg-white shadow-[0_1px_2px_rgba(15,23,42,0.04)] ${className}`}>
+      <header className="flex items-start justify-between gap-3 px-4 pb-1 pt-3">
         <div className="min-w-0">
-          <h2 className="truncate text-[13.5px] font-semibold leading-tight text-slate-900">{title}</h2>
-          {sub && <p className="truncate text-[12px] leading-tight text-slate-500">{sub}</p>}
+          <h2 className="truncate text-[14px] font-semibold leading-tight text-[#0B1F3A]">{title}</h2>
+          {sub && <p className="mt-0.5 truncate text-[12px] leading-tight text-slate-500">{sub}</p>}
         </div>
         {right}
       </header>
       {children}
     </section>
+  );
+}
+
+// One split bar = parts of a whole; every part opens its claims. parts: [{ n, color, label, to }]
+function SplitBar({ parts, go, height = "h-3" }) {
+  const total = parts.reduce((t, x) => t + x.n, 0);
+  if (!total) return <div className={`${height} rounded-full bg-slate-100`} />;
+  return (
+    <div className={`flex ${height} gap-[2px] overflow-hidden rounded-full`}>
+      {parts
+        .filter((x) => x.n > 0)
+        .map((x) => (
+          <button
+            key={x.label}
+            type="button"
+            onClick={() => x.to && go(x.to)}
+            aria-label={`${x.label}: ${x.n} – open in My Work Queue`}
+            title={`${x.label}: ${x.n}`}
+            className="h-full transition-opacity hover:opacity-80"
+            style={{ width: `${(x.n / total) * 100}%`, background: x.color }}
+          />
+        ))}
+    </div>
   );
 }
 
@@ -155,25 +183,20 @@ export default function HandlerPerformance() {
   const filtered = filters.reg || filters.loss;
   const scope = [filters.reg && PERIOD_TEXT[filters.reg], filters.loss && filters.loss.toLowerCase()].filter(Boolean).join(" · ");
 
-  const KPIS = [
-    { label: "All claims", n: k.all, sub: `${k.open} open · ${k.closed} closed`, to: null },
-    { label: "Open", n: k.open, sub: `${lakh(k.outstanding)} outstanding reserve`, to: link({}) },
-    { label: "Closed", n: k.closed, sub: `${lakh(k.paid)} paid`, to: link({}, true) },
-    { label: "SLA breached", n: k.breached, sub: "Open claims past stage TAT", to: link({ sla: "breach" }), tone: "text-red-700" },
-    { label: "At risk", n: k.atRisk, sub: "Stage TAT ends within 24 h", to: link({ sla: "risk" }), tone: "text-amber-700" },
-  ];
+  const within = Math.max(0, k.open - k.breached - k.atRisk);
   // chart items – each carries the queue link it opens
   const ageItems = s.ageing.map((a, i) => ({ key: a.key, label: a.label, count: a.count, red: a.breached, color: AGE_COLOURS[i], to: link({ age: a.key }) }));
-  const partyItems = s.pendingWith.map((p) => ({ key: p.party, label: p.party, count: p.count, color: PARTY_COLOURS[p.party] || "#64748b", to: link({ with: p.party }) }));
+  const others = s.pendingWith.filter((p) => p.party !== "Me (handler)");
+  const partyItems = s.pendingWith.map((p) => ({ key: p.party, label: p.party, count: p.count, color: p.party === "Me (handler)" ? OK : SLATE_RAMP[Math.min(others.indexOf(p), SLATE_RAMP.length - 1)], to: link({ with: p.party }) }));
   const outcomeItems = s.closedByType.map((c) => ({ key: c.type, label: c.type, count: c.count, color: OUTCOME_COLOURS[c.type], to: link({ closure: c.type }, true) }));
   const pick = (i) => i.count && go(i.to);
 
   return (
     <div className="flex flex-col gap-3">
       {/* ---------------- Filters ---------------- */}
-      <div className="flex flex-wrap items-center gap-x-4 gap-y-2 rounded-lg border border-slate-200 bg-white px-3 py-2">
+      <div className="flex flex-wrap items-center gap-x-4 gap-y-2 px-1">
         <div className="flex min-w-0 max-w-full items-center gap-2">
-          <span id="f-reg" className="text-[12px] font-medium text-slate-600">Registered</span>
+          <span id="f-reg" className="text-[12px] font-medium text-slate-700">Registered</span>
           <div role="radiogroup" aria-labelledby="f-reg" className="inline-flex max-w-full overflow-x-auto rounded-md border border-slate-200 p-0.5">
             {PERIODS.map((p) => (
               <button
@@ -190,7 +213,7 @@ export default function HandlerPerformance() {
           </div>
         </div>
         <label className="flex items-center gap-2">
-          <span className="text-[12px] font-medium text-slate-600">Loss type</span>
+          <span className="text-[12px] font-medium text-slate-700">Loss type</span>
           <select
             value={filters.loss}
             onChange={(e) => setFilter("loss", e.target.value)}
@@ -208,44 +231,78 @@ export default function HandlerPerformance() {
             Reset
           </button>
         )}
-        <p className="ml-auto text-[12px] text-slate-500">
+        <p className="ml-auto text-[12px] text-slate-600">
           {filtered ? `Claims ${scope}` : "All claims assigned to me"} · as of {asOf}
         </p>
       </div>
 
-      {/* ---------------- KPI strip ---------------- */}
-      <div className="grid grid-cols-2 divide-slate-100 rounded-lg border border-slate-200 bg-white sm:grid-cols-3 lg:grid-cols-5 lg:divide-x">
-        {KPIS.map((c) => {
-          const body = (
-            <>
-              <span className="block text-[12px] font-medium text-slate-500">{c.label}</span>
-              <span className={`mt-0.5 block text-[24px] font-semibold leading-tight tabular-nums ${c.tone && c.n ? c.tone : "text-slate-900"}`}>{c.n}</span>
-              <span className="block truncate text-[12px] text-slate-500">{c.sub}</span>
-            </>
-          );
-          return c.to && c.n ? (
-            <button key={c.label} type="button" onClick={() => go(c.to)} title="Open in My Work Queue" className="px-4 py-2.5 text-left transition hover:bg-slate-50">
-              {body}
-            </button>
-          ) : (
-            <div key={c.label} className="px-4 py-2.5">
-              {body}
+      {/* ---------------- SLA health – the one figure a handler acts on, then the totals ---------------- */}
+      <section aria-label="SLA health of my open claims" className="grid gap-4 rounded-xl border border-slate-200/80 bg-white px-5 py-4 shadow-[0_1px_2px_rgba(15,23,42,0.04)] lg:grid-cols-[minmax(0,1fr)_auto] lg:items-center lg:gap-8">
+        <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:gap-6">
+          <div className="flex-none">
+            <p className="text-[40px] font-semibold leading-none tracking-tight text-[#0B1F3A] tabular-nums">
+              {k.open ? Math.round((within / k.open) * 100) : 100}
+              <span className="text-[22px] text-slate-400">%</span>
+            </p>
+            <p className="mt-1 text-[12.5px] text-slate-600">of {k.open} open claims within SLA</p>
+          </div>
+          <div className="min-w-0 flex-1">
+            <SplitBar
+              go={go}
+              parts={[
+                { n: within, color: OK, label: "Within SLA", to: link({ sla: "ok" }) },
+                { n: k.atRisk, color: RISK, label: "Due within 24 h", to: link({ sla: "risk" }) },
+                { n: k.breached, color: LATE, label: "SLA breached", to: link({ sla: "breach" }) },
+              ]}
+            />
+            <div className="mt-2 flex flex-wrap gap-x-5 gap-y-1 text-[12.5px]">
+              {[
+                [within, OK, "within SLA", link({ sla: "ok" })],
+                [k.atRisk, RISK, "due within 24 h", link({ sla: "risk" })],
+                [k.breached, LATE, "breached", link({ sla: "breach" })],
+              ].map(([n, c, l, to]) => (
+                <button key={l} type="button" disabled={!n} onClick={() => go(to)} className="flex items-center gap-1.5 text-slate-600 hover:text-slate-900 disabled:cursor-default disabled:hover:text-slate-600">
+                  <i className="h-2 w-2 rounded-full" style={{ background: c }} aria-hidden="true" />
+                  <span className="font-semibold tabular-nums text-slate-900">{n}</span> {l}
+                </button>
+              ))}
             </div>
-          );
-        })}
-      </div>
+          </div>
+        </div>
+        <dl className="grid grid-cols-3 divide-x divide-slate-100 border-t border-slate-100 pt-3 lg:border-l lg:border-t-0 lg:pl-6 lg:pt-0">
+          {[
+            ["Open", k.open, `${lakh(k.outstanding)} reserve`, link({})],
+            ["Closed", k.closed, `${lakh(k.paid)} paid`, link({}, true)],
+            ["All claims", k.all, "assigned to me", null],
+          ].map(([l, n, sub, to]) => (
+            <div key={l} className="px-4 first:pl-0">
+              <dt className="text-[12px] text-slate-500">{l}</dt>
+              <dd>
+                {to && n ? (
+                  <button type="button" onClick={() => go(to)} title="Open in My Work Queue" className="text-[22px] font-semibold leading-tight tabular-nums text-slate-900 hover:text-teal-700">
+                    {n}
+                  </button>
+                ) : (
+                  <span className="text-[22px] font-semibold leading-tight tabular-nums text-slate-900">{n}</span>
+                )}
+                <span className="block whitespace-nowrap text-[12px] text-slate-500">{sub}</span>
+              </dd>
+            </div>
+          ))}
+        </dl>
+      </section>
 
       {/* ---------------- Ageing · Pending with · Closed by outcome ---------------- */}
       <div className="grid grid-cols-1 gap-3 lg:grid-cols-3">
         <Panel title="Ageing of open claims" sub="Days since registration" right={switcher("ageing", "Ageing")}>
-          {viewOf("ageing") === "column" && <ColumnView items={ageItems.map((i) => ({ ...i, color: "#0d9488" }))} onPick={pick} />}
-          {viewOf("ageing") === "bar" && <BarView items={ageItems.map((i) => ({ ...i, color: "#0d9488" }))} onPick={pick} />}
+          {viewOf("ageing") === "column" && <ColumnView items={ageItems.map((i) => ({ ...i, color: OK }))} onPick={pick} />}
+          {viewOf("ageing") === "bar" && <BarView items={ageItems.map((i) => ({ ...i, color: OK }))} onPick={pick} />}
           {viewOf("ageing") === "pie" && <PieView items={ageItems} onPick={pick} unit="open" />}
           {viewOf("ageing") === "donut" && <PieView items={ageItems} donut onPick={pick} unit="open" />}
           {viewOf("ageing") === "column" && (
             <p className="mt-auto flex items-center gap-3 border-t border-slate-100 px-4 py-2 text-[12px] text-slate-500">
-              <span className="flex items-center gap-1.5"><i className="h-2.5 w-2.5 rounded-sm bg-teal-600" aria-hidden="true" /> Within SLA</span>
-              <span className="flex items-center gap-1.5"><i className="h-2.5 w-2.5 rounded-sm bg-red-600" aria-hidden="true" /> SLA breached</span>
+              <span className="flex items-center gap-1.5"><i className="h-2.5 w-2.5 rounded-full bg-teal-700" aria-hidden="true" /> Within SLA</span>
+              <span className="flex items-center gap-1.5"><i className="h-2.5 w-2.5 rounded-full bg-red-700" aria-hidden="true" /> SLA breached</span>
             </p>
           )}
         </Panel>
@@ -253,7 +310,7 @@ export default function HandlerPerformance() {
         <Panel title="Pending with" sub="Who the open claims are waiting on" right={switcher("pending", "Pending with")}>
           {partyItems.length === 0 && <p className="px-4 py-3 text-[12.5px] text-slate-500">No open claims.</p>}
           {partyItems.length > 0 && viewOf("pending") === "bar" && (
-            <BarView items={partyItems.map((i) => ({ ...i, color: i.key === "Me (handler)" ? "#0d9488" : "#94a3b8" }))} highlight={(i) => i.key === "Me (handler)"} onPick={pick} />
+            <BarView items={partyItems.map((i) => ({ ...i, color: i.key === "Me (handler)" ? OK : "#94a3b8" }))} highlight={(i) => i.key === "Me (handler)"} onPick={pick} />
           )}
           {partyItems.length > 0 && viewOf("pending") === "pie" && <PieView items={partyItems} onPick={pick} unit="open" />}
           {partyItems.length > 0 && viewOf("pending") === "donut" && <PieView items={partyItems} donut onPick={pick} unit="open" />}
@@ -289,38 +346,44 @@ export default function HandlerPerformance() {
 
       {/* ---------------- IRDAI TAT · Stage-wise TAT ---------------- */}
       <div className="grid grid-cols-1 gap-3 lg:grid-cols-3">
-        <Panel title="IRDAI claim timelines" sub="Open claims">
-          <table className="w-full text-[12.5px]">
-            <thead>
-              <tr className="text-left text-[12px] text-slate-500">
-                <th scope="col" className="px-4 py-1.5 font-medium">Milestone</th>
-                <th scope="col" className="px-2 py-1.5 text-right font-medium">Open</th>
-                <th scope="col" className="px-2 py-1.5 text-right font-medium" title="IRDAI limit ends within 24 hours">Due 24 h</th>
-                <th scope="col" className="px-4 py-1.5 text-right font-medium">Breached</th>
-              </tr>
-            </thead>
-            <tbody>
-              {s.irdai.map((st) => (
-                <tr key={st.key} className="border-t border-slate-100">
-                  <td className="px-4 py-2">
-                    <span className="block font-medium text-slate-900">{st.label}</span>
-                    <span className="block text-[12px] text-slate-500">{st.rule}</span>
-                  </td>
-                  <td className="px-2 py-2 text-right font-semibold text-slate-900">
-                    <Figure n={st.total} to={link({ irdai: st.key })} label={`${st.label} – open`} go={go} />
-                  </td>
-                  <td className="px-2 py-2 text-right font-semibold text-amber-700">
-                    <Figure n={st.due} to={link({ irdai: st.key, sla: "risk" })} label={`${st.label} – due within 24 h`} go={go} />
-                  </td>
-                  <td className="px-4 py-2 text-right font-semibold text-red-700">
-                    <Figure n={st.late} to={link({ irdai: st.key, sla: "breach" })} label={`${st.label} – breached`} go={go} />
-                  </td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
+        <Panel title="IRDAI claim timelines" sub="Open claims against the regulatory limit">
+          <div className="flex flex-1 flex-col justify-center gap-5 px-4 py-4">
+            {s.irdai.map((st) => {
+              const onTime = Math.max(0, st.total - st.due - st.late);
+              return (
+                <div key={st.key}>
+                  <div className="flex items-baseline justify-between gap-3">
+                    <p className="text-[13px] font-semibold text-slate-900">{st.label}</p>
+                    <p className="text-[12px] text-slate-500">{st.rule}</p>
+                  </div>
+                  <div className="mt-2">
+                    <SplitBar
+                      go={go}
+                      height="h-2.5"
+                      parts={[
+                        { n: onTime, color: OK, label: `${st.label} – on time`, to: link({ irdai: st.key }) },
+                        { n: st.due, color: RISK, label: `${st.label} – due within 24 h`, to: link({ irdai: st.key, sla: "risk" }) },
+                        { n: st.late, color: LATE, label: `${st.label} – breached`, to: link({ irdai: st.key, sla: "breach" }) },
+                      ]}
+                    />
+                  </div>
+                  <div className="mt-1.5 grid grid-cols-3 text-[12px] text-slate-500">
+                    <span>
+                      <Figure n={st.total} to={link({ irdai: st.key })} label={`${st.label} – open`} go={go} className="font-semibold text-slate-900" /> open
+                    </span>
+                    <span className="text-center">
+                      <Figure n={st.due} to={link({ irdai: st.key, sla: "risk" })} label={`${st.label} – due within 24 h`} go={go} className="font-semibold text-amber-700" /> due in 24 h
+                    </span>
+                    <span className="text-right">
+                      <Figure n={st.late} to={link({ irdai: st.key, sla: "breach" })} label={`${st.label} – breached`} go={go} className="font-semibold text-red-700" /> breached
+                    </span>
+                  </div>
+                </div>
+              );
+            })}
+          </div>
           <p className="mt-auto border-t border-slate-100 px-4 py-2 text-[12px] leading-snug text-slate-500">
-            Surveyor allocation (24 h of intimation) is met at registration, as claims are allocated to you as the surveyor. Timelines as per IRDAI Master Circular, June 2024.
+            IRDAI Master Circular, June 2024. Surveyor allocation within 24 h is met at registration, as you are the surveyor.
           </p>
         </Panel>
 
@@ -373,7 +436,7 @@ export default function HandlerPerformance() {
                     <td className="px-4 py-1.5">
                       {t.avg != null ? (
                         <span className="relative block h-2 rounded-sm bg-slate-100" aria-hidden="true">
-                          <span className={`absolute inset-y-0 left-0 rounded-sm ${over ? "bg-red-600" : "bg-teal-600"}`} style={{ width: `${(t.avg / scale) * 100}%` }} />
+                          <span className={`absolute inset-y-0 left-0 rounded-sm ${over ? "bg-red-700" : "bg-teal-700"}`} style={{ width: `${(t.avg / scale) * 100}%` }} />
                           <span className="absolute -inset-y-1 w-0.5 bg-slate-900" style={{ left: `${(t.target / scale) * 100}%` }} />
                         </span>
                       ) : (
@@ -387,8 +450,8 @@ export default function HandlerPerformance() {
           </table>
           )}
           <p className="mt-auto flex items-center gap-3 border-t border-slate-100 px-4 py-2 text-[12px] text-slate-500">
-            <span className="flex items-center gap-1.5"><i className="h-2.5 w-2.5 rounded-sm bg-teal-600" aria-hidden="true" /> Within target</span>
-            <span className="flex items-center gap-1.5"><i className="h-2.5 w-2.5 rounded-sm bg-red-600" aria-hidden="true" /> Over target</span>
+            <span className="flex items-center gap-1.5"><i className="h-2.5 w-2.5 rounded-full bg-teal-700" aria-hidden="true" /> Within target</span>
+            <span className="flex items-center gap-1.5"><i className="h-2.5 w-2.5 rounded-full bg-red-700" aria-hidden="true" /> Over target</span>
             <span className="flex items-center gap-1.5"><i className="h-3 w-0.5 bg-slate-900" aria-hidden="true" /> Target</span>
             <span className="ml-auto">Average of completed stages · open claims count where they are now</span>
           </p>

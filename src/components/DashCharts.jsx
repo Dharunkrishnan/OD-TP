@@ -13,7 +13,7 @@ const NAMES = { column: "Column chart", bar: "Bar chart", pie: "Pie chart", donu
 /* ------------------------------------------------------------------ */
 export function ViewSwitch({ views, value, onChange, label }) {
   return (
-    <div role="radiogroup" aria-label={`${label} – chart view`} className="inline-flex flex-none rounded-md border border-slate-200 p-0.5">
+    <div role="radiogroup" aria-label={`${label} – chart view`} className="inline-flex flex-none rounded-lg bg-slate-100 p-0.5">
       {views.map((v) => {
         const Icon = ICONS[v];
         const on = value === v;
@@ -26,7 +26,7 @@ export function ViewSwitch({ views, value, onChange, label }) {
             aria-label={NAMES[v]}
             title={NAMES[v]}
             onClick={() => onChange(v)}
-            className={`grid h-6 w-7 place-items-center rounded ${on ? "bg-slate-900 text-white" : "text-slate-500 hover:bg-slate-100 hover:text-slate-800"}`}
+            className={`grid h-6 w-7 place-items-center rounded-md ${on ? "bg-white text-[#0B1F3A] shadow-[0_1px_2px_rgba(15,23,42,0.15)]" : "text-slate-500 hover:text-slate-800"}`}
           >
             <Icon className="h-3.5 w-3.5" aria-hidden="true" />
           </button>
@@ -52,8 +52,8 @@ export function PieView({ items, donut, onPick, centre, unit = "claims" }) {
   const shown = items.filter((i) => i.count > 0);
   let a = 0;
   return (
-    <div className="flex min-h-0 flex-1 items-center gap-4 px-4 py-3">
-      <svg viewBox="0 0 120 120" className="h-[132px] w-[132px] flex-none" role="img" aria-label={`${total} ${unit}: ${shown.map((i) => `${i.label} ${i.count}`).join(", ")}`}>
+    <div className="flex min-h-0 flex-1 items-center gap-5 px-4 py-4">
+      <svg viewBox="0 0 120 120" className="h-[148px] w-[148px] flex-none" role="img" aria-label={`${total} ${unit}: ${shown.map((i) => `${i.label} ${i.count}`).join(", ")}`}>
         {total === 0 && <circle cx="60" cy="60" r="56" className="fill-slate-100" />}
         {shown.length === 1 && <circle cx="60" cy="60" r="56" fill={shown[0].color} className="cursor-pointer" onClick={() => onPick(shown[0])} />}
         {shown.length > 1 &&
@@ -61,18 +61,18 @@ export function PieView({ items, donut, onPick, centre, unit = "claims" }) {
             const a0 = a;
             a += (i.count / total) * Math.PI * 2;
             return (
-              <path key={i.key} d={arc(60, 60, 56, a0, a)} fill={i.color} stroke="#fff" strokeWidth="1.5" className="cursor-pointer transition-opacity hover:opacity-80" onClick={() => onPick(i)}>
+              <path key={i.key} d={arc(60, 60, 56, a0, a)} fill={i.color} stroke="#fff" strokeWidth="2" className="cursor-pointer transition-opacity hover:opacity-80" onClick={() => onPick(i)}>
                 <title>{`${i.label}: ${i.count}`}</title>
               </path>
             );
           })}
-        {donut && <circle cx="60" cy="60" r="34" fill="#fff" pointerEvents="none" />}
+        {donut && <circle cx="60" cy="60" r="38" fill="#fff" pointerEvents="none" />}
         {donut && (
           <>
-            <text x="60" y="58" textAnchor="middle" className="fill-slate-900 text-[20px] font-semibold">
+            <text x="60" y="60" textAnchor="middle" className="fill-[#0B1F3A] text-[24px] font-semibold">
               {centre ?? total}
             </text>
-            <text x="60" y="74" textAnchor="middle" className="fill-slate-500 text-[11px]">
+            <text x="60" y="76" textAnchor="middle" className="fill-slate-500 text-[10.5px]">
               {unit}
             </text>
           </>
@@ -87,7 +87,7 @@ export function PieView({ items, donut, onPick, centre, unit = "claims" }) {
               onClick={() => onPick(i)}
               className="grid w-full grid-cols-[0.625rem_minmax(0,1fr)_auto_2.5rem] items-center gap-2 rounded px-1 py-0.5 text-left text-[12.5px] hover:bg-slate-50 disabled:cursor-default disabled:hover:bg-transparent"
             >
-              <i className="h-2.5 w-2.5 rounded-sm" style={{ background: i.color }} aria-hidden="true" />
+              <i className="h-2.5 w-2.5 rounded-full" style={{ background: i.color }} aria-hidden="true" />
               <span className="truncate text-slate-700">{i.label}</span>
               <span className="text-right font-semibold tabular-nums text-slate-900">{i.count}</span>
               <span className="text-right tabular-nums text-slate-500">{total ? Math.round((i.count / total) * 100) : 0}%</span>
@@ -118,8 +118,8 @@ export function BarView({ items, onPick, highlight }) {
               className="grid w-full grid-cols-[minmax(0,9.5rem)_minmax(0,1fr)_2rem] items-center gap-2 rounded px-1 py-0.5 text-left text-[12.5px] hover:bg-slate-50 disabled:cursor-default disabled:hover:bg-transparent"
             >
               <span className={`truncate ${strong ? "font-semibold text-slate-900" : "text-slate-700"}`}>{i.label}</span>
-              <span className="h-2 rounded-sm bg-slate-100">
-                <span className="block h-2 rounded-sm" style={{ width: `${(i.count / max) * 100}%`, background: i.color }} />
+              <span className="h-2 rounded-full bg-slate-100">
+                <span className="block h-2 rounded-full" style={{ width: `${(i.count / max) * 100}%`, background: i.color }} />
               </span>
               <span className="text-right font-semibold tabular-nums text-slate-900">{i.count}</span>
             </button>
@@ -149,10 +149,10 @@ export function ColumnView({ items, onPick, height = 120 }) {
               onClick={() => onPick(i)}
               aria-label={`${i.label}: ${i.count}${i.red != null ? `, ${i.red} SLA breached` : ""}${i.count ? " – open in My Work Queue" : ""}`}
               title={`${i.count} claims${i.red != null ? ` · ${i.red} SLA breached` : ""}`}
-              className="flex w-full max-w-12 flex-col justify-end overflow-hidden rounded-t transition hover:opacity-85 disabled:cursor-default"
+              className="flex w-full max-w-12 flex-col justify-end overflow-hidden rounded-t-md transition hover:opacity-85 disabled:cursor-default"
               style={{ height: Math.max(i.count ? 4 : 0, h), background: i.color }}
             >
-              {hr > 0 && <span className="block w-full bg-red-600" style={{ height: hr }} />}
+              {hr > 0 && <span className="block w-full bg-red-700" style={{ height: hr }} />}
             </button>
             <span className="max-w-full truncate text-[12px] text-slate-500">{i.label}</span>
           </div>
