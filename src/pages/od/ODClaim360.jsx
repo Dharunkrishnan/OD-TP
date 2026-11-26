@@ -193,7 +193,7 @@ const STAGE_EVENTS = [
   ["Claim intimated", "Parked as NBNR", "Policy & coverage validated", "Claim registered", "Assigned to handler"],
   ["Surveyor appointed", "Survey completed", "Flag raised"],
   ["Reserve revised", "Document requested", "Document received"],
-  ["Sent for approval", "Approved", "Repudiated"],
+  ["Sent for approval", "Repair authorised", "Approved", "Repudiated"],
   ["Repair authorised", "Payment requested", "Payment made"],
 ];
 const inrAmt = (n) => (n == null ? "–" : "₹" + Number(n).toLocaleString("en-IN"));
@@ -258,7 +258,7 @@ function StageView({ c, index, label, documents, timeline, journey, onBack, onUp
   const registered = ev("Claim registered");
   const approvalSent = ev("Sent for approval");
   const authorised = ev("Repair authorised");
-  const completedOn = [registered, ev("Survey completed"), ev("Reserve revised"), authorised, ev("Payment requested")][index];
+  const completedOn = [registered, ev("Survey completed"), ev("Reserve revised"), authorised || ev("Approved"), ev("Payment requested")][index];
 
   let sections = [];
   if (index === 0) {
@@ -699,19 +699,120 @@ function StageView({ c, index, label, documents, timeline, journey, onBack, onUp
       ];
     }
   } else if (index === 3) {
+    // Decision – catalogue 114–118 authority & approval, 63 / 64 / 99 decision, 66–69 red flags & SIU,
+    // 20 major loss, 168 IRDAI decision timeline, 73–75 repair authorisation, 146 / 144 letters & notifications
+    const sv = c.survey;
+    const a = sv.assessment;
+    const d = c.decision || { amount: sv.netLiability ?? c.reserve, needsApproval: !!approvalSent, level: approvalSent ? "Claims Manager" : "Claims Handler", approver: authorised?.by || "–", kind: "repair" };
+    const decided = authorised || ev("Approved");
+    const surveyDone = ev("Survey completed");
+    const decStep = journey?.find((x) => x.key === "decision");
+    const days = (x, y) => Math.round((new Date(y + "T00:00:00") - new Date(x + "T00:00:00")) / 86400000);
+    const chipText = (stp) => (stp?.chip && stp.chip.kind !== "none" ? `${stp.chip.kind === "met" ? "✓ " : stp.chip.kind === "due" ? "" : "✕ "}${stp.chip.text}` : "–");
+    const fraud = c.flags.includes("Fraud flag");
+    const LATER = ["Final invoice", "Satisfaction note / delivery"];
+    const needDocs = documents.filter((x) => !LATER.includes(x.name));
+    const gotDocs = needDocs.filter((x) => /received|verified/i.test(x.status));
+    const network = c.garage && !/non-network/i.test(c.garage.type) && /network|dealer/i.test(c.garage.type);
+    const amount = inrAmt(d.amount);
+    const comment =
+      d.kind === "ctl"
+        ? `CBA accepted – total loss net of salvage is ${inrAmt(a ? a.repairCost - a.netOfSalvage : null)} cheaper than repair. Settle on net of salvage.`
+        : d.kind === "theft"
+          ? "Investigation report and police final report on file. Settle at IDV less compulsory deductible."
+          : "Assessment checked against estimate and photos. Depreciation and deductibles as per policy. Approved as assessed.";
     sections = [
+      {
+        title: "Approval routing",
+        items: [
+          ["Amount for decision", amount, { strong: true }],
+          ["Authority limits", `Handler up to ${inrAmt(100000)} · Manager up to ${inrAmt(500000)} · above: Zonal Claims Head`],
+          [
+            "Routed to",
+            d.needsApproval ? `${d.approver} · ${d.level} – ${d.referred ? "referred by the handler" : "above the handler's limit"}` : "Not routed – within the handler's own authority",
+          ],
+          ["Maker", "Karthik Subramanian · Claims Handler"],
+          ["Checker", d.needsApproval ? `${d.approver} · ${d.level}` : "System checks – rules, documents and red flags"],
+          ["Maker-checker", d.needsApproval ? "✓ Maker and checker are different users" : "Not required – not a major loss, repudiation or closure without payment"],
+          ["Sent for approval", approvalSent ? `${dt(approvalSent.date)} · ${approvalSent.time}` : "Not needed"],
+          ["Delegated authority", "Not used"],
+        ],
+      },
       {
         title: "Decision",
         items: [
-          ["Sent for approval", approvalSent ? `${dt(approvalSent.date)} · ${approvalSent.time}` : "–"],
-          ["Amount sent", inrAmt(c.survey.netLiability ?? c.reserve), { strong: true }],
-          ["Decision", authorised ? "Approved" : "–", { strong: true }],
-          ["Decided by", authorised ? authorised.by : "–"],
-          ["Decided on", authorised ? `${dt(authorised.date)} · ${authorised.time}` : "–"],
-          ["Liability", "Admissible under Own Damage section"],
+          ["Decision", decided ? "Approved" : "–", { strong: true }],
+          ["Decided by", decided ? `${d.approver} · ${d.level}` : "–"],
+          ["Decided on", decided ? `${dt(decided.date)} · ${decided.time}` : "–"],
+          ["Approved amount", amount, { strong: true }],
+          ["Change vs requested", "None – approved as assessed"],
+          ["Settlement basis", "Standard – no deviation from policy terms"],
+          ["Liability", "Admissible under Section I – Own Damage"],
+          ["Comments (mandatory)", comment],
         ],
       },
-    ];
+      {
+        title: "IRDAI decision timeline",
+        items: [
+          ["Survey report on", surveyDone ? `${dt(surveyDone.date)} · ${surveyDone.time}` : "–"],
+          ["Decision on", decided ? `${dt(decided.date)} · ${decided.time}` : "–"],
+          surveyDone && decided && ["Days taken", `${days(surveyDone.date, decided.date)} day(s)`],
+          ["Decision within 7 days of the survey report", chipText(decStep)],
+        ],
+      },
+      {
+        title: "Checks before the decision",
+        items: [
+          ["Red flags", c.flags.length ? c.flags.join(", ") : "✓ None"],
+          ["SIU referral", fraud || d.kind === "theft" ? "Referred – investigation report on file" : "Not referred"],
+          ["Major loss alert", d.amount > 500000 ? "Raised – above ₹5,00,000, management informed" : "Not triggered"],
+          ["Documents at decision", gotDocs.length === needDocs.length ? `✓ All ${needDocs.length} received` : `${gotDocs.length} of ${needDocs.length} received`],
+          ["Admissibility", fraud ? "Pending SIU outcome" : "✓ Admissible – Assessment stage"],
+        ],
+      },
+      d.kind === "repair" && {
+        title: "Repair authorisation",
+        items: [
+          ["Type", network ? "Cashless – network garage" : "Reimbursement – insured pays the garage and claims the bills"],
+          ["Issued to", c.garage ? c.garage.name.split(",")[0] : "–"],
+          ["Issued on", authorised ? `${dt(authorised.date)} · ${authorised.time}` : "–"],
+          ["Insurer pays", amount, { strong: true }],
+          a?.lines && ["Items", `${a.lines.filter((l) => l.assessed > 0).length} allowed · ${a.lines.filter((l) => l.assessed === 0).length} disallowed`],
+          a && ["Insured pays the garage", `${inrAmt(a.dep + sv.deductible + a.disallowed)} – depreciation ${inrAmt(a.dep)}, deductibles ${inrAmt(sv.deductible)}, disallowed ${inrAmt(a.disallowed)}`],
+          ["Shared with garage & insured", "Allowed and disallowed items, depreciation and deductibles"],
+        ],
+      },
+      d.kind === "ctl" && {
+        title: "Settlement type decision",
+        items: [
+          ["CBA recommendation", a?.recommended || "–"],
+          ["Approved basis", "Total loss – net of salvage (insured keeps the wreck)", { strong: true }],
+          ["Net payable", amount, { strong: true }],
+          a && ["Wreck value used", `${inrAmt(a.best)} – highest auction quote`],
+          c.policy.financier && ["Financier", `${c.policy.financier} – paid first up to the loan outstanding`],
+          ["Customer consent", "Settlement consent to be signed before payment"],
+        ],
+      },
+      d.kind === "theft" && {
+        title: "Theft claim approval",
+        items: [
+          ["Net payable", amount, { strong: true }],
+          ["Basis", "IDV less compulsory deductible"],
+          ["Payee", c.policy.financier ? `${c.policy.financier} up to the loan outstanding, balance to the insured` : "Insured"],
+          ["Before payment", "Subrogation letter, indemnity, RC transfer (Form 28/29/30), keys"],
+        ],
+      },
+      {
+        title: "Letters & communication",
+        items: [
+          [d.kind === "repair" ? "Repair authorisation letter" : "Approval letter", decided ? `✓ Generated ${dt(decided.date)}` : "–"],
+          ["Insured – SMS & email", decided ? `✓ Sent ${dt(decided.date)} · ${decided.time}` : "–"],
+          d.kind === "repair" && ["Garage", decided ? "✓ Authorisation shared on email / garage portal" : "–"],
+          d.kind !== "repair" && ["Consent & discharge voucher", "Sent for e-sign"],
+          c.loss.intimationChannel && ["Intimation channel", `${c.loss.intimationChannel} – status updated`],
+        ],
+      },
+    ].filter(Boolean);
   } else {
     sections = [
       {

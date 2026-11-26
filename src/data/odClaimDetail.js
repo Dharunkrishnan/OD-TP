@@ -8,6 +8,7 @@
 
 import { WORK_QUEUE, needsIps, HANDLER_AS_SURVEYOR } from "./odHandlerMock";
 import { CLOSED_CLAIMS } from "./odClosedClaims";
+import { HANDLER_AUTHORITY, MANAGER_AUTHORITY } from "./odTeamMock";
 import { partialAssessment, ctlAssessment, theftAssessment, compulsoryDeductible } from "./odAssessment";
 
 /* ---------------- URL helpers: claim no has "/" so use "-" in URLs ---------------- */
@@ -398,6 +399,7 @@ export function getClaimDetail(claimNo) {
       : [];
 
   /* ---- timeline / audit ---- */
+  let decision = null; // approval routing & decision (set below for claims past assessment)
   const t = [];
   const push = (dayOffset, time, event, by, detail) =>
     t.push({ date: addDays(row.regDate, dayOffset), time, event, by, detail });
@@ -417,8 +419,28 @@ export function getClaimDetail(claimNo) {
     .filter((d) => d.status === "Pending")
     .forEach((d) => push(Math.max(1, row.ageDays - 9), "11:20", "Document requested", "Karthik Subramanian", `${d.name} · ${d.reminders} reminder(s) sent`));
   // decision within the IRDAI 7 days of the survey report (survey on day 3): approval day 4, DO day 5
-  if (step >= 5) push(4, "12:45", "Sent for approval", "Karthik Subramanian", `Net liability ₹${(netLiability ?? 0).toLocaleString("en-IN")}`);
-  if (step >= 6) push(5, "17:00", "Repair authorised", "Claims approver", "Delivery order issued to garage");
+  // Authority matrix (catalogue 114, 115): within the handler's limit the handler decides; above it the
+  // claim goes to the Claims Manager, above the manager's limit to the Zonal Claims Head
+  if (step >= 5) {
+    const amt = netLiability ?? row.reserve;
+    const referred = amt <= HANDLER_AUTHORITY && step === 5 && /approver|manager/i.test(row.pendingWith);
+    const needsApproval = amt > HANDLER_AUTHORITY || referred;
+    const level = amt > MANAGER_AUTHORITY ? "Zonal Claims Head" : needsApproval ? "Claims Manager" : "Claims Handler";
+    decision = {
+      amount: amt,
+      needsApproval,
+      referred,
+      level,
+      approver: level === "Zonal Claims Head" ? "R. Venkatesh" : level === "Claims Manager" ? "Priya Raghavan" : "Karthik Subramanian",
+      kind: lossIsTheft ? "theft" : row.lossType === "Total loss / CTL" ? "ctl" : "repair",
+    };
+    if (needsApproval) push(4, "12:45", "Sent for approval", "Karthik Subramanian", `Net liability ₹${amt.toLocaleString("en-IN")} · to ${decision.approver} (${level})`);
+    if (step >= 6) {
+      const by = `${decision.approver} · ${level}${needsApproval ? "" : " (within own authority)"}`;
+      if (decision.kind === "repair") push(5, "17:00", "Repair authorised", by, `Delivery order issued to ${garage?.name.split(",")[0] || "garage"} · ₹${amt.toLocaleString("en-IN")}`);
+      else push(5, "17:00", "Approved", by, decision.kind === "ctl" ? `Total loss – net of salvage · ₹${amt.toLocaleString("en-IN")}` : `Theft – IDV less deductible · ₹${amt.toLocaleString("en-IN")}`);
+    }
+  }
   if (step >= 7) push(Math.max(6, row.ageDays - 1), "11:00", "Payment requested", "Karthik Subramanian", `NEFT to ${garage?.name || row.insured}`);
   row.flags.forEach((f) => push(1, "09:00", `Flag raised: ${f}`, "System (rules)", f === "Fraud flag" ? "Theft within 30 days of policy inception" : f));
   if (row.closure) {
@@ -530,6 +552,7 @@ export function getClaimDetail(claimNo) {
     loss,
     garage,
     survey,
+    decision,
     documents,
     reserveHistory,
     payments,
